@@ -20,6 +20,18 @@ class ExecPlaneSettingsRepository(context: Context) {
     val port: StateFlow<Int> = _port.asStateFlow()
     private val _forwardServers = MutableStateFlow(loadForwardServers())
     val forwardServers: StateFlow<List<ForwardServerConfig>> = _forwardServers.asStateFlow()
+    private val _defaultSandboxId = MutableStateFlow(prefs.getString(KEY_DEFAULT_SANDBOX, SANDBOX_PROOT) ?: SANDBOX_PROOT)
+    val defaultSandboxId: StateFlow<String> = _defaultSandboxId.asStateFlow()
+
+    fun setDefaultSandbox(id: String) {
+        val valid = id == SANDBOX_PROOT || _forwardServers.value.any { it.id == id }
+        if (!valid) return
+        prefs.edit().putString(KEY_DEFAULT_SANDBOX, id).apply()
+        _defaultSandboxId.value = id
+    }
+
+    fun selectedForwardServer(): ForwardServerConfig? =
+        _forwardServers.value.firstOrNull { it.id == _defaultSandboxId.value }
 
     fun setEnabled(value: Boolean) {
         prefs.edit().putBoolean(KEY_ENABLED, value).apply()
@@ -54,6 +66,7 @@ class ExecPlaneSettingsRepository(context: Context) {
         val updated = _forwardServers.value.filterNot { it.id == id }
         if (updated.size == _forwardServers.value.size) return false
         persistForwardServers(updated)
+        if (_defaultSandboxId.value == id) setDefaultSandbox(SANDBOX_PROOT)
         return true
     }
 
@@ -76,10 +89,12 @@ class ExecPlaneSettingsRepository(context: Context) {
 
     companion object {
         const val DEFAULT_PORT = 8765
+        const val SANDBOX_PROOT = "proot"
         private const val PREFS = "execplane_settings"
         private const val KEY_ENABLED = "enabled"
         private const val KEY_PORT = "port"
         private const val KEY_TOKEN = "token"
         private const val KEY_FORWARD_SERVERS = "forwardServers"
+        private const val KEY_DEFAULT_SANDBOX = "defaultSandbox"
     }
 }

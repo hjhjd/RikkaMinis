@@ -94,7 +94,7 @@ class ExecPlaneBridge(
 
     suspend fun exec(name: String, command: String, timeoutMs: Long = 600_000): RemoteExecResult {
         val connection = connections.connection(name) as? RemoteCommandConnection
-            ?: error("WebSocket Server does not support app-initiated exec")
+            ?: throw RemoteChannelException("WebSocket Server is offline")
         return connection.exec(command, timeoutMs)
     }
 

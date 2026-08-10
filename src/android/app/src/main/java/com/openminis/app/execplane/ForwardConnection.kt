@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,6 +37,9 @@ data class RemoteExecResult(
     val exitCode: Int,
     val durationMs: Long? = null,
 )
+
+class RemoteChannelException(message: String, cause: Throwable? = null) : Exception(message, cause)
+class RemoteExecutionException(message: String) : Exception(message)
 
 interface RemoteCommandConnection : ExecutorConnection {
     suspend fun exec(command: String, timeoutMs: Long = 600_000): RemoteExecResult
@@ -90,14 +94,20 @@ class ForwardConnection(
         }
         if (socket?.send(request.toString()) != true) {
             pending.remove(requestId)
-            error("WebSocket Server is offline")
+            throw RemoteChannelException("WebSocket Server is offline")
         }
         val response = try {
             withTimeout(timeoutMs + 5_000) { waiter.await() }
+        } catch (e: RemoteExecutionException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            throw RemoteChannelException("WebSocket command channel failed", e)
         } finally {
             pending.remove(requestId)
         }
-        if (!response.ok) error(response.error?.message ?: "Remote command failed")
+        if (!response.ok) throw RemoteExecutionException(response.error?.message ?: "Remote command failed")
         val result = response.result?.jsonObject ?: JsonObject(emptyMap())
         return RemoteExecResult(
             stdout = result["stdout"]?.jsonPrimitive?.content.orEmpty(),

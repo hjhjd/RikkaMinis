@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -58,6 +60,8 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
     val bridge = app.execPlaneBridge
     val enabled by settings.enabled.collectAsState()
     val savedPort by settings.port.collectAsState()
+    val defaultSandboxId by settings.defaultSandboxId.collectAsState()
+    val savedServers by settings.forwardServers.collectAsState()
     val status by bridge.status.collectAsState()
     val servers by bridge.connections.snapshots.collectAsState()
     val scope = rememberCoroutineScope()
@@ -87,6 +91,34 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Spacer(Modifier.padding(1.dp))
+            Text(stringResource(R.string.sandbox_default_section), style = MaterialTheme.typography.titleMedium)
+            Column(
+                Modifier.fillMaxWidth().background(
+                    MaterialTheme.colorScheme.surfaceContainerLow,
+                    RoundedCornerShape(12.dp),
+                ),
+            ) {
+                SandboxChoiceRow(
+                    title = stringResource(R.string.sandbox_builtin_proot),
+                    subtitle = stringResource(R.string.sandbox_builtin_proot_subtitle),
+                    selected = defaultSandboxId == com.openminis.app.execplane.ExecPlaneSettingsRepository.SANDBOX_PROOT,
+                    onClick = { settings.setDefaultSandbox(com.openminis.app.execplane.ExecPlaneSettingsRepository.SANDBOX_PROOT) },
+                )
+                savedServers.sortedBy { it.name }.forEach { saved ->
+                    SandboxChoiceRow(
+                        title = saved.name,
+                        subtitle = saved.url,
+                        selected = defaultSandboxId == saved.id,
+                        onClick = { settings.setDefaultSandbox(saved.id) },
+                    )
+                }
+            }
+            Text(
+                stringResource(R.string.sandbox_fallback_footer),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
             Text(stringResource(R.string.sandbox_ws_section), style = MaterialTheme.typography.titleMedium)
             Column(
                 Modifier.fillMaxWidth().background(
@@ -323,4 +355,23 @@ private fun AddWebSocketServerDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
     )
+}
+
+@Composable
+private fun SandboxChoiceRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Column(Modifier.padding(start = 8.dp)) {
+            Text(title)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }

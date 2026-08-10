@@ -238,6 +238,10 @@
     <string name="sandbox_settings_title">Sandbox</string>
     <string name="settings_sandbox_subtitle">Manage WebSocket Server connections</string>
     <string name="sandbox_ws_section">WebSocket bridge</string>
+    <string name="sandbox_default_section">Default sandbox</string>
+    <string name="sandbox_builtin_proot">Built-in PRoot</string>
+    <string name="sandbox_builtin_proot_subtitle">Local Alpine sandbox</string>
+    <string name="sandbox_fallback_footer">Shell commands use the selected sandbox. If the selected WebSocket Server is offline or its channel fails, the command falls back once to built-in PRoot. A remote non-zero exit does not trigger fallback.</string>
     <string name="sandbox_ws_enabled">Accept WebSocket Server connections</string>
     <string name="sandbox_ws_port">Listening port</string>
     <string name="sandbox_apply">Apply</string>

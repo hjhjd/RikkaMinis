@@ -136,6 +136,10 @@
     <string name="sandbox_settings_title">沙箱配置</string>
     <string name="settings_sandbox_subtitle">管理 WebSocket 服务端连接</string>
     <string name="sandbox_ws_section">WebSocket 桥接</string>
+    <string name="sandbox_default_section">默认沙箱</string>
+    <string name="sandbox_builtin_proot">内置 PRoot</string>
+    <string name="sandbox_builtin_proot_subtitle">本地 Alpine 沙箱</string>
+    <string name="sandbox_fallback_footer">Shell 命令优先使用所选沙箱。当所选 WebSocket 服务端离线或通道失败时，命令会自动回退到内置 PRoot 执行一次；远程命令非零退出不会触发回退。</string>
     <string name="sandbox_ws_enabled">接受 WebSocket 服务端连接</string>
     <string name="sandbox_ws_port">监听端口</string>
     <string name="sandbox_apply">应用</string>
