@@ -1,6 +1,7 @@
 package com.openminis.app.execplane
 
 import android.content.Context
+import com.openminis.app.execplane.protocol.ExecPlaneJson
 import com.openminis.app.util.EncryptedPrefsFactory
 import java.security.SecureRandom
 import java.util.UUID
