@@ -72,6 +72,8 @@ object ExecutionCoordinator {
         val exitCode: Int,
         val durationMs: Long,
         val truncated: Boolean = false,
+        val sandboxName: String = "proot",
+        val degraded: Boolean = false,
     )
 
     private lateinit var appContext: Context
@@ -106,7 +108,7 @@ object ExecutionCoordinator {
 
     /** Optional sandbox router. Returning null means fall back to local PRoot. */
     @Volatile
-    var externalExecutor: (suspend (String, String, Long, ((String) -> Unit)?) -> CommandResult?)? = null
+    var externalExecutor: (suspend (String, String, Long, ((String) -> Unit)?, String?) -> CommandResult?)? = null
 
     /**
      * Execute a command in the selected sandbox. The external router preserves
@@ -116,9 +118,13 @@ object ExecutionCoordinator {
         sessionId: String,
         command: String,
         timeout: Long = 600_000L,
-        lineCallback: ((String) -> Unit)? = null
+        lineCallback: ((String) -> Unit)? = null,
+        sandbox: String? = null,
     ): CommandResult {
-        externalExecutor?.invoke(sessionId, command, timeout, lineCallback)?.let { return it }
+        if (sandbox.equals("proot", ignoreCase = true)) {
+            return executeLocal(sessionId, command, timeout, lineCallback)
+        }
+        externalExecutor?.invoke(sessionId, command, timeout, lineCallback, sandbox)?.let { return it }
         return executeLocal(sessionId, command, timeout, lineCallback)
     }
 

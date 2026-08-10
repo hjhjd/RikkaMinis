@@ -3,7 +3,7 @@ package com.openminis.app.execplane
 import android.util.Log
 import com.openminis.app.sandbox.ExecutionCoordinator
 
-/** Routes the existing shell interface to the selected sandbox with PRoot fallback. */
+/** Routes the existing shell interface to an explicit/default sandbox. */
 class SandboxCommandRouter(
     private val settings: ExecPlaneSettingsRepository,
     private val bridge: ExecPlaneBridge,
@@ -13,8 +13,17 @@ class SandboxCommandRouter(
         command: String,
         timeoutMs: Long,
         lineCallback: ((String) -> Unit)?,
+        requestedSandbox: String?,
     ): ExecutionCoordinator.CommandResult? {
-        val server = settings.selectedForwardServer() ?: return null
+        val explicit = requestedSandbox?.trim()?.takeIf { it.isNotEmpty() }
+        val server = if (explicit != null) {
+            settings.forwardServers.value.firstOrNull {
+                it.name.equals(explicit, ignoreCase = true) || it.id == explicit
+            } ?: throw IllegalArgumentException("Unknown sandbox: $explicit")
+        } else {
+            settings.selectedForwardServer() ?: return null
+        }
+
         return try {
             val remote = bridge.exec(server.name, command, timeoutMs)
             val combined = buildString {
@@ -29,17 +38,22 @@ class SandboxCommandRouter(
                 output = combined,
                 exitCode = remote.exitCode,
                 durationMs = remote.durationMs ?: 0L,
+                sandboxName = server.name,
             )
         } catch (error: RemoteChannelException) {
-            // Channel unavailable: return null so ExecutionCoordinator runs the
-            // same command once in built-in PRoot. Business failures never land here.
+            if (explicit != null) {
+                // Explicit targeting must be truthful: never execute elsewhere.
+                throw IllegalStateException("Sandbox '$explicit' unavailable: ${error.message}", error)
+            }
             Log.w(TAG, "[$sessionId] ${server.name} unavailable; falling back to PRoot: ${error.message}")
-            null
+            ExecutionCoordinator.executeLocal(sessionId, command, timeoutMs, lineCallback)
+                .copy(degraded = true)
         } catch (error: RemoteExecutionException) {
             ExecutionCoordinator.CommandResult(
                 output = error.message ?: "Remote command failed",
                 exitCode = 1,
                 durationMs = 0L,
+                sandboxName = server.name,
             )
         }
     }

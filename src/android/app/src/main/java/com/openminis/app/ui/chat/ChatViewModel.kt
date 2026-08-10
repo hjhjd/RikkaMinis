@@ -7860,6 +7860,7 @@ class ChatViewModel(
             val timeoutSec = args.optInt("timeout", 900).coerceIn(1, 900)
             val delaySec = args.optInt("delay", 0).coerceAtLeast(0)
             val toolTitle = args.optString("tool_title", "shell_execute")
+            val requestedSandbox = args.optString("sandbox", "").trim().ifEmpty { null }
 
             if (command.isBlank()) {
                 return ToolExecutionResult("Error: 'command' is required", false, toolTitle = toolTitle)
@@ -7914,7 +7915,12 @@ class ChatViewModel(
             var bashScript: String? = null   // set when we bash-wrapped; enables M5 self-heal retry
             if (bashism.needsBash) {
                 val executor = OnDemandBash.Executor { c, t ->
-                    ExecutionCoordinator.execute(sessionId = dispatchSessionId, command = c, timeout = t).exitCode
+                    ExecutionCoordinator.execute(
+                        sessionId = dispatchSessionId,
+                        command = c,
+                        timeout = t,
+                        sandbox = requestedSandbox,
+                    ).exitCode
                 }
                 when (val outcome = OnDemandBash.ensureBash(context, executor)) {
                     is OnDemandBash.Outcome.Available -> {
@@ -7961,6 +7967,7 @@ class ChatViewModel(
                         }
                     }
                 },
+                sandbox = requestedSandbox,
             )
 
             // [T-bash-on-demand] M5 self-heal: our bash wrapper returns sentinel
@@ -7973,12 +7980,21 @@ class ChatViewModel(
                     result.exitCode == (BASH_MISSING_SENTINEL shl 8)) && bashScript != null) {
                 OnDemandBash.markDisappeared()
                 val executor = OnDemandBash.Executor { c, t ->
-                    ExecutionCoordinator.execute(sessionId = dispatchSessionId, command = c, timeout = t).exitCode
+                    ExecutionCoordinator.execute(
+                        sessionId = dispatchSessionId,
+                        command = c,
+                        timeout = t,
+                        sandbox = requestedSandbox,
+                    ).exitCode
                 }
                 val healed = OnDemandBash.ensureBash(context, executor)
                 command = if (healed is OnDemandBash.Outcome.Available) wrapForBash(bashScript!!) else bashScript!!
                 result = ExecutionCoordinator.execute(
-                    sessionId = dispatchSessionId, command = command, timeout = timeoutSec * 1000L)
+                    sessionId = dispatchSessionId,
+                    command = command,
+                    timeout = timeoutSec * 1000L,
+                    sandbox = requestedSandbox,
+                )
             }
 
             // Also scrub markers from the aggregated one-shot output and
@@ -7998,7 +8014,12 @@ class ChatViewModel(
             // Done after exitInfo is appended so the suffix can't accidentally
             // contain a secret that escaped masking. The user-visible streamed
             // content (toolBlocks above) is intentionally left unmasked.
-            val finalOutput = "$output$exitInfo"
+            val sandboxHeader = buildString {
+                append("[sandbox: ${result.sandboxName}")
+                if (result.degraded) append(" · fallback")
+                append("]")
+            }
+            val finalOutput = "$sandboxHeader\n$output$exitInfo"
             val (redactedOut, redactHits) = com.openminis.app.data.EnvVarRedactor.redactIfEnabled(finalOutput)
             if (redactHits > 0) {
                 android.util.Log.i("EnvVarRedact", "shell_execute: masked $redactHits env-var value(s) in tool result")

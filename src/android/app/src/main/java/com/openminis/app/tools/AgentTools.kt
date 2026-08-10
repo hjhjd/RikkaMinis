@@ -38,18 +38,19 @@ object AgentTools {
     // Aligned with iOS AIChatViewModel.swift:4982-4993
     private fun shellExecuteDefinition(): AgentToolDefinition = AgentToolDefinition(
         name = "shell_execute",
-        description = "Execute a command in an isolated Linux process (Alpine Linux via PRoot). " +
-            "The command runs via /bin/sh -c with stdout and stderr merged. " +
-            "Each invocation spawns a fresh process — there is no shared terminal session. " +
-            "Default timeout is 15 minutes.",
+        description = "Execute a command in a selectable sandbox. Set sandbox='proot' for built-in PRoot, or use a saved WebSocket Server name. " +
+            "When sandbox is omitted, the Settings default is used; only that default route may fall back to PRoot on channel failure. " +
+            "An explicitly named unavailable sandbox fails instead of running elsewhere. The result begins with the actual sandbox name. " +
+            "The command runs via /bin/sh -c with stdout and stderr merged. Each invocation is independent. Default timeout is 15 minutes.",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Install Python data analysis packages', 'List files in home directory'). Use the same language as the user."),
             "command" to AgentToolParam("string", "The shell command to execute. Supports multi-line commands directly — no special escaping needed. Keep under 1000 chars; for longer scripts, write to a file with file_write first, then run it."),
+            "sandbox" to AgentToolParam("string", "Sandbox for this invocation: 'proot' for built-in PRoot, or the exact name of a saved WebSocket Server. Omit to use the default selected in Settings."),
             "timeout" to AgentToolParam("integer", "Timeout in seconds (default: 900). Use a larger value for long-running commands like package installs."),
             "delay" to AgentToolParam("integer", "Delay in seconds before execution begins. The tool blocks the agent flow during this wait WITHOUT occupying the shell, so other concurrent tasks can use it. Use this instead of sleep commands to avoid resource contention."),
         ),
         required = listOf("tool_title", "command"),
-        propertyOrdering = listOf("tool_title", "command", "timeout", "delay"),
+        propertyOrdering = listOf("tool_title", "command", "sandbox", "timeout", "delay"),
     )
 
     // Aligned with iOS AIChatViewModel.swift browser_use definition
