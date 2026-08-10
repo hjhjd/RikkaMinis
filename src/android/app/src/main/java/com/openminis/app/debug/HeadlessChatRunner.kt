@@ -54,6 +54,7 @@ internal object HeadlessChatRunner {
             ChatViewModel.factory(
                 sessionId = sessionId,
                 chatRepository = app.chatRepository,
+                agentRepository = app.agentRepository,
                 providerRepository = app.providerRepository,
                 appContext = app.applicationContext,
                 memoryRepository = app.memoryRepository,

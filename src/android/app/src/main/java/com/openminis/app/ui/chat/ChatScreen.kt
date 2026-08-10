@@ -399,6 +399,7 @@ fun ChatScreen(
      */
     focusMessageId: String? = null,
     chatRepository: ChatRepository,
+    agentRepository: com.openminis.app.data.repository.AgentRepository,
     providerRepository: ProviderRepository,
     memoryRepository: MemoryRepository? = null,
     skillRepository: com.openminis.app.data.repository.SkillRepository? = null,
@@ -445,6 +446,7 @@ fun ChatScreen(
             sessionId = sessionId,
             draftAgentId = draftAgentId,
             chatRepository = chatRepository,
+            agentRepository = agentRepository,
             providerRepository = providerRepository,
             appContext = context.applicationContext,
             memoryRepository = memoryRepository,

@@ -390,6 +390,7 @@ class MainActivity : ComponentActivity() {
 
                 AppNavigation(
                     chatRepository = app.chatRepository,
+                    agentRepository = app.agentRepository,
                     providerRepository = app.providerRepository,
                     envVarRepository = app.envVarRepository,
                     skillRepository = app.skillRepository,

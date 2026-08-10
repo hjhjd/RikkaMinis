@@ -86,6 +86,7 @@ class ChatViewModel(
     internal val sessionId: String,
     private val draftAgentId: String? = null,
     private val chatRepository: ChatRepository,
+    private val agentRepository: com.openminis.app.data.repository.AgentRepository,
     private val providerRepository: ProviderRepository,
     internal val context: Context,
     val memoryRepository: MemoryRepository? = null,
@@ -311,6 +312,7 @@ class ChatViewModel(
             sessionId: String,
             draftAgentId: String? = null,
             chatRepository: ChatRepository,
+            agentRepository: com.openminis.app.data.repository.AgentRepository,
             providerRepository: ProviderRepository,
             appContext: Context,
             memoryRepository: MemoryRepository?,
@@ -323,6 +325,7 @@ class ChatViewModel(
                     sessionId = sessionId,
                     draftAgentId = draftAgentId,
                     chatRepository = chatRepository,
+                    agentRepository = agentRepository,
                     providerRepository = providerRepository,
                     context = appContext,
                     memoryRepository = memoryRepository,
@@ -675,6 +678,14 @@ class ChatViewModel(
             ?: com.openminis.app.data.db.AgentIds.DEFAULT,
     )
     val activeAgentId: StateFlow<String> = _activeAgentId.asStateFlow()
+    private val _activeAgent = MutableStateFlow<com.openminis.app.data.db.AgentEntity?>(null)
+    val activeAgent: StateFlow<com.openminis.app.data.db.AgentEntity?> = _activeAgent.asStateFlow()
+
+    private suspend fun loadActiveAgent(id: String) {
+        val resolved = agentRepository.get(id) ?: agentRepository.defaultAgent()
+        _activeAgentId.value = resolved.id
+        _activeAgent.value = resolved
+    }
 
     private val _sessionTitle = MutableStateFlow("New Chat")
     val sessionTitle: StateFlow<String> = _sessionTitle.asStateFlow()
@@ -3084,6 +3095,7 @@ class ChatViewModel(
             _availableGroups.value = config.modelGroups
 
             if (isDraft) {
+                loadActiveAgent(_activeAgentId.value)
                 // Draft session: just set up provider using default group or first entry
                 _sessionTitle.value = "New Chat"
                 _sessionCategory.value = null
@@ -3112,7 +3124,7 @@ class ChatViewModel(
             val session = chatRepository.getSession(sessionId) ?: return@launch
             // Persisted ownership is authoritative. Route agentId exists only
             // for drafts and must never rebind an existing topic.
-            _activeAgentId.value = session.agentId
+            loadActiveAgent(session.agentId)
             _sessionTitle.value = session.title ?: "New Chat"
             _sessionCategory.value = session.category
             _memoryEnabled.value = session.memoryEnabled != 0
@@ -8899,7 +8911,10 @@ class ChatViewModel(
         // has no personality body, identitySection() returns the identity
         // sentence with its original single trailing space — the full
         // assembled prompt then matches the pre-SOUL prompt byte-for-byte.
-        val identitySection = com.openminis.app.agent.SystemPromptBuilder.identitySection(context)
+        val identitySection = com.openminis.app.agent.AgentPromptRenderer.render(
+            context,
+            _activeAgent.value,
+        )
         // [T-memory-toggle-gates-injection-and-tools-android] Mirror the iOS
         // gate: when memory is disabled for this session, replace the
         // "memory_write / memory_get" tool bullets and the "Memory system:"

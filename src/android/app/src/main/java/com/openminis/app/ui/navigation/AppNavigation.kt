@@ -237,6 +237,7 @@ internal object FilePreviewHolder {
 @Composable
 fun AppNavigation(
     chatRepository: ChatRepository,
+    agentRepository: com.openminis.app.data.repository.AgentRepository,
     providerRepository: ProviderRepository,
     envVarRepository: EnvVarRepository? = null,
     skillRepository: SkillRepository? = null,
@@ -533,6 +534,7 @@ fun AppNavigation(
                 draftAgentId = draftAgentId,
                 focusMessageId = focusMessageId,
                 chatRepository = chatRepository,
+                agentRepository = agentRepository,
                 providerRepository = providerRepository,
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,

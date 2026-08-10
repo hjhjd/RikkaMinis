@@ -164,9 +164,9 @@ UI 合并，但底层仍需区分信任边界：
 
 ### 阶段 2：运行时 Agent 化
 
-- [x] `ChatViewModel` 加载 session 时恢复绑定 Agent id（Agent 实体内容加载待下一批）。
+- [x] `ChatViewModel` 加载 session 时恢复绑定 Agent 实体；缺失 Agent 回退默认 Agent。
 - [x] 草稿路由携带稳定 `agentId`；草稿提升为真实 session 时保留绑定。
-- [ ] `buildSystemPrompt()` 改为显式接收/解析 Agent 配置。
+- [x] `buildSystemPrompt()` 已按 Agent 渲染身份与 instructions；完整装配顺序随独立记忆接入后最终固定。
 - [ ] 按“平台模板 → Agent 指令 → 技能/MCP → Agent 记忆 → runtime”固定装配顺序。
 - [x] 技能 fragment 改用 agent + session 两层解析。
 - [ ] memory tools、GLOBAL.md、daily logs 改用 Agent memory repository。
