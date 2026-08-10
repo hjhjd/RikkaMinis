@@ -111,6 +111,17 @@
     <!-- T-soul-md — SOUL.md 人格 / 身份配置 -->
     <string name="settings_soul">人格</string>
     <string name="settings_soul_subtitle">持久化人格与身份（SOUL.md）</string>
+    <string name="settings_system_prompt">系统提示词</string>
+    <string name="settings_system_prompt_subtitle">自定义注入提示词，留空使用中文默认值</string>
+    <string name="system_prompt_settings_title">系统提示词</string>
+    <string name="system_prompt_identity_title">身份模板</string>
+    <string name="system_prompt_identity_footer">支持 {name} 占位符。留空使用内置中文身份提示词。</string>
+    <string name="system_prompt_main_title">主提示词</string>
+    <string name="system_prompt_main_footer">支持 {{memory_tool_bullets}} 和 {{memory_system_section}} 占位符。技能、MCP、记忆内容和运行时上下文仍会自动追加。</string>
+    <string name="system_prompt_default_placeholder">留空——使用内置中文默认值</string>
+    <string name="system_prompt_use_default">使用默认值</string>
+    <string name="system_prompt_saved">已保存，将从下一次请求开始生效。</string>
+    <string name="system_prompt_apply_footer">自定义内容对所有会话生效。清空任一字段即可恢复该字段的内置默认值。</string>
     <string name="soul_settings_title">人格</string>
     <string name="soul_section_preview">预览</string>
     <string name="soul_section_identity">身份</string>

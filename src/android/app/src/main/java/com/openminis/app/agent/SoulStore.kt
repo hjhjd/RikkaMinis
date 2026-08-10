@@ -285,9 +285,7 @@ object SoulStore {
      * double-up "You are X" lines whenever the template-rendered prompt
      * also produces one.
      *
-     * Defaults are in English so they read cleanly regardless of the
-     * user's display language; users extend from there. Mirrors iOS
-     * `SoulStore.defaultContent` byte-for-byte (74c0daf).
+     * 默认人格正文使用中文；已有 SOUL.md 属于用户数据，升级时不会被覆盖。
      */
     val DEFAULT_CONTENT: String = """---
 name: "RikkaMinis"
@@ -295,11 +293,11 @@ style: ""
 lang: "auto"
 ---
 
-**Don't perform — help.** Skip the "Sure!" and "Happy to assist!" — just do the work.
+**不要表演——直接帮忙。** 跳过“当然可以！”和“很高兴为你效劳！”之类的客套话，直接完成工作。
 
-**Have a stance.** It's fine to disagree, prefer one thing over another, find some things interesting and others dull.
+**要有立场。** 可以提出不同意见、表达偏好，也可以觉得某些事情有趣而另一些乏味。
 
-**Act first, ask second.** If you can look it up, look it up. Come back with answers, not questions.
+**先行动，再提问。** 能自己查清楚的就去查，带着答案回来，而不是只抛出问题。
 """
 
     /**
@@ -415,15 +413,7 @@ object SystemPromptBuilder {
     fun containsInjectionPattern(s: String): Boolean =
         INJECTION_PATTERNS.any { it.containsMatchIn(s) }
 
-    /**
-     * The identity sentence template. `{name}` is substituted from the
-     * SOUL metadata. This wording matches the pre-SOUL literal that
-     * lived inline in ChatViewModel.buildSystemPrompt — keep it in sync
-     * if you ever need to tweak the runtime statement, because every
-     * Android chat hits this line.
-     */
-    private const val IDENTITY_TEMPLATE =
-        "You are {name}, a capable AI assistant running on an Android device with a fully functional Linux sandbox (Alpine Linux via PRoot, aarch64). "
+    /** 身份模板由 [SystemPromptPreferences] 统一提供；内置默认值位于 assets/prompts。 */
 
     /**
      * Render the identity sentence (template + name) and optionally
@@ -467,12 +457,13 @@ object SystemPromptBuilder {
         // the existing follow-the-user behavior.
         val lang = file?.metadata?.lang?.lowercase()?.trim().orEmpty()
         val langDirective = when (lang) {
-            "zh" -> "\n\nReply in Chinese regardless of the user's input language; only switch when the user explicitly asks for another language."
-            "en" -> "\n\nReply in English regardless of the user's input language; only switch when the user explicitly asks for another language."
-            else -> "" // "auto" or unknown → follow the user's input (base prompt default)
+            "zh" -> "\n\n无论用户使用何种语言输入，都使用中文回复；只有用户明确要求其他语言时才切换。"
+            "en" -> "\n\n无论用户使用何种语言输入，都使用英文回复；只有用户明确要求其他语言时才切换。"
+            else -> "" // “自动”或未知值：跟随用户输入语言
         }
 
-        val identity = IDENTITY_TEMPLATE.replace("{name}", name)
+        val identity = SystemPromptPreferences.identityTemplate(context)
+            .replace(SystemPromptPreferences.NAME_PLACEHOLDER, name)
         val identityTrimmed = identity.trimEnd()
 
         // [T-soul-hint] Fixed hint telling the model how SOUL fields can be
@@ -482,10 +473,10 @@ object SystemPromptBuilder {
         // SOUL body length limit (#356 / 1000 EN words / 1600 CN chars).
         val soulEditHint =
             "---\n" +
-            "SOUL.md fields (name / style / lang / body) can be edited two ways:\n" +
-            "1. Tool: call `minis-config` to propose changes (user must approve).\n" +
-            "2. UI: ask the user to go to Settings → Soul to edit directly.\n" +
-            "Pick whichever the user finds easier in context. Do not say you cannot change your personality."
+            "SOUL.md 字段（name / style / lang / body）可以通过两种方式编辑：\n" +
+            "1. 工具：调用 `minis-config` 提议修改（必须由用户确认）。\n" +
+            "2. 界面：请用户直接前往设置 → 人格。\n" +
+            "根据当前情境选择用户更方便的方式；不要声称无法修改自己的人格。"
 
         // [T-soul-style-injection 2026-05-18, port iOS 0409e24f] The `style`
         // frontmatter field (response voice / tone / formatting preference,
@@ -499,7 +490,7 @@ object SystemPromptBuilder {
             // [T-agent-prompt-consistency-pass] Mirrors iOS SoulStore: a user-authored
             // style that prescribes a reply language is the more specific preference
             // and wins over the base prompt's match-the-user's-language default.
-            return "\n\nResponse style (from SOUL.md `style` — apply to every reply unless the user explicitly asks otherwise; if it prescribes a reply language, it overrides the default match-the-user's-language rule):\n$s"
+            return "\n\n回复风格（来自 SOUL.md 的 `style`；除非用户明确要求，否则每次回复都应遵循；如果其中指定了回复语言，则优先于默认的语言跟随规则）：\n$s"
         }
 
         val body = file?.body
@@ -527,7 +518,7 @@ object SystemPromptBuilder {
         // Strip the trailing space we'd otherwise leave hanging at the
         // end of the first paragraph when a personality block follows.
         return identityTrimmed +
-            "\n\nPersonality (from SOUL.md — your character and voice; defer to the user's latest message when it conflicts with anything here):\n" +
+            "\n\n人格（来自 SOUL.md，定义你的性格与表达方式；若与用户最新消息冲突，以用户最新消息为准）：\n" +
             personality +
             styleBlock(style) +
             langDirective +

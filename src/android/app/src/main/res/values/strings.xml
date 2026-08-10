@@ -208,6 +208,17 @@
     <!-- T-soul-md — SOUL.md personality / identity settings -->
     <string name="settings_soul">Soul</string>
     <string name="settings_soul_subtitle">Persistent personality and identity (SOUL.md)</string>
+    <string name="settings_system_prompt">System Prompt</string>
+    <string name="settings_system_prompt_subtitle">Override injected prompts; blank uses Chinese defaults</string>
+    <string name="system_prompt_settings_title">System Prompt</string>
+    <string name="system_prompt_identity_title">Identity Template</string>
+    <string name="system_prompt_identity_footer">Supports {name}. Leave blank to use the built-in Chinese identity prompt.</string>
+    <string name="system_prompt_main_title">Main Prompt</string>
+    <string name="system_prompt_main_footer">Supports {{memory_tool_bullets}} and {{memory_system_section}}. Dynamic skills, MCP, memory content and runtime context are appended automatically.</string>
+    <string name="system_prompt_default_placeholder">Blank — use built-in Chinese default</string>
+    <string name="system_prompt_use_default">Use Default</string>
+    <string name="system_prompt_saved">Saved. It will apply when the next request is built.</string>
+    <string name="system_prompt_apply_footer">Custom values apply to all chats. Clearing either field restores that field’s built-in default.</string>
     <string name="soul_settings_title">Soul</string>
     <string name="soul_section_preview">Preview</string>
     <string name="soul_section_identity">Identity</string>

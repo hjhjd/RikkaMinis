@@ -73,6 +73,7 @@ fun SettingsScreen(
     // Agent Runtime section; default no-op for callers that haven't wired
     // the route yet.
     onSoulClick: () -> Unit = {},
+    onSystemPromptClick: () -> Unit = {},
     onPermissionsClick: () -> Unit = {},
     onUsageClick: () -> Unit = {},
     onAppearanceClick: () -> Unit = {},
@@ -166,6 +167,13 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_soul),
                     subtitle = stringResource(R.string.settings_soul_subtitle),
                     onClick = onSoulClick,
+                )
+                SettingsItem(
+                    icon = Icons.Outlined.Description,
+                    iconColor = Color(0xFFAF52DE),
+                    title = stringResource(R.string.settings_system_prompt),
+                    subtitle = stringResource(R.string.settings_system_prompt_subtitle),
+                    onClick = onSystemPromptClick,
                 )
                 SettingsItem(
                     icon = Icons.Outlined.Psychology,
