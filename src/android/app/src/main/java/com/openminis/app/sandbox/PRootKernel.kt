@@ -196,10 +196,15 @@ object PRootKernel {
      */
     fun registerGlobalBindMounts(context: Context) {
         val globalBase = File(context.filesDir, "minis-global")
-        // [T-mcp-integration-android] mcp-servers is global (like memory/skills):
+        // Generic callers without session context resolve /var/minis/memory to
+        // the migrated default Agent. Session-aware tools override this via
+        // resolveSessionHostPath and never use this fallback.
+        val defaultMemory = File(context.filesDir, "minis-agents/default/memory").also { it.mkdirs() }
+        bindMounts["/var/minis/memory"] = defaultMemory.absolutePath
+        // [T-mcp-integration-android] mcp-servers is global (like skills/shared):
         // binding it here makes the in-PRoot minis-mcp-cli read/write the SAME
         // servers.json the Android Settings UI does (host: minis-global/mcp-servers).
-        listOf("memory", "skills", "shared", "mcp-servers").forEach { subdir ->
+        listOf("skills", "shared", "mcp-servers").forEach { subdir ->
             val hostDir = File(globalBase, subdir).also { it.mkdirs() }
             bindMounts["/var/minis/$subdir"] = hostDir.absolutePath
         }
@@ -671,6 +676,21 @@ object PRootKernel {
     /** Subdirs that live under `minis-sessions/<sessionId>/` rather than the global pool. */
     private val perSessionSubdirs = setOf("attachments", "offloads", "workspace", "browser")
 
+    /** Agent memory directory selected for each persisted or draft session. */
+    private val sessionMemoryDirs = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun setSessionMemoryDirectory(sessionId: String, directory: File) {
+        directory.mkdirs()
+        sessionMemoryDirs[sessionId] = directory.absolutePath
+    }
+
+    fun renameSessionMemoryDirectory(fromSessionId: String, toSessionId: String) {
+        sessionMemoryDirs[fromSessionId]?.let { sessionMemoryDirs[toSessionId] = it }
+    }
+
+    fun sessionMemoryDirectory(sessionId: String): File? =
+        sessionMemoryDirs[sessionId]?.let(::File)
+
     /**
      * Resolve a `/var/minis/...` Linux path directly against a specific session's
      * host directory, bypassing the global [bindMounts] map. Use this when the
@@ -686,6 +706,11 @@ object PRootKernel {
         val rest = linuxPath.removePrefix("/var/minis/")
         val slash = rest.indexOf('/')
         val subdir = if (slash < 0) rest else rest.substring(0, slash)
+        if (subdir == "memory") {
+            val memoryBase = sessionMemoryDirectory(sessionId) ?: return resolveHostPath(linuxPath)
+            val tail = if (slash < 0) "" else rest.substring(slash + 1)
+            return if (tail.isEmpty()) memoryBase else File(memoryBase, tail)
+        }
         if (subdir !in perSessionSubdirs) return resolveHostPath(linuxPath)
         val sessionBase = File(context.filesDir, "minis-sessions/$sessionId/$subdir")
         val tail = if (slash < 0) "" else rest.substring(slash + 1)

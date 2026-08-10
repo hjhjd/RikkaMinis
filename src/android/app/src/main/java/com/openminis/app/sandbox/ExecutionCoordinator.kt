@@ -323,8 +323,15 @@ object ExecutionCoordinator {
         // server (the UI / debug.ls read via resolveHostPath, a separate map,
         // which is why they disagreed). Same trap as the external-mounts note
         // below.
+        // Agent-scoped memory compatibility alias. Unlike skills/shared this
+        // stays local to the PersistentShell and is never written into the
+        // global bind map, so concurrent Agent sessions cannot overwrite it.
+        val agentMemoryDir = PRootKernel.sessionMemoryDirectory(sessionId)
+            ?: File(filesDir, "minis-agents/default/memory").also { it.mkdirs() }
+        mounts["/var/minis/memory"] = agentMemoryDir.absolutePath
+
         val globalBase = File(filesDir, "minis-global")
-        listOf("memory", "skills", "shared", "mcp-servers").forEach { subdir ->
+        listOf("skills", "shared", "mcp-servers").forEach { subdir ->
             val hostDir = File(globalBase, subdir).also { it.mkdirs() }
             val linuxPath = "/var/minis/$subdir"
             mounts[linuxPath] = hostDir.absolutePath

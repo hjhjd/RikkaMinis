@@ -693,6 +693,14 @@ class ChatViewModel(
         val resolved = agentRepository.get(id) ?: agentRepository.defaultAgent()
         _activeAgentId.value = resolved.id
         _activeAgent.value = resolved
+        agentMemoryRepositoryFactory?.let { factory ->
+            val dir = factory.directory(resolved.id)
+            dir.mkdirs()
+            com.openminis.app.sandbox.PRootKernel.setSessionMemoryDirectory(sessionId, dir)
+            realSessionId.takeIf { it.isNotEmpty() }?.let { real ->
+                com.openminis.app.sandbox.PRootKernel.setSessionMemoryDirectory(real, dir)
+            }
+        }
     }
 
     private val _sessionTitle = MutableStateFlow("New Chat")
@@ -2956,6 +2964,7 @@ class ChatViewModel(
         // sessionId so re-entering the session reuses the same instance.
         if (isDraft) {
             ChatViewModelStore.rename(sessionId, session.id)
+            com.openminis.app.sandbox.PRootKernel.renameSessionMemoryDirectory(sessionId, session.id)
             // Bring every disk/shell resource that was opened with the draft
             // id over to the real id *before* agent tools start running against
             // the persisted session — otherwise the first tool call (e.g.
