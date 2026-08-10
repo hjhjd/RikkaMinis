@@ -133,6 +133,111 @@ W^X 绕过补丁构建。通过 AGP 的 CMake 块产出的二进制能编译通�
 
 ---
 
+## PRoot 与 WebSocket 沙箱
+
+RikkaMinis 现在支持两类执行环境：设备内置的 **PRoot 沙箱**，以及通过
+ExecPlane 协议接入的 **WebSocket（WS）沙箱**。二者共享同一个聊天工具入口，
+但运行位置、文件系统和可用能力并不相同。
+
+### 内置 PRoot 沙箱
+
+PRoot 是默认的本地执行环境。应用在 Android 设备上启动 Alpine Linux
+minirootfs，智能体可以安装软件包、运行脚本和操作文件，同时由 App 将会话文件、
+全局共享目录及外部存储绑定到 `/var/minis/`：
+
+```text
+/var/minis/workspace      当前会话工作区
+/var/minis/attachments    当前会话附件
+/var/minis/offloads       大输出文件
+/var/minis/browser        浏览器产物
+/var/minis/shared         全局共享文件
+/var/minis/skills         技能包
+/var/minis/memory         持久记忆
+/var/minis/mounts         用户授权的外部文件夹
+```
+
+Android 原生能力——如日历、联系人、定位、闹钟、通知、照片、浏览器和
+`minis-*` 配置工具——也通过 native offload 从 PRoot 回到 App 执行。因此 PRoot
+不仅是一条 Shell 通道，也是与 Android 数据面和宿主能力集成最完整的沙箱。
+
+### WebSocket 沙箱
+
+WS 沙箱允许把命令和文件任务交给另一个 Linux 容器或主机执行。入口位于
+**设置 → 沙箱**：可以保存多个 WS 服务端、查看在线状态和能力，并选择 PRoot
+或某个 WS 作为默认命令沙箱。`shell_execute` 也可通过 `sandbox` 参数按名称显式
+指定执行体，结果会标明实际使用的沙箱。
+
+ExecPlane 支持两种网络拓扑：
+
+- **正向连接**：Minis App 主动连接容器中的 `ws-server.py`；
+- **反向连接**：容器中的 `ws-agent.py` 主动注册到 Minis App。
+
+执行端按实际能力注册。当前参考实现支持：
+
+```text
+exec / status
+fs.stat / fs.list / fs.read / fs.write / fs.mkdir / fs.remove / fs.move
+transfer.push / transfer.pull
+env.inject
+```
+
+对应的用户能力包括：
+
+- 在指定 WS 中执行 Shell 命令；
+- 让 `file_read`、`file_write`、`file_edit` 显式操作远程文件；
+- 用 `sandbox_file_push` / `sandbox_file_pull` 在 App 与 WS 之间传输文件或目录；
+- 保留嵌套目录、空目录和 Unicode 文件名，并进行分块与 SHA-256 校验；
+- 使用 `fail`、`replace_file`、`replace_directory` 等明确的冲突策略；
+- 通过 `read_image(sandbox=...)` 直接读取并分析远程图片；
+- 将获准的环境变量仅注入单次远程子进程，不写入远端配置文件。
+
+### 文件系统边界
+
+WS 与 PRoot **不共享文件系统**。两边即使都存在 `/var/minis/workspace/a.txt`，
+也只是两个互不相关的同名文件：
+
+```text
+file_write(path="/var/minis/workspace/a.py")
+# 默认写入 App/PRoot 文件空间
+
+shell_execute(command="python /var/minis/workspace/a.py", sandbox="build-server")
+# 在 build-server 自己的文件系统中查找该路径
+```
+
+跨边界任务必须显式传输：
+
+```text
+App/PRoot 文件  -- sandbox_file_push -->  WS
+App/PRoot 文件  <-- sandbox_file_pull --  WS 构建产物
+```
+
+只有 Pull 回 App 并通过完整性校验的文件，才能成为可在聊天中预览或分享的
+`minis://` 资源。Skills 不使用专门同步协议；需要时可把普通技能目录 Push 到 WS。
+手机外部存储挂载也不会自动出现在远端容器中。
+
+### 路由与降级规则
+
+- 显式指定 `sandbox="某个WS"` 时，连接离线或能力不足会直接报错，绝不偷偷改在
+  PRoot 执行；
+- 只有“使用设置中的默认 WS”且发生通道类故障时，命令路由才允许降级到 PRoot，
+  并在结果中标记实际沙箱和 degraded 状态；
+- 远程命令本身返回非零退出码、文件冲突、权限不足或校验失败，都不会触发 PRoot
+  重跑；
+- 文件工具只有显式填写 WS 名称才操作远端，省略 `sandbox` 时保持本地行为。
+
+这种设计避免把“远端失败”误装成“本地成功”，也防止同一条有副作用的命令在两个
+环境里重复执行。
+
+### 部署执行端
+
+新容器不要求 systemd。最小条件只有 Python + `websockets`、同版本执行端文件、
+高强度 Token、至少一个 `--allow-root`，以及在 App 中配置连接。正向和反向模式、
+完整启动命令、安全边界、传输限制与验收方法见：
+
+**→ [tools/execplane/README.md](tools/execplane/README.md)**
+
+---
+
 ## 内置平台集成（GitHub / Cloudflare / Hugging Face）
 
 > **这一节是本 fork 相对上游最重要、也最容易忽略的结构性改动。**
@@ -200,7 +305,8 @@ token 只用于这些显式请求的鉴权。
 | | |
 |---|---|
 | **自带模型** | Claude、GPT、Gemini 及其他提供方，使用你自己的 API 密钥或账号登录。 |
-| **真正的 Linux Shell** | 设备上运行沙箱化的 Alpine Linux 环境——智能体可以安装软件包、运行脚本、操作真实文件。 |
+| **真正的 Linux Shell** | 内置 PRoot/Alpine 沙箱，并可通过 ExecPlane 接入一个或多个 WebSocket Linux 容器；命令可显式选择执行体。 |
+| **WS 远程数据面** | 远程文件读写、文件与目录 Push/Pull、分块校验、远程图片读取和单次环境变量注入；WS 与 PRoot 文件系统保持显式隔离。 |
 | **设备集成** | 日历、联系人、剪贴板、定位、媒体、闹钟、通知等，作为工具开放给智能体。 |
 | **浏览器自动化** | 智能体可以代表你浏览并操作网页。 |
 | **技能与记忆** | 可扩展技能 + 跨会话的持久记忆。完整技能包与记忆文件包含在本地备份中。 |
