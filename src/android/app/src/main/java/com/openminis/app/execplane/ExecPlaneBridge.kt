@@ -49,13 +49,15 @@ class ExecPlaneBridge(
         if (!enabled) stop() else start(port)
     }
 
-    fun start(port: Int = settings.port.value) = synchronized(lock) {
-        if (server?.listenPort == port && _status.value.state == WsBridgeState.LISTENING) return
-        stopLocked()
-        _status.value = WsBridgeStatus(WsBridgeState.STARTING, port)
-        ReverseServer(port, settings.token()).also {
-            server = it
-            runCatching { it.start() }.onFailure { error -> reportError(port, error) }
+    fun start(port: Int = settings.port.value) {
+        synchronized(lock) {
+            if (server?.listenPort == port && _status.value.state == WsBridgeState.LISTENING) return
+            stopLocked()
+            _status.value = WsBridgeStatus(WsBridgeState.STARTING, port)
+            ReverseServer(port, settings.token()).also {
+                server = it
+                runCatching { it.start() }.onFailure { error -> reportError(port, error) }
+            }
         }
     }
 
@@ -115,11 +117,11 @@ class ExecPlaneBridge(
             when (request.method) {
                 "register" -> register(peer, request)
                 "ping" -> {
-                    peer.name?.let { connections.markSeen(it, peer.id) }
+                    peer.name?.let { this@ExecPlaneBridge.connections.markSeen(it, peer.id) }
                     sendOk(conn, request.id, JsonObject(emptyMap()))
                 }
                 "status" -> {
-                    peer.name?.let { connections.markSeen(it, peer.id) }
+                    peer.name?.let { this@ExecPlaneBridge.connections.markSeen(it, peer.id) }
                     sendOk(conn, request.id, JsonObject(emptyMap()))
                 }
                 // No remote shell until Guard + audit are implemented.
@@ -143,14 +145,14 @@ class ExecPlaneBridge(
                 send(peer.socket, RpcResponse(request.id, false, error = validation.error))
                 return
             }
-            peer.name?.let { connections.disconnect(it, peer.id) }
+            peer.name?.let { this@ExecPlaneBridge.connections.disconnect(it, peer.id) }
             peer.name = params.name
-            connections.register(peer, params)
+            this@ExecPlaneBridge.connections.register(peer, params)
             sendOk(peer.socket, request.id, JsonObject(emptyMap()))
         }
 
         override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
-            peers.remove(conn)?.let { peer -> peer.name?.let { connections.disconnect(it, peer.id) } }
+            peers.remove(conn)?.let { peer -> peer.name?.let { this@ExecPlaneBridge.connections.disconnect(it, peer.id) } }
         }
 
         override fun onError(conn: WebSocket?, ex: Exception) {
