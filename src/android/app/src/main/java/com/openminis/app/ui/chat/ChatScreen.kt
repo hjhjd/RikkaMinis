@@ -429,6 +429,10 @@ fun ChatScreen(
     /** Open another conversation from the chat-history drawer. The caller
      *  navigates to that chat (same funnel as the session list's onSessionClick). */
     onOpenSession: (String) -> Unit = {},
+    /** Open the selected Agent's latest topic, or a fresh draft when none exists. */
+    onOpenAgent: suspend (String) -> Unit = {},
+    onOpenAgentSettings: (String) -> Unit = {},
+    onCreateAgent: () -> Unit = {},
     /** Open Settings from the chat-history drawer footer. */
     onOpenSettings: () -> Unit = {},
 ) {
@@ -1855,7 +1859,23 @@ fun ChatScreen(
                 .collectAsState()
             ChatHistoryDrawer(
                 chatRepository = chatRepository,
+                agentRepository = agentRepository,
                 currentSessionId = sessionId,
+                currentAgentId = viewModel.activeAgentId.value,
+                onAgentClick = { agentId ->
+                    historyDrawerScope.launch {
+                        historyDrawerState.close()
+                        onOpenAgent(agentId)
+                    }
+                },
+                onAgentSettings = { agentId ->
+                    historyDrawerScope.launch { historyDrawerState.close() }
+                    onOpenAgentSettings(agentId)
+                },
+                onCreateAgent = {
+                    historyDrawerScope.launch { historyDrawerState.close() }
+                    onCreateAgent()
+                },
                 draft = draftSnapshot
                     ?.takeIf { it.text.isNotBlank() && it.id != sessionId },
                 onOpenDraft = {

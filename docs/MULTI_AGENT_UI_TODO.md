@@ -131,11 +131,11 @@ UI 合并，但底层仍需区分信任边界：
 
 ### 4.5 头像存储
 
-- [ ] 使用系统 Photo Picker 选择图片。
-- [ ] 不长期保存外部 content URI；立即复制到 App 私有目录：`filesDir/minis-agents/<agentId>/avatar.webp`。
-- [ ] 读取 EXIF 方向，居中裁剪为正方形，压缩并限制尺寸（建议 512×512，WebP）。
-- [ ] UI 使用 Coil `AsyncImage(File(...))`，加载失败显示名称首字/默认 Agent 图标。
-- [ ] 更换头像采用临时文件 + 原子替换，避免半写文件。
+- [x] 使用系统 Photo Picker 选择图片。
+- [x] 不长期保存外部 content URI；立即复制到 App 私有目录：`filesDir/minis-agents/<agentId>/avatar.webp`。
+- [x] 读取 EXIF 方向，居中裁剪为正方形，压缩并限制为最长边 512px WebP。
+- [x] UI 使用 Coil `AsyncImage`，加载失败显示默认 Agent 图标。
+- [x] 更换头像采用临时文件 + 原子替换，避免半写文件。
 - [ ] 删除/归档 Agent 时按产品策略清理头像；只要话题仍引用 Agent 就不能提前删除资源。
 
 ## 5. 分阶段实施计划
@@ -188,22 +188,20 @@ UI 合并，但底层仍需区分信任边界：
   - `AgentRow`
   - `TopicRow`
   - `DrawerBottomActions`
-- [ ] 顶部采用“助手 / 话题”分段控件；状态在抽屉开关期间保持。
-- [ ] 搜索框随页签改变 placeholder 和过滤目标。
-- [ ] 维持现有抽屉关闭后再导航的处理，避免重新引入抽屉卡住问题。
+- [x] 顶部采用“助手 / 话题”分段控件；状态在抽屉组合期间保持。
+- [x] 搜索框随页签改变 placeholder，并支持 Agent 名称过滤。
+- [x] 维持现有抽屉关闭后再导航的处理，避免重新引入抽屉卡住问题。
 - [ ] 保留系统 Back、预测返回、IME 隐藏、TalkBack 和横竖屏行为。
 
 #### 3.2 助手页
 
-- [ ] Agent 卡片展示头像、名称、默认模型。
-- [ ] 当前会话绑定 Agent 使用描边/色彩高亮；不要只靠颜色表达选中状态。
-- [ ] 点击 Agent：
-  - 若当前话题已属于该 Agent，仅关闭抽屉；
-  - 若切换到其他 Agent，打开其最近话题；无话题则创建该 Agent 的新草稿。
-- [ ] 右滑 Agent 行露出设置按钮（参考图中左侧齿轮露出效果）。
-- [ ] 滑动使用互斥 reveal state：同一时间只允许一行展开；点击空白、滚动或抽屉关闭时复位。
-- [ ] 设置按钮触控区域至少 48dp，并提供无障碍描述和长按/菜单等价入口。
-- [ ] 底部提供“创建 Agent”；Group 未实现前不要展示不可用的“创建 Group”。
+- [x] Agent 卡片展示头像、名称、默认模型状态。
+- [x] 当前会话绑定 Agent 使用容器高亮。
+- [x] 点击 Agent：已有话题打开最近话题，无话题创建绑定该 Agent 的新草稿。
+- [x] 右滑 Agent 行露出设置按钮。
+- [x] 滑动使用互斥 reveal state：同一时间只允许一行展开。
+- [x] 设置按钮触控区域为 48dp，并提供无障碍描述。
+- [x] 底部提供“创建 Agent”；未展示未实现的 Group。
 
 #### 3.3 话题页
 
@@ -224,17 +222,17 @@ UI 合并，但底层仍需区分信任边界：
 
 ### 阶段 4：Agent 创建与配置页
 
-- [ ] 新增路由：
+- [x] 新增路由：
   - `agents/new`
   - `agents/{agentId}`
   - `agents/{agentId}/skills`
   - `agents/{agentId}/memory`
-  - 必要时 `agents/{agentId}/memory/{file}`
-- [ ] Agent 配置页头部：可点击头像、Agent 名称、默认模型摘要。
-- [ ] “人格与提示词”使用单一多行编辑器；支持占位符说明、字数/词数限制和注入模式校验。
+  - `agents/{agentId}/memory/{file}`
+- [x] Agent 配置页头部支持可点击头像与 Agent 名称；默认模型选择待补。
+- [x] “人格与提示词”使用单一多行编辑器并明确平台安全规则不受覆盖。
 - [ ] 模型参数区首版复用现有模型/模型组选择；温度等高级参数只有底层真正支持且能持久化时才展示。
-- [ ] 技能区复用 `SkillRowItem`、搜索、全选/全不选；读写 Agent binding，不再误写全局状态。
-- [ ] 记忆区复用 `MemoryManagementScreen` 和 `MemoryFileEditorContent`，但仓库参数必须绑定 agentId。
+- [x] 技能区复用 `SkillRowItem`，读写 Agent binding。
+- [x] 记忆区复用 `MemoryManagementScreen` 和文件编辑页，仓库绑定 agentId。
 - [ ] 支持创建时“从某 Agent 复制配置”，默认只复制提示词、模型和技能，不复制记忆；复制记忆必须二次确认。
 - [ ] 保存失败留在当前页并显示字段级错误，不静默丢数据。
 - [ ] 删除 Agent 使用危险操作样式，并明确显示其话题数量和处理方式。

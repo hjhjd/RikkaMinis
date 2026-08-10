@@ -161,6 +161,16 @@ object Routes {
     /** [T-soul-md] SOUL.md editor. */
     const val SOUL = "soul"
     const val SYSTEM_PROMPT = "system_prompt"
+    const val AGENT_NEW = "agents/new"
+    const val AGENT_EDIT = "agents/{agentId}"
+    const val AGENT_SKILLS = "agents/{agentId}/skills"
+    const val AGENT_MEMORY = "agents/{agentId}/memory"
+    const val AGENT_MEMORY_FILE = "agents/{agentId}/memory/{fileName}/{isGlobal}"
+    fun agentEdit(agentId: String) = "agents/${android.net.Uri.encode(agentId)}"
+    fun agentSkills(agentId: String) = "agents/${android.net.Uri.encode(agentId)}/skills"
+    fun agentMemory(agentId: String) = "agents/${android.net.Uri.encode(agentId)}/memory"
+    fun agentMemoryFile(agentId: String, fileName: String, isGlobal: Boolean) =
+        "agents/${android.net.Uri.encode(agentId)}/memory/${android.net.Uri.encode(fileName)}/$isGlobal"
     const val MEMORY_FILE_EDIT = "memory_file/{fileName}/{isGlobal}"
     const val PERMISSIONS = "permissions"
     /**
@@ -582,6 +592,17 @@ fun AppNavigation(
                         launchSingleTop = true
                     }
                 },
+                onOpenAgent = { agentId ->
+                    val latest = chatRepository.dao.listSessions().firstOrNull { it.agentId == agentId }
+                    val target = latest?.let { Routes.chat(it.id) }
+                        ?: Routes.chat(com.openminis.app.data.ComposerDraftStore.nextDraftId(context), agentId = agentId)
+                    navController.safeNavigate(target) {
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+                onOpenAgentSettings = { navController.safeNavigate(Routes.agentEdit(it)) },
+                onCreateAgent = { navController.safeNavigate(Routes.AGENT_NEW) },
                 onOpenSettings = { navController.safeNavigate(Routes.SETTINGS) },
             )
         }
@@ -1130,6 +1151,53 @@ fun AppNavigation(
                     envVarRepository = envVarRepository,
                 )
             }
+        }
+
+        composable(Routes.AGENT_NEW) {
+            com.openminis.app.ui.agents.AgentEditScreen(
+                agentId = null,
+                agentRepository = agentRepository,
+                onBack = { navController.safePopBackStack() },
+                onSaved = { id -> navController.safeNavigate(Routes.agentEdit(id)) { popUpTo(Routes.AGENT_NEW) { inclusive = true } } },
+                onSkills = { navController.safeNavigate(Routes.agentSkills(it)) },
+                onMemory = { navController.safeNavigate(Routes.agentMemory(it)) },
+            )
+        }
+
+        composable(Routes.AGENT_EDIT, arguments = listOf(navArgument("agentId") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("agentId") ?: return@composable
+            com.openminis.app.ui.agents.AgentEditScreen(
+                agentId = id,
+                agentRepository = agentRepository,
+                onBack = { navController.safePopBackStack() },
+                onSaved = { navController.safePopBackStack() },
+                onSkills = { navController.safeNavigate(Routes.agentSkills(it)) },
+                onMemory = { navController.safeNavigate(Routes.agentMemory(it)) },
+            )
+        }
+
+        composable(Routes.AGENT_SKILLS, arguments = listOf(navArgument("agentId") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("agentId") ?: return@composable
+            if (skillRepository != null) com.openminis.app.ui.agents.AgentSkillsScreen(id, skillRepository) { navController.safePopBackStack() }
+        }
+
+        composable(Routes.AGENT_MEMORY, arguments = listOf(navArgument("agentId") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("agentId") ?: return@composable
+            val repo = (context.applicationContext as com.openminis.app.MinisApp).agentMemoryRepositoryFactory.forAgent(id)
+            MemoryManagementScreen(repo, { navController.safePopBackStack() }) { file, global ->
+                navController.safeNavigate(Routes.agentMemoryFile(id, file, global))
+            }
+        }
+
+        composable(
+            Routes.AGENT_MEMORY_FILE,
+            arguments = listOf(navArgument("agentId") { type = NavType.StringType }, navArgument("fileName") { type = NavType.StringType }, navArgument("isGlobal") { type = NavType.BoolType }),
+        ) { entry ->
+            val id = entry.arguments?.getString("agentId") ?: return@composable
+            val file = entry.arguments?.getString("fileName") ?: return@composable
+            val global = entry.arguments?.getBoolean("isGlobal") ?: false
+            val repo = (context.applicationContext as com.openminis.app.MinisApp).agentMemoryRepositoryFactory.forAgent(id)
+            MemoryFileEditScreen(file, global, repo) { navController.safePopBackStack() }
         }
 
         composable(Routes.SYSTEM_PROMPT) {

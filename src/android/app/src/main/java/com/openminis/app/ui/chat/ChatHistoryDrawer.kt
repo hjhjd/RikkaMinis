@@ -3,6 +3,11 @@ package com.openminis.app.ui.chat
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,6 +29,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +58,10 @@ import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 import com.openminis.app.config.ChatActionSpec
 import com.openminis.app.data.db.ChatSessionEntity
+import com.openminis.app.data.db.AgentEntity
+import com.openminis.app.data.repository.AgentRepository
+import com.openminis.app.agent.AgentAvatarStore
+import coil.compose.AsyncImage
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.ui.components.MinisAlertDialog
@@ -91,7 +106,12 @@ import kotlinx.coroutines.launch
 @Composable
 fun ChatHistoryDrawer(
     chatRepository: ChatRepository,
+    agentRepository: AgentRepository,
     currentSessionId: String,
+    currentAgentId: String,
+    onAgentClick: (String) -> Unit = {},
+    onAgentSettings: (String) -> Unit = {},
+    onCreateAgent: () -> Unit = {},
     draft: com.openminis.app.data.ComposerDraftStore.DraftSnapshot? = null,
     onOpenDraft: () -> Unit = {},
     onDiscardDraft: () -> Unit = {},
@@ -103,6 +123,14 @@ fun ChatHistoryDrawer(
 ) {
     val sessions by chatRepository.observeSessions()
         .collectAsState(initial = emptyList())
+    val agents by agentRepository.observeActive().collectAsState(initial = emptyList())
+    var drawerTab by remember { mutableStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
+    var revealedAgentId by remember { mutableStateOf<String?>(null) }
+    val filteredAgents = remember(agents, searchQuery) {
+        val q = searchQuery.trim()
+        if (q.isEmpty()) agents else agents.filter { it.name.contains(q, ignoreCase = true) }
+    }
 
     // [P0-1-drawer-title-visibility] Visibility must not depend on the
     // auto-generated title: a session that has real messages has to be
@@ -138,6 +166,24 @@ fun ChatHistoryDrawer(
                 )
             }
 
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (drawerTab == 0) Button({ drawerTab = 0; searchQuery = "" }, Modifier.weight(1f)) { Text("助手") }
+                else OutlinedButton({ drawerTab = 0; searchQuery = "" }, Modifier.weight(1f)) { Text("助手") }
+                if (drawerTab == 1) Button({ drawerTab = 1; searchQuery = "" }, Modifier.weight(1f)) { Text("话题") }
+                else OutlinedButton({ drawerTab = 1; searchQuery = "" }, Modifier.weight(1f)) { Text("话题") }
+            }
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text(if (drawerTab == 0) "搜索助手…" else "搜索话题…") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+
+            if (drawerTab == 1) {
             // [composer-draft-v1] Persistent unsent-draft entry. Click resumes
             // the draft session; long-press discards it. Shown above the
             // session list, even when there are no sessions yet.
@@ -230,6 +276,24 @@ fun ChatHistoryDrawer(
                     }
                     item { Spacer(modifier = Modifier.height(8.dp)) }
                 }
+            }
+            } else {
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(filteredAgents, key = { it.id }) { agent ->
+                        DrawerAgentRow(
+                            agent = agent,
+                            selected = agent.id == currentAgentId,
+                            onClick = { revealedAgentId = null; onAgentClick(agent.id) },
+                            onSettings = { revealedAgentId = null; onAgentSettings(agent.id) },
+                            revealed = revealedAgentId == agent.id,
+                            onReveal = { revealedAgentId = if (it) agent.id else null },
+                        )
+                    }
+                }
+                Button(
+                    onClick = onCreateAgent,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                ) { Text("＋ 创建 Agent") }
             }
 
             // Footer: a configurable action bar rendered from the resolved pin
@@ -441,6 +505,55 @@ private fun DrawerSessionRow(
                 else MaterialTheme.colorScheme.outlineVariant,
                 modifier = Modifier.size(16.dp),
             )
+        }
+    }
+}
+
+
+@Composable
+private fun DrawerAgentRow(
+    agent: AgentEntity,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onSettings: () -> Unit,
+    revealed: Boolean,
+    onReveal: (Boolean) -> Unit,
+) {
+    val context = LocalContext.current
+    val avatar = remember(agent.avatarPath) { AgentAvatarStore(context).resolve(agent.avatarPath) }
+    var dragOffset by remember(agent.id, revealed) { mutableStateOf(if (revealed) 64f else 0f) }
+    Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+        Box(
+            Modifier.matchParentSize().clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            IconButton(onClick = onSettings, modifier = Modifier.padding(start = 8.dp).size(48.dp)) {
+                Icon(Icons.Outlined.Settings, contentDescription = "设置 ${agent.name}", tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().offset { IntOffset(dragOffset.roundToInt(), 0) }
+                .clip(RoundedCornerShape(16.dp))
+                .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
+                .pointerInput(agent.id) {
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { _, amount -> dragOffset = (dragOffset + amount).coerceIn(0f, 80f) },
+                        onDragEnd = { val open = dragOffset > 32f; dragOffset = if (open) 64f else 0f; onReveal(open) },
+                        onDragCancel = { dragOffset = if (revealed) 64f else 0f },
+                    )
+                }
+                .clickable(onClick = onClick).padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                if (avatar != null) AsyncImage(avatar, null, Modifier.size(48.dp)) else Icon(Icons.Outlined.Person, null, Modifier.size(28.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text(agent.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (agent.defaultModelBinding.isNullOrBlank()) "使用全局默认模型" else "已设置默认模型", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
