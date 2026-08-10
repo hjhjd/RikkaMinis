@@ -23,6 +23,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -43,7 +44,9 @@ class RemoteChannelException(message: String, cause: Throwable? = null) : Except
 class RemoteExecutionException(message: String) : Exception(message)
 
 interface RemoteCommandConnection : ExecutorConnection {
-    suspend fun exec(command: String, timeoutMs: Long = 600_000): RemoteExecResult
+    val capabilities: Set<String>
+    suspend fun request(method: String, params: JsonObject, timeoutMs: Long = 600_000): RpcResponse
+    suspend fun exec(command: String, timeoutMs: Long = 600_000, env: Map<String, String> = emptyMap()): RemoteExecResult
 }
 
 class ForwardConnection(
@@ -53,6 +56,8 @@ class ForwardConnection(
 ) : RemoteCommandConnection {
     override val id: String = "forward:${config.id}"
     override val direction = ConnectionDirection.FORWARD
+    @Volatile override var capabilities: Set<String> = setOf("exec", "status")
+        private set
     private val nextId = AtomicLong(1)
     private val generations = AtomicLong(0)
     @Volatile private var activeGeneration = 0L
@@ -87,18 +92,13 @@ class ForwardConnection(
     private fun isCurrent(webSocket: WebSocket, generation: Long): Boolean =
         socket === webSocket && activeGeneration == generation
 
-    override suspend fun exec(command: String, timeoutMs: Long): RemoteExecResult {
-        require(command.isNotBlank()) { "Command cannot be empty" }
+    override suspend fun request(method: String, params: JsonObject, timeoutMs: Long): RpcResponse {
         val requestId = nextId.getAndIncrement()
         val waiter = CompletableDeferred<RpcResponse>()
         pending[requestId] = waiter
-        val params = buildJsonObject {
-            put("cmd", command)
-            put("timeoutMs", timeoutMs)
-        }
         val request = buildJsonObject {
             put("id", requestId)
-            put("method", "exec")
+            put("method", method)
             put("params", params)
             put("ts", System.currentTimeMillis())
         }
@@ -106,20 +106,29 @@ class ForwardConnection(
             pending.remove(requestId)
             throw RemoteChannelException("WebSocket Server is offline")
         }
-        val response = try {
+        return try {
             withTimeout(timeoutMs + 5_000) { waiter.await() }
-        } catch (e: RemoteExecutionException) {
-            throw e
         } catch (e: CancellationException) {
             if (e is TimeoutCancellationException) {
-                throw RemoteChannelException("WebSocket command timed out after ${timeoutMs}ms", e)
+                throw RemoteChannelException("WebSocket request timed out after ${timeoutMs}ms", e)
             }
             throw e
         } catch (e: Throwable) {
-            throw RemoteChannelException("WebSocket command channel failed: ${e.message ?: e.javaClass.simpleName}", e)
+            throw RemoteChannelException("WebSocket request channel failed: ${e.message ?: e.javaClass.simpleName}", e)
         } finally {
             pending.remove(requestId)
         }
+    }
+
+    override suspend fun exec(command: String, timeoutMs: Long, env: Map<String, String>): RemoteExecResult {
+        require(command.isNotBlank()) { "Command cannot be empty" }
+        val params = buildJsonObject {
+            put("cmd", command)
+            put("timeoutMs", timeoutMs)
+            put("env", kotlinx.serialization.json.buildJsonObject { env.forEach { (key, value) -> put(key, value) } })
+            put("envMode", "overlay")
+        }
+        val response = request("exec", params, timeoutMs)
         if (!response.ok) throw RemoteExecutionException(response.error?.message ?: "Remote command failed")
         val result = response.result?.jsonObject ?: JsonObject(emptyMap())
         return RemoteExecResult(
@@ -148,16 +157,25 @@ class ForwardConnection(
             }
             socket = webSocket
             retryDelayMs = 1_000L
-            manager.register(
-                this@ForwardConnection,
-                RegisterParams(
-                    protocol = EXECPLANE_PROTOCOL_VERSION,
-                    name = config.name,
-                    caps = setOf("exec", "status"),
-                    trust = ExecutorTrust.STANDARD,
-                    tags = setOf("forward", "remote"),
-                ),
-            )
+            scope.launch {
+                val discovered = runCatching {
+                    val reply = request("capabilities", JsonObject(emptyMap()), 10_000)
+                    reply.result?.jsonObject?.get("caps")?.let { element ->
+                        element.jsonArray.map { it.jsonPrimitive.content }.toSet()
+                    }
+                }.getOrNull().orEmpty()
+                capabilities = discovered.ifEmpty { setOf("exec", "status") }
+                manager.register(
+                    this@ForwardConnection,
+                    RegisterParams(
+                        protocol = EXECPLANE_PROTOCOL_VERSION,
+                        name = config.name,
+                        caps = capabilities,
+                        trust = ExecutorTrust.STANDARD,
+                        tags = setOf("forward", "remote"),
+                    ),
+                )
+            }
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {

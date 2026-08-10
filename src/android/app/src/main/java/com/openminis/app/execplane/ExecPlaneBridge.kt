@@ -94,10 +94,24 @@ class ExecPlaneBridge(
         return connections.delete(name) || forward != null
     }
 
-    suspend fun exec(name: String, command: String, timeoutMs: Long = 600_000): RemoteExecResult {
+    suspend fun request(name: String, method: String, params: JsonObject, timeoutMs: Long = 600_000): RpcResponse {
         val connection = connections.connection(name) as? RemoteCommandConnection
             ?: throw RemoteChannelException("WebSocket Server is offline")
-        return connection.exec(command, timeoutMs)
+        if (method != "capabilities" && method.substringBeforeLast('.', method) !in connection.capabilities && method !in connection.capabilities) {
+            throw RemoteExecutionException("CAPABILITY_UNSUPPORTED: $method is not supported by '$name'")
+        }
+        return connection.request(method, params, timeoutMs)
+    }
+
+    suspend fun exec(
+        name: String,
+        command: String,
+        timeoutMs: Long = 600_000,
+        env: Map<String, String> = emptyMap(),
+    ): RemoteExecResult {
+        val connection = connections.connection(name) as? RemoteCommandConnection
+            ?: throw RemoteChannelException("WebSocket Server is offline")
+        return connection.exec(command, timeoutMs, env)
     }
 
     private fun stopLocked() {
@@ -139,7 +153,8 @@ class ExecPlaneBridge(
                 return
             }
             val peer = Peer(UUID.randomUUID().toString(), conn)
-            peer.execHandler = { command, timeoutMs -> executeReverse(peer, command, timeoutMs) }
+            peer.execHandler = { command, timeoutMs, env -> executeReverse(peer, command, timeoutMs, env) }
+            peer.requestHandler = { method, params, timeoutMs -> requestReverse(peer, method, params, timeoutMs) }
             peers[conn] = peer
         }
 
@@ -192,6 +207,7 @@ class ExecPlaneBridge(
             }
             peer.name?.let { this@ExecPlaneBridge.connections.disconnect(it, peer.id) }
             peer.name = params.name
+            peer.capabilities = params.caps
             this@ExecPlaneBridge.connections.register(peer, params)
             sendOk(peer.socket, request.id, JsonObject(emptyMap()))
         }
@@ -204,21 +220,40 @@ class ExecPlaneBridge(
             if (conn == null) reportError(listenPort, ex) else Log.w(TAG, "WS peer error: ${ex.message}")
         }
 
-        private suspend fun executeReverse(peer: Peer, command: String, timeoutMs: Long): RemoteExecResult {
+        private suspend fun requestReverse(
+            peer: Peer,
+            method: String,
+            params: JsonObject,
+            timeoutMs: Long,
+        ): RpcResponse {
             val requestId = REQUEST_IDS.getAndIncrement()
             val waiter = CompletableDeferred<RpcResponse>()
             pending[requestId] = waiter
-            val params = buildJsonObject { put("cmd", command); put("timeoutMs", timeoutMs) }
             val request = buildJsonObject {
-                put("id", requestId); put("method", "exec"); put("params", params); put("ts", System.currentTimeMillis())
+                put("id", requestId); put("method", method); put("params", params); put("ts", System.currentTimeMillis())
             }
             if (!peer.socket.isOpen) {
                 pending.remove(requestId)
-                error("WebSocket Server is offline")
+                throw RemoteChannelException("WebSocket Server is offline")
             }
             peer.socket.send(request.toString())
-            val response = try { withTimeout(timeoutMs + 5_000) { waiter.await() } }
+            return try { withTimeout(timeoutMs + 5_000) { waiter.await() } }
                 finally { pending.remove(requestId) }
+        }
+
+        private suspend fun executeReverse(
+            peer: Peer,
+            command: String,
+            timeoutMs: Long,
+            env: Map<String, String>,
+        ): RemoteExecResult {
+            val params = buildJsonObject {
+                put("cmd", command)
+                put("timeoutMs", timeoutMs)
+                put("env", buildJsonObject { env.forEach { (key, value) -> put(key, value) } })
+                put("envMode", "overlay")
+            }
+            val response = requestReverse(peer, "exec", params, timeoutMs)
             if (!response.ok) error(response.error?.message ?: "Remote command failed")
             val result = response.result?.jsonObject ?: JsonObject(emptyMap())
             return RemoteExecResult(
@@ -245,10 +280,14 @@ class ExecPlaneBridge(
         val socket: WebSocket,
     ) : RemoteCommandConnection {
         @Volatile var name: String? = null
-        @Volatile var execHandler: (suspend (String, Long) -> RemoteExecResult)? = null
+        @Volatile override var capabilities: Set<String> = setOf("exec", "status")
+        @Volatile var execHandler: (suspend (String, Long, Map<String, String>) -> RemoteExecResult)? = null
+        @Volatile var requestHandler: (suspend (String, JsonObject, Long) -> RpcResponse)? = null
         override val direction = ConnectionDirection.REVERSE
-        override suspend fun exec(command: String, timeoutMs: Long): RemoteExecResult =
-            execHandler?.invoke(command, timeoutMs) ?: error("Command channel is not ready")
+        override suspend fun request(method: String, params: JsonObject, timeoutMs: Long): RpcResponse =
+            requestHandler?.invoke(method, params, timeoutMs) ?: error("RPC channel is not ready")
+        override suspend fun exec(command: String, timeoutMs: Long, env: Map<String, String>): RemoteExecResult =
+            execHandler?.invoke(command, timeoutMs, env) ?: error("Command channel is not ready")
         override fun close(code: Int, reason: String) = socket.close(code, reason)
     }
 

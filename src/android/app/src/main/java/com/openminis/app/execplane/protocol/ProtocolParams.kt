@@ -25,6 +25,9 @@ data class RegisterParams(
     val resources: ExecutorResources = ExecutorResources(),
     val trust: ExecutorTrust,
     val tags: Set<String> = emptySet(),
+    val identityPublicKey: String? = null,
+    val identitySignature: String? = null,
+    val identityChallenge: String? = null,
 )
 
 @Serializable

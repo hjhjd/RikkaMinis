@@ -94,6 +94,7 @@ class MinisApp : Application(), ImageLoaderFactory {
     lateinit var execPlaneSettingsRepository: com.openminis.app.execplane.ExecPlaneSettingsRepository
         private set
     lateinit var execPlaneBridge: com.openminis.app.execplane.ExecPlaneBridge
+    lateinit var sandboxFileService: com.openminis.app.execplane.SandboxFileService
         private set
     lateinit var backgroundTaskNotifier: BackgroundTaskNotifier
         private set
@@ -475,11 +476,13 @@ class MinisApp : Application(), ImageLoaderFactory {
         // accepts register/ping/status; remote exec stays disabled.
         execPlaneSettingsRepository = com.openminis.app.execplane.ExecPlaneSettingsRepository(this)
         execPlaneBridge = com.openminis.app.execplane.ExecPlaneBridge(execPlaneSettingsRepository)
+        sandboxFileService = com.openminis.app.execplane.SandboxFileService(execPlaneBridge)
         execPlaneBridge.apply()
         execPlaneSettingsRepository.forwardServers.value.filter { it.enabled }.forEach(execPlaneBridge::connect)
         val sandboxRouter = com.openminis.app.execplane.SandboxCommandRouter(
             execPlaneSettingsRepository,
             execPlaneBridge,
+            environmentProvider = envVarRepository::allAsDict,
         )
         ExecutionCoordinator.externalExecutor = sandboxRouter::execute
         backgroundTaskNotifier = BackgroundTaskNotifier(

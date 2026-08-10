@@ -78,6 +78,28 @@ class ExecPlaneSettingsRepository(context: Context) {
         return config
     }
 
+    fun updateForwardServerPolicy(
+        id: String,
+        policy: EnvironmentPolicy,
+        authorizedKeys: Set<String>,
+    ): Boolean {
+        val current = _forwardServers.value.firstOrNull { it.id == id } ?: return false
+        val safeKeys = authorizedKeys.filter { ENV_KEY.matches(it) }.toSet()
+        persistForwardServers(_forwardServers.value.map {
+            if (it.id == id) current.copy(envPolicy = policy, authorizedEnvKeys = safeKeys) else it
+        })
+        return true
+    }
+
+    fun environmentFor(config: ForwardServerConfig, all: Map<String, String>): Map<String, String> {
+        val candidates = when (config.envPolicy) {
+            EnvironmentPolicy.NONE -> emptyMap()
+            EnvironmentPolicy.SELECTED -> all.filterKeys { it in config.authorizedEnvKeys }
+            EnvironmentPolicy.ALL -> all
+        }
+        return candidates.filterKeys { key -> key !in RESERVED_ENV && ENV_KEY.matches(key) }
+    }
+
     fun deleteForwardServer(id: String): Boolean {
         val updated = _forwardServers.value.filterNot { it.id == id }
         if (updated.size == _forwardServers.value.size) return false
@@ -121,5 +143,10 @@ class ExecPlaneSettingsRepository(context: Context) {
         private const val KEY_DEFAULT_SANDBOX = "defaultSandbox"
         private const val KEY_SANDBOX_MODE = "sandboxMode"
         private const val KEY_DEFAULT_WS = "defaultWsSandbox"
+        private val ENV_KEY = Regex("[A-Za-z_][A-Za-z0-9_]*")
+        private val RESERVED_ENV = setOf(
+            "EXECPLANE_TOKEN", "MINIS_EXECPLANE_TOKEN", "ANDROID_HOME", "ANDROID_DATA",
+            "LD_PRELOAD", "LD_LIBRARY_PATH", "PROOT_LOADER", "PROOT_LOADER_32",
+        )
     }
 }

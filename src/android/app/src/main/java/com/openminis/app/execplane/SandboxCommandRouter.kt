@@ -7,6 +7,7 @@ import com.openminis.app.sandbox.ExecutionCoordinator
 class SandboxCommandRouter(
     private val settings: ExecPlaneSettingsRepository,
     private val bridge: ExecPlaneBridge,
+    private val environmentProvider: () -> Map<String, String> = { emptyMap() },
 ) {
     suspend fun execute(
         sessionId: String,
@@ -25,7 +26,12 @@ class SandboxCommandRouter(
         }
 
         return try {
-            val remote = bridge.exec(server.name, command, timeoutMs)
+            val env = settings.environmentFor(server, environmentProvider())
+            val caps = bridge.connections.online(server.name)?.caps.orEmpty()
+            if (env.isNotEmpty() && "env.inject" !in caps) {
+                throw RemoteExecutionException("ENV_NOT_AUTHORIZED: '${server.name}' does not support environment injection")
+            }
+            val remote = bridge.exec(server.name, command, timeoutMs, env)
             val combined = buildString {
                 append(remote.stdout)
                 if (remote.stderr.isNotEmpty()) {

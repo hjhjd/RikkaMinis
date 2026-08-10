@@ -14,13 +14,14 @@ object FileEditTool {
         description = "Make targeted edits to an existing file using exact string replacement. ALWAYS use file_read first to see the current file contents before editing. Prefer file_edit over file_write when modifying existing files — only the changed part needs to be specified. The old_string must match exactly one location in the file (including whitespace/indentation), unless replace_all is true.",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Fix typo in Python script', 'Update config value'). Use the same language as the user."),
+            "sandbox" to AgentToolParam("string", "Optional target sandbox. Omit for App/PRoot files, or provide an online WebSocket sandbox name to edit its remote filesystem."),
             "path" to AgentToolParam("string", "Absolute Linux path to the file to edit (e.g. /root/script.py)"),
             "old_string" to AgentToolParam("string", "The exact text to find in the file. Must match precisely including whitespace and indentation. Must be unique in the file unless replace_all is true."),
             "new_string" to AgentToolParam("string", "The replacement text. Use empty string to delete old_string."),
             "replace_all" to AgentToolParam("boolean", "If true, replace ALL occurrences of old_string (default: false)"),
         ),
         required = listOf("tool_title", "path", "old_string", "new_string"),
-        propertyOrdering = listOf("tool_title", "path", "old_string", "new_string", "replace_all"),
+        propertyOrdering = listOf("tool_title", "sandbox", "path", "old_string", "new_string", "replace_all"),
     )
 
     fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
