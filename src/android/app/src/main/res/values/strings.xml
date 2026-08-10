@@ -263,6 +263,7 @@
     <string name="sandbox_forward_security">Remote connections require wss://. Plain ws:// is accepted only for 127.0.0.1 or localhost.</string>
     <string name="sandbox_connect">Connect</string>
     <string name="sandbox_disconnect">Disconnect</string>
+    <string name="sandbox_reconnect">Reconnect</string>
     <string name="sandbox_delete">Delete</string>
     <string name="sandbox_run_command">Command</string>
     <string name="sandbox_run_command_on">Run command on %1$s</string>

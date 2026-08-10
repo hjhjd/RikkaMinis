@@ -9,8 +9,14 @@ import com.openminis.app.execplane.protocol.ExecutorTrust
 import com.openminis.app.execplane.protocol.RegisterParams
 import com.openminis.app.execplane.protocol.RpcResponse
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.JsonObject
@@ -44,9 +50,23 @@ class ForwardConnection(
     override val direction = ConnectionDirection.FORWARD
     private val nextId = AtomicLong(1)
     private val pending = ConcurrentHashMap<Long, CompletableDeferred<RpcResponse>>()
+    private val scope = CoroutineScope(Dispatchers.IO)
+    private val stopped = AtomicBoolean(false)
     @Volatile private var socket: WebSocket? = null
+    @Volatile private var retryJob: Job? = null
+    @Volatile private var retryDelayMs = 1_000L
 
     fun connect() {
+        stopped.set(false)
+        retryJob?.cancel()
+        manager.rememberOffline(
+            config.name, id, direction, setOf("exec", "status"), ExecutorTrust.STANDARD,
+            setOf("forward", "remote"),
+        )
+        openSocket()
+    }
+
+    private fun openSocket() {
         val request = Request.Builder().url(config.url)
             .header("X-Minis-Token", config.token)
             .build()
@@ -88,6 +108,9 @@ class ForwardConnection(
     }
 
     override fun close(code: Int, reason: String) {
+        stopped.set(true)
+        retryJob?.cancel()
+        retryJob = null
         socket?.close(code, reason)
         socket = null
         pending.values.forEach { it.completeExceptionally(IllegalStateException(reason)) }
@@ -96,6 +119,7 @@ class ForwardConnection(
 
     private inner class Listener : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            retryDelayMs = 1_000L
             manager.register(
                 this@ForwardConnection,
                 RegisterParams(
@@ -116,12 +140,28 @@ class ForwardConnection(
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             manager.disconnect(config.name, id)
+            scheduleReconnect()
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             pending.values.forEach { it.completeExceptionally(t) }
             pending.clear()
             manager.disconnect(config.name, id)
+            manager.rememberOffline(
+                config.name, id, direction, setOf("exec", "status"), ExecutorTrust.STANDARD,
+                setOf("forward", "remote"),
+            )
+            scheduleReconnect()
+        }
+    }
+
+    private fun scheduleReconnect() {
+        if (stopped.get() || retryJob?.isActive == true) return
+        val waitMs = retryDelayMs
+        retryDelayMs = (retryDelayMs * 2).coerceAtMost(30_000L)
+        retryJob = scope.launch {
+            delay(waitMs)
+            if (!stopped.get()) openSocket()
         }
     }
 }

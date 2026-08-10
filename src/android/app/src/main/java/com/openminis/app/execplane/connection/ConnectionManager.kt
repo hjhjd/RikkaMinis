@@ -84,6 +84,30 @@ class ConnectionManager(
         true
     }
 
+    fun rememberOffline(
+        name: String,
+        connectionId: String,
+        direction: ConnectionDirection,
+        caps: Set<String>,
+        trust: ExecutorTrust,
+        tags: Set<String> = emptySet(),
+    ) = synchronized(lock) {
+        if (entries.containsKey(name)) return@synchronized
+        val previous = mutableSnapshots.value[name]
+        mutableSnapshots.value = mutableSnapshots.value + (name to ExecutorSnapshot(
+            name = name,
+            connectionId = connectionId,
+            direction = direction,
+            caps = caps,
+            resources = previous?.resources ?: ExecutorResources(),
+            trust = trust,
+            tags = tags,
+            online = false,
+            registeredAtMs = previous?.registeredAtMs ?: nowMs(),
+            lastSeenAtMs = previous?.lastSeenAtMs ?: nowMs(),
+        ))
+    }
+
     fun online(name: String): ExecutorSnapshot? =
         entries[name]?.snapshot?.takeIf { it.online }
 

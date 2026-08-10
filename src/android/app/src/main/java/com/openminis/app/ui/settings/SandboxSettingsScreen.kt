@@ -190,6 +190,11 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                                     Text(stringResource(R.string.sandbox_disconnect))
                                 }
                             } else {
+                                TextButton(onClick = {
+                                    settings.forwardServers.value.firstOrNull { it.name == server.name }?.let(bridge::connect)
+                                }) {
+                                    Text(stringResource(R.string.sandbox_reconnect))
+                                }
                                 TextButton(onClick = { bridge.delete(server.name) }) {
                                     Text(stringResource(R.string.sandbox_delete))
                                 }

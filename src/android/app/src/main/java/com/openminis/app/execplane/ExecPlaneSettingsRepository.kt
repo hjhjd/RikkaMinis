@@ -43,8 +43,10 @@ class ExecPlaneSettingsRepository(context: Context) {
     fun saveForwardServer(name: String, url: String, token: String): ForwardServerConfig? {
         val normalized = url.trim()
         if (!isAllowedUrl(normalized) || name.isBlank() || token.isBlank()) return null
-        val config = ForwardServerConfig(UUID.randomUUID().toString(), name.trim(), normalized, token)
-        persistForwardServers(_forwardServers.value + config)
+        val trimmedName = name.trim()
+        val existing = _forwardServers.value.firstOrNull { it.name.equals(trimmedName, ignoreCase = true) }
+        val config = ForwardServerConfig(existing?.id ?: UUID.randomUUID().toString(), trimmedName, normalized, token)
+        persistForwardServers(_forwardServers.value.filterNot { it.id == config.id } + config)
         return config
     }
 
