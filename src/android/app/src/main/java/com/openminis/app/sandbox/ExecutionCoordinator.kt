@@ -74,8 +74,6 @@ object ExecutionCoordinator {
         val truncated: Boolean = false,
         val sandboxName: String = "proot",
         val degraded: Boolean = false,
-        val sandboxUser: String? = null,
-        val sandboxUid: Int? = null,
     )
 
     private lateinit var appContext: Context

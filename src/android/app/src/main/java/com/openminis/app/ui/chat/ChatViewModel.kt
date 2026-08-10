@@ -8019,10 +8019,6 @@ class ChatViewModel(
             // content (toolBlocks above) is intentionally left unmasked.
             val sandboxHeader = buildString {
                 append("[sandbox: ${result.sandboxName}")
-                result.sandboxUser?.let { user ->
-                    append(" · user: ").append(user)
-                    result.sandboxUid?.let { append("(").append(it).append(")") }
-                }
                 if (result.degraded) append(" · fallback")
                 append("]")
             }
