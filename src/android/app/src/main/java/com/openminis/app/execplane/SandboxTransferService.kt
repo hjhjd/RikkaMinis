@@ -26,16 +26,19 @@ class SandboxTransferService(private val bridge: ExecPlaneBridge) {
             ?: throw IllegalArgumentException("Cannot resolve local path: $source")
         require(local.exists()) { "Local source not found: $source" }
         val directory = local.isDirectory
+        val policy = normalizePolicy(overwrite, directory)
         val payload = if (directory) zipDirectory(local) else local
+        val transferId = UUID.randomUUID().toString()
+        var opened = false
         try {
             val digest = sha256(payload)
-            val transferId = UUID.randomUUID().toString()
-            val opened = checked(sandbox, "transfer.open", buildJsonObject {
+            val response = checked(sandbox, "transfer.open", buildJsonObject {
                 put("transferId", transferId); put("direction", "push"); put("path", destination)
                 put("type", if (directory) "directory" else "file"); put("size", payload.length())
-                put("sha256", digest); put("overwrite", overwrite)
+                put("sha256", digest); put("overwrite", policy)
             })
-            var sequence = opened["nextSequence"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+            opened = true
+            var sequence = response["nextSequence"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
             FileInputStream(payload).use { input ->
                 input.channel.position(sequence.toLong() * chunkSize)
                 val buffer = ByteArray(chunkSize)
@@ -51,7 +54,11 @@ class SandboxTransferService(private val bridge: ExecPlaneBridge) {
                 }
             }
             val committed = checked(sandbox, "transfer.commit", buildJsonObject { put("transferId", transferId) })
+            opened = false
             return Result(destination, committed["size"]!!.jsonPrimitive.content.toLong(), committed["sha256"]!!.jsonPrimitive.content, directory)
+        } catch (error: Throwable) {
+            if (opened) runCatching { checked(sandbox, "transfer.abort", buildJsonObject { put("transferId", transferId) }) }
+            throw error
         } finally { if (payload !== local) payload.delete() }
     }
 
@@ -59,33 +66,52 @@ class SandboxTransferService(private val bridge: ExecPlaneBridge) {
         if (PRootKernel.isLinuxPathUnderReadOnlyMount(destination)) error("Destination is inside a read-only mounted folder")
         val local = PRootKernel.resolveSessionHostPath(sessionId, destination, context)
             ?: throw IllegalArgumentException("Cannot resolve local path: $destination")
-        val transferId = UUID.randomUUID().toString()
-        val opened = checked(sandbox, "transfer.open", buildJsonObject {
-            put("transferId", transferId); put("direction", "pull"); put("path", source)
-            put("type", if (directory) "directory" else "file"); put("overwrite", overwrite)
-        })
-        val size = opened["size"]!!.jsonPrimitive.content.toLong()
-        val expected = opened["sha256"]!!.jsonPrimitive.content
-        val temp = File(local.parentFile, ".${local.name}.minis-$transferId.part")
-        temp.parentFile?.mkdirs()
-        var sequence = if (temp.exists()) (temp.length() / chunkSize).toInt() else 0
-        FileOutputStream(temp, sequence > 0).use { output ->
-            while (true) {
-                val chunk = checked(sandbox, "transfer.chunk", buildJsonObject { put("transferId", transferId); put("sequence", sequence) })
-                val bytes = Base64.decode(chunk["data"]!!.jsonPrimitive.content, Base64.DEFAULT)
-                require(sha256(bytes) == chunk["chunkSha256"]!!.jsonPrimitive.content) { "Chunk checksum mismatch" }
-                output.write(bytes); sequence++
-                if (chunk["eof"]?.jsonPrimitive?.content == "true") break
-            }
-        }
-        require(temp.length() == size && sha256(temp) == expected) { "Final checksum mismatch" }
+        val policy = normalizePolicy(overwrite, directory)
         if (local.exists()) {
-            require(overwrite != "fail") { "Destination exists: $destination" }
-            if (local.isDirectory) local.deleteRecursively() else local.delete()
+            require(policy != "fail") { "Destination exists: $destination" }
+            require(directory == local.isDirectory) { "Destination type conflicts with source" }
         }
-        if (directory) { unzipSafe(temp, local); temp.delete() } else require(temp.renameTo(local)) { "Atomic move failed" }
-        checked(sandbox, "transfer.commit", buildJsonObject { put("transferId", transferId) })
-        return Result(destination, size, expected, directory)
+        val transferId = UUID.randomUUID().toString()
+        var opened = false
+        var temp: File? = null
+        try {
+            val response = checked(sandbox, "transfer.open", buildJsonObject {
+                put("transferId", transferId); put("direction", "pull"); put("path", source)
+                put("type", if (directory) "directory" else "file"); put("overwrite", policy)
+            })
+            opened = true
+            val size = response["size"]!!.jsonPrimitive.content.toLong()
+            val expected = response["sha256"]!!.jsonPrimitive.content
+            temp = File(local.parentFile, ".${local.name}.minis-$transferId.part")
+            temp.parentFile?.mkdirs()
+            var sequence = if (temp.exists()) (temp.length() / chunkSize).toInt() else 0
+            FileOutputStream(temp, sequence > 0).use { output ->
+                while (true) {
+                    val chunk = checked(sandbox, "transfer.chunk", buildJsonObject { put("transferId", transferId); put("sequence", sequence) })
+                    val bytes = Base64.decode(chunk["data"]!!.jsonPrimitive.content, Base64.DEFAULT)
+                    require(sha256(bytes) == chunk["chunkSha256"]!!.jsonPrimitive.content) { "Chunk checksum mismatch" }
+                    output.write(bytes); sequence++
+                    if (chunk["eof"]?.jsonPrimitive?.content == "true") break
+                }
+            }
+            require(temp.length() == size && sha256(temp) == expected) { "Final checksum mismatch" }
+            if (local.exists()) { if (local.isDirectory) local.deleteRecursively() else local.delete() }
+            if (directory) { unzipSafe(temp, local); temp.delete() } else require(temp.renameTo(local)) { "Atomic move failed" }
+            checked(sandbox, "transfer.commit", buildJsonObject { put("transferId", transferId) })
+            opened = false
+            return Result(destination, size, expected, directory)
+        } catch (error: Throwable) {
+            if (opened) runCatching { checked(sandbox, "transfer.abort", buildJsonObject { put("transferId", transferId) }) }
+            temp?.delete()
+            throw error
+        }
+    }
+
+    private fun normalizePolicy(policy: String, directory: Boolean): String = when {
+        policy == "fail" -> policy
+        directory && policy in setOf("replace_directory", "merge_directory") -> "replace_directory"
+        !directory && policy == "replace_file" -> policy
+        else -> error("Invalid overwrite policy for ${if (directory) "directory" else "file"}")
     }
 
     private suspend fun checked(sandbox: String, method: String, params: JsonObject): JsonObject {
@@ -104,9 +130,13 @@ class SandboxTransferService(private val bridge: ExecPlaneBridge) {
     private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     private fun zipDirectory(root: File): File = File.createTempFile("minis-push-", ".zip").also { out ->
         ZipOutputStream(out.outputStream().buffered()).use { zip ->
-            root.walkTopDown().filter { it.isFile }.forEach { file ->
+            root.walkTopDown().filter { it != root }.forEach { file ->
                 val relative = file.relativeTo(root).invariantSeparatorsPath
-                zip.putNextEntry(ZipEntry(relative)); file.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+                if (file.isDirectory) {
+                    zip.putNextEntry(ZipEntry(relative.trimEnd('/') + "/")); zip.closeEntry()
+                } else if (file.isFile) {
+                    zip.putNextEntry(ZipEntry(relative)); file.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+                }
             }
         }
     }

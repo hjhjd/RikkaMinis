@@ -39,10 +39,13 @@ class TransferManager:
   with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,allowZip64=True) as z:
    for p in source.rglob('*'):
     if p.is_symlink(): self.fault('FS_PERMISSION_DENIED','Directory symlinks are forbidden')
-    if p.is_file():
+    relative=p.relative_to(source).as_posix()
+    if p.is_dir():
+     z.writestr(relative.rstrip('/')+'/',b'')
+    elif p.is_file():
      total+=p.stat().st_size
      if total>DIR_LIMIT: self.fault('TRANSFER_TOO_LARGE','Directory exceeds 512 MiB')
-     z.write(p,p.relative_to(source).as_posix())
+     z.write(p,relative)
   return out
  def open(self,p):
   self.clean(); tid=str(p.get('transferId') or uuid.uuid4()); direction=p.get('direction'); kind=p.get('type','file'); overwrite=p.get('overwrite','fail')
@@ -55,6 +58,12 @@ class TransferManager:
    size=int(p.get('size',-1)); digest=p.get('sha256','')
    limit=DIR_LIMIT if kind=='directory' else FILE_LIMIT
    if size<0 or size>limit or len(digest)!=64: self.fault('TRANSFER_TOO_LARGE','Invalid transfer size or digest')
+   allowed={'fail','replace_directory'} if kind=='directory' else {'fail','replace_file'}
+   if overwrite not in allowed: self.fault('TRANSFER_INVALID_STATE','Invalid overwrite policy for transfer type')
+   if path.exists():
+    if overwrite=='fail': self.fault('FS_CONFLICT','Destination exists')
+    if kind=='file' and path.is_dir(): self.fault('FS_CONFLICT','Cannot replace directory with file')
+    if kind=='directory' and not path.is_dir(): self.fault('FS_CONFLICT','Cannot replace file with directory')
    path.parent.mkdir(parents=True,exist_ok=True)
    temp=path.parent/(f'.{path.name}.minis-{tid}.part')
    next_seq=temp.stat().st_size//CHUNK if temp.exists() else 0
@@ -90,7 +99,8 @@ class TransferManager:
   if t.direction=='push':
    if not t.temp.exists() or t.temp.stat().st_size!=t.size or self.digest(t.temp)!=t.sha256: self.fault('TRANSFER_CHECKSUM_MISMATCH','Final checksum mismatch')
    if t.target.exists():
-    if t.overwrite=='fail': self.fault('FS_CONFLICT','Destination exists')
+    if t.overwrite=='fail':
+     self.abort(tid); self.fault('FS_CONFLICT','Destination exists')
     if t.target.is_dir(): shutil.rmtree(t.target)
     else: t.target.unlink()
    if t.kind=='directory':
