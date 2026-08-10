@@ -23,6 +23,19 @@ class SandboxFileService(private val bridge: ExecPlaneBridge) {
         )
     }
 
+    suspend fun readAll(sandbox: String, path: String, maxBytes: Int): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+        var offset = 0L
+        while (output.size() < maxBytes) {
+            val part = read(sandbox, path, offset, minOf(1_048_576, maxBytes - output.size()))
+            output.write(part.bytes)
+            val next = part.nextOffset ?: return output.toByteArray()
+            require(next > offset) { "Remote read made no progress" }
+            offset = next
+        }
+        error("Remote file exceeds $maxBytes bytes")
+    }
+
     suspend fun write(
         sandbox: String, path: String, bytes: ByteArray, append: Boolean = false,
         createParents: Boolean = false, expectedRevision: String? = null,

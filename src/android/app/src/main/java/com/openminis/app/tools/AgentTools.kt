@@ -26,6 +26,8 @@ object AgentTools {
         add(FileReadTool.definition())
         add(FileWriteTool.definition())
         add(FileEditTool.definition())
+        add(SandboxFilePushTool.definition())
+        add(SandboxFilePullTool.definition())
         if (supportsImageInput) {
             add(ReadImageTool.definition())
         }

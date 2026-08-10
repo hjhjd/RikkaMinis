@@ -97,10 +97,16 @@ class ExecPlaneBridge(
     suspend fun request(name: String, method: String, params: JsonObject, timeoutMs: Long = 600_000): RpcResponse {
         val connection = connections.connection(name) as? RemoteCommandConnection
             ?: throw RemoteChannelException("WebSocket Server is offline")
-        if (method != "capabilities" && method.substringBeforeLast('.', method) !in connection.capabilities && method !in connection.capabilities) {
+        if (method != "capabilities" && !supports(connection.capabilities, method)) {
             throw RemoteExecutionException("CAPABILITY_UNSUPPORTED: $method is not supported by '$name'")
         }
         return connection.request(method, params, timeoutMs)
+    }
+
+    private fun supports(caps: Set<String>, method: String): Boolean = when {
+        method.startsWith("transfer.") ->
+            "transfer.push" in caps || "transfer.pull" in caps
+        else -> method in caps
     }
 
     suspend fun exec(

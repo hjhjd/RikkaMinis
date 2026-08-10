@@ -95,6 +95,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     lateinit var execPlaneBridge: com.openminis.app.execplane.ExecPlaneBridge
     lateinit var sandboxFileService: com.openminis.app.execplane.SandboxFileService
+    lateinit var sandboxTransferService: com.openminis.app.execplane.SandboxTransferService
         private set
     lateinit var backgroundTaskNotifier: BackgroundTaskNotifier
         private set
@@ -477,6 +478,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         execPlaneSettingsRepository = com.openminis.app.execplane.ExecPlaneSettingsRepository(this)
         execPlaneBridge = com.openminis.app.execplane.ExecPlaneBridge(execPlaneSettingsRepository)
         sandboxFileService = com.openminis.app.execplane.SandboxFileService(execPlaneBridge)
+        sandboxTransferService = com.openminis.app.execplane.SandboxTransferService(execPlaneBridge)
         execPlaneBridge.apply()
         execPlaneSettingsRepository.forwardServers.value.filter { it.enabled }.forEach(execPlaneBridge::connect)
         val sandboxRouter = com.openminis.app.execplane.SandboxCommandRouter(

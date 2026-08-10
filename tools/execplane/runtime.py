@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Shared ExecPlane executor runtime: command, file RPC and safe roots."""
 import asyncio, base64, hashlib, os, pathlib, shutil, stat, time
+from transfer_runtime import TransferManager
 
 CAPS={"exec","status","fs.stat","fs.list","fs.read","fs.write","fs.mkdir","fs.remove","fs.move","transfer.push","transfer.pull","env.inject"}
 MAX_RPC=1024*1024
@@ -12,6 +13,7 @@ class Runtime:
  def __init__(self,roots):
   self.roots=[pathlib.Path(r).expanduser().resolve() for r in roots]
   if not self.roots: raise ValueError("at least one --allow-root is required")
+  self.transfers=TransferManager(self)
 
  def path(self,value,create=False):
   if not isinstance(value,str) or not value or "\0" in value: raise RpcFault("FS_INVALID_PATH","Invalid path")
@@ -45,6 +47,14 @@ class Runtime:
   if method=="capabilities": return {"caps":sorted(CAPS)}
   if method=="exec": return await self.exec(p)
   if method in ("ping","status"): return {}
+  if method=="transfer.open": return self.transfers.open(p)
+  if method=="transfer.chunk": return self.transfers.chunk(p)
+  if method=="transfer.commit": return self.transfers.commit(p)
+  if method=="transfer.resume":
+   t=self.transfers.items.get(p.get("transferId"))
+   if not t: raise RpcFault("TRANSFER_INVALID_STATE","Unknown transfer")
+   return self.transfers.info(t)
+  if method=="transfer.abort": return self.transfers.abort(p.get("transferId"))
   path=self.path(p.get("path",""),method in ("fs.write","fs.mkdir")) if method.startswith("fs.") else None
   if method=="fs.stat":
    if not path.exists(): raise RpcFault("FS_NOT_FOUND","Path not found")

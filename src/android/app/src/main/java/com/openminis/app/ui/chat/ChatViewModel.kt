@@ -54,6 +54,8 @@ import com.openminis.app.tools.FileReadTool
 import com.openminis.app.tools.FileWriteTool
 import com.openminis.app.tools.MemoryTools
 import com.openminis.app.tools.ReadImageTool
+import com.openminis.app.tools.SandboxFilePullTool
+import com.openminis.app.tools.SandboxFilePushTool
 import com.openminis.app.tools.ToolExecutionResult
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
@@ -7808,12 +7810,20 @@ class ChatViewModel(
                 } else FileEditTool.execute(argsJson, activeSessionId, context)
                 result.also { if (it.success && sandbox.isEmpty()) maybeReloadSkillsForPath(argsJson) }
             }
+            SandboxFilePushTool.NAME -> executeSandboxPush(JSONObject(argsJson), toolTitle)
+            SandboxFilePullTool.NAME -> executeSandboxPull(JSONObject(argsJson), toolTitle)
             // T178: pass sessionId + context so read_image routes through
             // resolveSessionHostPath like file_read/write/edit do — without
             // these, the tool consults the global last-writer-wins
             // bindMounts map and would surface another session's
             // /var/minis/{workspace,attachments,offloads,browser} files.
-            ReadImageTool.NAME -> ReadImageTool.execute(argsJson, activeSessionId, context)
+            ReadImageTool.NAME -> {
+                val imageArgs = JSONObject(argsJson)
+                val sandbox = imageArgs.optString("sandbox", "").trim()
+                if (sandbox.isNotEmpty() && !sandbox.equals("proot", true)) {
+                    executeRemoteReadImage(imageArgs, sandbox, toolTitle)
+                } else ReadImageTool.execute(argsJson, activeSessionId, context)
+            }
             "shell_execute" -> executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText)
             "browser_use" -> executeBrowserUseTool(argsJson)
             "memory_write" -> executeMemoryWriteTool(argsJson)
@@ -7821,6 +7831,52 @@ class ChatViewModel(
             else -> ToolExecutionResult("Unknown tool: $name", false)
         }
     }
+
+    private suspend fun executeRemoteReadImage(args: JSONObject, sandbox: String, toolTitle: String): ToolExecutionResult = runCatching {
+        val path = args.getString("path")
+        val bytes = (context.applicationContext as com.openminis.app.MinisApp).sandboxFileService
+            .readAll(sandbox, path, 16 * 1024 * 1024)
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        require(options.outWidth > 0 && options.outHeight > 0) { "Cannot decode remote image" }
+        val original = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            ?: error("Cannot decode remote image")
+        val maxEdge = 2000
+        val scaled = if (maxOf(original.width, original.height) > maxEdge) {
+            val scale = maxEdge.toFloat() / maxOf(original.width, original.height)
+            android.graphics.Bitmap.createScaledBitmap(original, (original.width * scale).toInt(), (original.height * scale).toInt(), true)
+        } else original
+        val output = java.io.ByteArrayOutputStream()
+        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, output)
+        if (scaled !== original) scaled.recycle(); original.recycle()
+        ToolExecutionResult(
+            "[$sandbox:$path | ${options.outWidth}x${options.outHeight} | ${bytes.size} bytes]",
+            true, imageData = output.toByteArray(), imageMimeType = "image/jpeg", toolTitle = toolTitle,
+        )
+    }.getOrElse { ToolExecutionResult("Error reading image $sandbox:${args.optString("path")}: ${it.message}", false, toolTitle = toolTitle) }
+
+    private suspend fun executeSandboxPush(args: JSONObject, toolTitle: String): ToolExecutionResult = runCatching {
+        val result = (context.applicationContext as com.openminis.app.MinisApp).sandboxTransferService.push(
+            context, activeSessionId, args.getString("sandbox"), args.getString("source"),
+            args.getString("destination"), args.optString("overwrite", "fail"),
+        )
+        ToolExecutionResult(
+            "Pushed to ${args.getString("sandbox")}:${result.path} (${result.size} bytes, sha256=${result.sha256})",
+            true, toolTitle = toolTitle,
+        )
+    }.getOrElse { ToolExecutionResult("Push failed: ${it.message}", false, toolTitle = toolTitle) }
+
+    private suspend fun executeSandboxPull(args: JSONObject, toolTitle: String): ToolExecutionResult = runCatching {
+        val destination = args.getString("destination")
+        val result = (context.applicationContext as com.openminis.app.MinisApp).sandboxTransferService.pull(
+            context, activeSessionId, args.getString("sandbox"), args.getString("source"), destination,
+            args.optString("overwrite", "fail"), args.optBoolean("directory", false),
+        )
+        ToolExecutionResult(
+            "Pulled to ${result.path} (${result.size} bytes, sha256=${result.sha256})",
+            true, toolTitle = toolTitle,
+        )
+    }.getOrElse { ToolExecutionResult("Pull failed: ${it.message}", false, toolTitle = toolTitle) }
 
     private suspend fun executeRemoteFileRead(args: JSONObject, sandbox: String, toolTitle: String): ToolExecutionResult =
         runCatching {
