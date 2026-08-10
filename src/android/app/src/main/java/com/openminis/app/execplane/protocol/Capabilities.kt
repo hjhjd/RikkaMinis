@@ -23,7 +23,7 @@ enum class CapabilityGroup { COMMAND, FILES, TRANSFER, ENVIRONMENT }
 
 fun Set<String>.capabilityGroups(): Set<CapabilityGroup> = buildSet {
     if (ExecPlaneCapabilities.EXEC in this@capabilityGroups) add(CapabilityGroup.COMMAND)
-    if (containsAll(ExecPlaneCapabilities.FILE)) add(CapabilityGroup.FILES)
-    if (containsAll(ExecPlaneCapabilities.TRANSFER)) add(CapabilityGroup.TRANSFER)
+    if (this@capabilityGroups.containsAll(ExecPlaneCapabilities.FILE)) add(CapabilityGroup.FILES)
+    if (this@capabilityGroups.containsAll(ExecPlaneCapabilities.TRANSFER)) add(CapabilityGroup.TRANSFER)
     if (ExecPlaneCapabilities.ENV_INJECT in this@capabilityGroups) add(CapabilityGroup.ENVIRONMENT)
 }
