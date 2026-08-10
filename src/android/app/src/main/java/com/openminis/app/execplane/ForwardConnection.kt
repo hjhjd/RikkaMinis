@@ -16,6 +16,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -53,6 +54,8 @@ class ForwardConnection(
     override val id: String = "forward:${config.id}"
     override val direction = ConnectionDirection.FORWARD
     private val nextId = AtomicLong(1)
+    private val generations = AtomicLong(0)
+    @Volatile private var activeGeneration = 0L
     private val pending = ConcurrentHashMap<Long, CompletableDeferred<RpcResponse>>()
     private val scope = CoroutineScope(Dispatchers.IO)
     private val stopped = AtomicBoolean(false)
@@ -74,8 +77,15 @@ class ForwardConnection(
         val request = Request.Builder().url(config.url)
             .header("X-Minis-Token", config.token)
             .build()
-        socket = client.newWebSocket(request, Listener())
+        val generation = generations.incrementAndGet()
+        activeGeneration = generation
+        val listener = Listener(generation)
+        val newSocket = client.newWebSocket(request, listener)
+        socket = newSocket
     }
+
+    private fun isCurrent(webSocket: WebSocket, generation: Long): Boolean =
+        socket === webSocket && activeGeneration == generation
 
     override suspend fun exec(command: String, timeoutMs: Long): RemoteExecResult {
         require(command.isNotBlank()) { "Command cannot be empty" }
@@ -101,9 +111,12 @@ class ForwardConnection(
         } catch (e: RemoteExecutionException) {
             throw e
         } catch (e: CancellationException) {
+            if (e is TimeoutCancellationException) {
+                throw RemoteChannelException("WebSocket command timed out after ${timeoutMs}ms", e)
+            }
             throw e
         } catch (e: Throwable) {
-            throw RemoteChannelException("WebSocket command channel failed", e)
+            throw RemoteChannelException("WebSocket command channel failed: ${e.message ?: e.javaClass.simpleName}", e)
         } finally {
             pending.remove(requestId)
         }
@@ -127,8 +140,13 @@ class ForwardConnection(
         pending.clear()
     }
 
-    private inner class Listener : WebSocketListener() {
+    private inner class Listener(private val generation: Long) : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (!isCurrent(webSocket, generation)) {
+                webSocket.close(1000, "Superseded connection")
+                return
+            }
+            socket = webSocket
             retryDelayMs = 1_000L
             manager.register(
                 this@ForwardConnection,
@@ -143,17 +161,22 @@ class ForwardConnection(
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
+            if (!isCurrent(webSocket, generation)) return
             val response = runCatching { ExecPlaneJson.codec.decodeFromString<RpcResponse>(text) }.getOrNull() ?: return
             pending[response.id]?.complete(response)
             manager.markSeen(config.name, id)
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (!isCurrent(webSocket, generation)) return
+            socket = null
             manager.disconnect(config.name, id)
             scheduleReconnect()
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (!isCurrent(webSocket, generation)) return
+            socket = null
             pending.values.forEach { it.completeExceptionally(t) }
             pending.clear()
             manager.disconnect(config.name, id)

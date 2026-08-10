@@ -52,7 +52,9 @@ class ExecPlaneBridge(
     private val _status = MutableStateFlow(WsBridgeStatus())
     val status: StateFlow<WsBridgeStatus> = _status.asStateFlow()
     private var server: ReverseServer? = null
-    private val forwardClient = OkHttpClient.Builder().pingInterval(5, java.util.concurrent.TimeUnit.SECONDS).build()
+    private val forwardClient = OkHttpClient.Builder()
+        .pingInterval(20, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
     private val forwardConnections = ConcurrentHashMap<String, ForwardConnection>()
 
     fun apply(enabled: Boolean = settings.enabled.value, port: Int = settings.port.value) {

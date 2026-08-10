@@ -30,6 +30,7 @@ async def handler(ws, token):
         try:
             req = json.loads(raw); rid = req["id"]
             if req.get("method") == "exec":
+                print(f"exec request id={rid}", flush=True)
                 result = await execute(req)
                 reply = {"id": rid, "ok": True, "result": result}
             elif req.get("method") in ("ping", "status"):
@@ -48,7 +49,7 @@ async def main():
     ap.add_argument("--token", default=os.getenv("EXECPLANE_TOKEN"))
     args = ap.parse_args()
     if not args.token: ap.error("provide --token or EXECPLANE_TOKEN")
-    async with serve(lambda ws: handler(ws, args.token), args.host, args.port, ping_interval=5, ping_timeout=15):
+    async with serve(lambda ws: handler(ws, args.token), args.host, args.port, ping_interval=20, ping_timeout=30):
         print(f"ExecPlane WebSocket Server listening on ws://{args.host}:{args.port}", flush=True)
         await asyncio.Future()
 
