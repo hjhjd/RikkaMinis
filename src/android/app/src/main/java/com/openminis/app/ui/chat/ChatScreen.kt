@@ -450,6 +450,8 @@ fun ChatScreen(
             providerRepository = providerRepository,
             appContext = context.applicationContext,
             memoryRepository = memoryRepository,
+            agentMemoryRepositoryFactory = (context.applicationContext as? com.openminis.app.MinisApp)
+                ?.agentMemoryRepositoryFactory,
             skillRepository = skillRepository,
             mcpRepository = mcpRepository,
         ),
@@ -5465,9 +5467,10 @@ fun ChatScreen(
     }
 
     // Memory bottom sheet
-    if (showMemorySheet && memoryRepository != null) {
+    val activeAgentMemoryRepository = viewModel.memoryRepositoryForActiveAgent()
+    if (showMemorySheet && activeAgentMemoryRepository != null) {
         SessionMemorySheet(
-            memoryRepository = memoryRepository,
+            memoryRepository = activeAgentMemoryRepository,
             toolRecords = memoryToolRecords,
             onDismiss = { viewModel.dismissMemorySheet() },
             onRevokeRecord = { record -> viewModel.revokeMemoryRecord(record) },
@@ -5480,6 +5483,7 @@ fun ChatScreen(
         SessionSkillsSheet(
             skillRepository = skillRepository,
             sessionId = sessionId,
+            agentId = viewModel.activeAgentId.value,
             onDismiss = { showSkillsSheet = false },
         )
     }

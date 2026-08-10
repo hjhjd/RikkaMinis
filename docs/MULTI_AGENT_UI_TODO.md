@@ -121,12 +121,12 @@ UI 合并，但底层仍需区分信任边界：
 
 ### 4.4 Agent 独立记忆
 
-- [ ] 推荐目录：`filesDir/minis-agents/<agentId>/memory/`。
-- [ ] 每个目录包含 `GLOBAL.md`、`SOUL.md` 兼容文件（迁移期可选）和 `YYYY-MM-DD.md`。
-- [ ] 将 `MemoryRepository` 改为可按 `agentId` 获取的工厂/仓库，而不是 App 唯一固定目录实例。
-- [ ] 工具执行和 prompt 注入必须从当前 session 的 `agentId` 解析仓库。
+- [x] 推荐目录已采用：`filesDir/minis-agents/<agentId>/memory/`。
+- [x] 每个 Agent 目录支持独立 `GLOBAL.md` 与 `YYYY-MM-DD.md`；SOUL 兼容仍由默认 Agent 旧入口维护。
+- [x] 新增按 `agentId` 获取仓库的 `AgentMemoryRepositoryFactory`；App 级旧仓库仅作为默认 Agent 兼容别名。
+- [x] memory tools、prompt 注入和会话记忆面板均从当前 session 的 `agentId` 解析仓库。
 - [ ] shell 暴露路径需要明确：推荐 `/var/minis/agents/<agentId>/memory/`；同时为当前活跃 Agent 提供兼容别名 `/var/minis/memory/`，但别名切换必须与 session 同步且不可串线。
-- [ ] 将现有 `minis-global/memory` 原子迁移到默认 Agent；迁移失败时保留源目录并记录可恢复日志。
+- [x] 将现有 `minis-global/memory` 以“不覆盖目标文件”的复制方式迁入默认 Agent；源目录保留且迁移幂等。
 - [ ] `MemoryGlobalPrefs` 重新定义为“新 Agent / 新 session 默认开关”，已有 session 的 `memory_enabled` 继续有效。
 
 ### 4.5 头像存储
@@ -169,7 +169,7 @@ UI 合并，但底层仍需区分信任边界：
 - [x] `buildSystemPrompt()` 已按 Agent 渲染身份与 instructions；完整装配顺序随独立记忆接入后最终固定。
 - [ ] 按“平台模板 → Agent 指令 → 技能/MCP → Agent 记忆 → runtime”固定装配顺序。
 - [x] 技能 fragment 改用 agent + session 两层解析。
-- [ ] memory tools、GLOBAL.md、daily logs 改用 Agent memory repository。
+- [x] memory tools、GLOBAL.md、daily logs 和会话记忆 UI 已使用 Agent memory repository；shell 路径隔离待下一批。
 - [ ] Agent 默认模型只用于新话题；已有 session 的模型不随 Agent 配置修改而强制改变。
 - [ ] 聊天气泡头部和通知展示 Agent 名称/头像；缺失 Agent 时回退默认 Agent并记录告警。
 - [ ] 检查 `ChatViewModelStore` 缓存键：session 已唯一，可保留，但重载 Agent 配置后需使 prompt 缓存失效。

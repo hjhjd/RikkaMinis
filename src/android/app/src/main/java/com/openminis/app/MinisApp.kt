@@ -17,6 +17,7 @@ import coil.ImageLoaderFactory
 import com.openminis.app.browser.BrowserTabPool
 import com.openminis.app.data.db.AppDatabase
 import com.openminis.app.data.repository.AgentRepository
+import com.openminis.app.data.repository.AgentMemoryRepositoryFactory
 import com.openminis.app.data.repository.BackgroundSettingsRepository
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.EnvVarRepository
@@ -89,6 +90,8 @@ class MinisApp : Application(), ImageLoaderFactory {
     lateinit var mcpRepository: MCPRepository
         private set
     lateinit var memoryRepository: MemoryRepository
+        private set
+    lateinit var agentMemoryRepositoryFactory: AgentMemoryRepositoryFactory
         private set
     lateinit var webAppShortcutRepository: WebAppShortcutRepository
         private set
@@ -314,7 +317,11 @@ class MinisApp : Application(), ImageLoaderFactory {
         envVarRepository = EnvVarRepository(this)
         skillRepository = SkillRepository(this)
         mcpRepository = MCPRepository(this)
-        memoryRepository = MemoryRepository(java.io.File(filesDir, "minis-global/memory"))
+        agentMemoryRepositoryFactory = AgentMemoryRepositoryFactory(this)
+        // Compatibility alias for global settings/backup during migration.
+        memoryRepository = agentMemoryRepositoryFactory.forAgent(
+            com.openminis.app.data.db.AgentIds.DEFAULT,
+        )
         webAppShortcutRepository = WebAppShortcutRepository(database.webAppShortcutDao())
 
         // [T-soul-md] Seed SOUL.md with the default content on first launch

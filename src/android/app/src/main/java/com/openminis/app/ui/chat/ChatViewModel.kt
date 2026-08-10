@@ -90,6 +90,7 @@ class ChatViewModel(
     private val providerRepository: ProviderRepository,
     internal val context: Context,
     val memoryRepository: MemoryRepository? = null,
+    private val agentMemoryRepositoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory? = null,
     val skillRepository: com.openminis.app.data.repository.SkillRepository? = null,
     val mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
 ) : ViewModel() {
@@ -316,6 +317,7 @@ class ChatViewModel(
             providerRepository: ProviderRepository,
             appContext: Context,
             memoryRepository: MemoryRepository?,
+            agentMemoryRepositoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory? = null,
             skillRepository: com.openminis.app.data.repository.SkillRepository?,
             mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
@@ -329,12 +331,18 @@ class ChatViewModel(
                     providerRepository = providerRepository,
                     context = appContext,
                     memoryRepository = memoryRepository,
+                    agentMemoryRepositoryFactory = agentMemoryRepositoryFactory,
                     skillRepository = skillRepository,
                     mcpRepository = mcpRepository,
                 ) as T
             }
         }
     }
+
+    private fun activeMemoryRepository(): MemoryRepository? =
+        agentMemoryRepositoryFactory?.forAgent(_activeAgentId.value) ?: memoryRepository
+
+    fun memoryRepositoryForActiveAgent(): MemoryRepository? = activeMemoryRepository()
 
     private val mediaStore = com.openminis.app.data.storage.MediaStore(context)
 
@@ -901,7 +909,7 @@ class ChatViewModel(
      * op-log row are mutated.
      */
     fun revokeMemoryRecord(record: MemoryToolRecord): com.openminis.app.data.repository.MemoryRepository.EntryMutationResult {
-        val repo = memoryRepository
+        val repo = activeMemoryRepository()
             ?: return com.openminis.app.data.repository.MemoryRepository.EntryMutationResult.IOError("Memory not available")
         val written = record.writtenContent
             ?: return com.openminis.app.data.repository.MemoryRepository.EntryMutationResult.NotFound
@@ -929,7 +937,7 @@ class ChatViewModel(
      * still get pulled from the in-memory record list.
      */
     private fun revokeMemoryWritesInDeletedMessages(deletedMessages: List<ChatMessage>) {
-        if (memoryRepository == null) return
+        if (activeMemoryRepository() == null) return
         val deletedContents = mutableListOf<String>()
         for (msg in deletedMessages) {
             for (block in msg.toolBlocks) {
@@ -965,7 +973,7 @@ class ChatViewModel(
         record: MemoryToolRecord,
         newContent: String,
     ): com.openminis.app.data.repository.MemoryRepository.EntryMutationResult {
-        val repo = memoryRepository
+        val repo = activeMemoryRepository()
             ?: return com.openminis.app.data.repository.MemoryRepository.EntryMutationResult.IOError("Memory not available")
         val old = record.writtenContent
             ?: return com.openminis.app.data.repository.MemoryRepository.EntryMutationResult.NotFound
@@ -8312,7 +8320,7 @@ class ChatViewModel(
     }
 
     private fun executeMemoryWriteTool(argsJson: String): ToolExecutionResult {
-        val repo = memoryRepository ?: return ToolExecutionResult("Error: Memory not available", false)
+        val repo = activeMemoryRepository() ?: return ToolExecutionResult("Error: Memory not available", false)
         if (!_memoryEnabled.value) {
             val msg = "Memory writes are disabled for this session (user toggled /memory off). Reads remain available."
             return ToolExecutionResult(msg, false, toolTitle = "Memory (disabled)")
@@ -8333,7 +8341,7 @@ class ChatViewModel(
     }
 
     private fun executeMemoryGetTool(argsJson: String): ToolExecutionResult {
-        val repo = memoryRepository ?: return ToolExecutionResult("Error: Memory not available", false)
+        val repo = activeMemoryRepository() ?: return ToolExecutionResult("Error: Memory not available", false)
         val result = MemoryTools.executeMemoryGet(argsJson, repo)
         val keywords = try {
             JSONObject(argsJson).optString("keywords", "")
@@ -8991,8 +8999,8 @@ class ChatViewModel(
         // intentionally NOT gated by this toggle: skills are part of the
         // tool surface and SOUL.md is part of identity, both orthogonal
         // to the memory feature.
-        val globalMemoryFragment = if (memoryOn) memoryRepository?.loadGlobalMemoryFragment() else null
-        val dailyMemoryFragment = if (memoryOn) memoryRepository?.loadRecentDailyMemoryFragment() else null
+        val globalMemoryFragment = if (memoryOn) activeMemoryRepository()?.loadGlobalMemoryFragment() else null
+        val dailyMemoryFragment = if (memoryOn) activeMemoryRepository()?.loadRecentDailyMemoryFragment() else null
 
         return buildString {
             append(base)
@@ -9031,7 +9039,7 @@ class ChatViewModel(
     // ─── Legacy tool execution methods (kept for compatibility) ───────────
 
     fun executeMemoryWrite(argsJson: String): MemoryTools.ToolResult {
-        val repo = memoryRepository ?: return MemoryTools.ToolResult("Error: Memory not available", false)
+        val repo = activeMemoryRepository() ?: return MemoryTools.ToolResult("Error: Memory not available", false)
         if (!_memoryEnabled.value) {
             return MemoryTools.ToolResult(
                 "Memory writes are disabled for this session. Reads are still available. The user can re-enable writes via the /memory slash command.",
@@ -9053,7 +9061,7 @@ class ChatViewModel(
     }
 
     fun executeMemoryGet(argsJson: String): MemoryTools.ToolResult {
-        val repo = memoryRepository ?: return MemoryTools.ToolResult("Error: Memory not available", false)
+        val repo = activeMemoryRepository() ?: return MemoryTools.ToolResult("Error: Memory not available", false)
         val result = MemoryTools.executeMemoryGet(argsJson, repo)
         val keywords = try {
             JSONObject(argsJson).optString("keywords", "")

@@ -50,6 +50,7 @@ import com.openminis.app.ui.components.MinisTextButton
 @Composable
 fun SessionSkillsSheet(
     sessionId: String,
+    agentId: String = com.openminis.app.data.db.AgentIds.DEFAULT,
     skillRepository: SkillRepository,
     onDismiss: () -> Unit,
 ) {
@@ -69,7 +70,7 @@ fun SessionSkillsSheet(
     val overrides = remember(skills) {
         mutableStateMapOf<String, Boolean>().apply {
             for (skill in skills) {
-                put(skill.id, skillRepository.isEnabledForSession(skill.id, sessionId))
+                put(skill.id, skillRepository.isEnabledForSession(skill.id, agentId, sessionId))
             }
         }
     }
