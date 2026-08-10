@@ -63,6 +63,9 @@ class SessionForkManager(
         val new = chatRepository.createSession(
             modelId = source.modelId,
             title = dupTitle,
+            agentId = source.agentId,
+            memoryEnabled = source.memoryEnabled != 0,
+            thinkingLevel = source.thinkingOverride,
         )
         // Mirror iOS: carry over the source's category onto the copy so the
         // session-list icon + colour stay consistent with the original.

@@ -219,6 +219,27 @@ class ChatRepositoryCreateSessionTest {
     }
 
     @Test
+    fun `createSession persists explicit agent owner`() = kotlinx.coroutines.runBlocking {
+        val dao = RecordingDao()
+        val repo = ChatRepository(dao)
+
+        val session = repo.createSession(modelId = "m1", agentId = "agent-nova")
+
+        assertEquals("agent-nova", session.agentId)
+        assertEquals("agent-nova", dao.insertedSession?.agentId)
+    }
+
+    @Test
+    fun `createSession defaults legacy callers to default agent`() = kotlinx.coroutines.runBlocking {
+        val dao = RecordingDao()
+        val repo = ChatRepository(dao)
+
+        val session = repo.createSession(modelId = "m1")
+
+        assertEquals(com.openminis.app.data.db.AgentIds.DEFAULT, session.agentId)
+    }
+
+    @Test
     fun `createSession keeps memory enabled flag`() = kotlinx.coroutines.runBlocking {
         val dao = RecordingDao()
         val repo = ChatRepository(dao)

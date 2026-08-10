@@ -16,6 +16,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.openminis.app.browser.BrowserTabPool
 import com.openminis.app.data.db.AppDatabase
+import com.openminis.app.data.repository.AgentRepository
 import com.openminis.app.data.repository.BackgroundSettingsRepository
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.EnvVarRepository
@@ -76,6 +77,8 @@ class MinisApp : Application(), ImageLoaderFactory {
     lateinit var database: AppDatabase
         private set
     lateinit var chatRepository: ChatRepository
+        private set
+    lateinit var agentRepository: AgentRepository
         private set
     lateinit var providerRepository: ProviderRepository
         private set
@@ -305,6 +308,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         com.openminis.app.diagnostics.HangDetector.start(this)
 
         database = AppDatabase.getInstance(this)
+        agentRepository = AgentRepository(database.agentDao())
         chatRepository = ChatRepository(database.chatDao())
         providerRepository = ProviderRepository(this)
         envVarRepository = EnvVarRepository(this)
@@ -320,6 +324,16 @@ class MinisApp : Application(), ImageLoaderFactory {
         // synchronous metadata read-path (chat header / system prompt).
         com.openminis.app.agent.SoulStore.ensureExists(this)
         com.openminis.app.agent.SoulStore.refreshCache(this)
+        // Non-destructive, idempotent bridge into the new Agent table. Keep
+        // SOUL.md in place until all legacy settings/deep links are retired.
+        applicationScope.launch {
+            runCatching {
+                com.openminis.app.agent.LegacyAgentMigration.migrate(
+                    this@MinisApp,
+                    agentRepository,
+                )
+            }.onFailure { Log.e("MinisApp", "legacy Agent migration failed", it) }
+        }
 
         // T-config: minis-config CLI surface — registry / audit log /
         // master-switch store. Initialized eagerly here so

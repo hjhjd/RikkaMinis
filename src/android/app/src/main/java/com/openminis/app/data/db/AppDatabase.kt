@@ -10,15 +10,17 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(
     entities = [
         ChatSessionEntity::class,
+        AgentEntity::class,
         MessageEntity::class,
         CompactMarkerEntity::class,
         WebAppShortcutEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
+    abstract fun agentDao(): AgentDao
     abstract fun webAppShortcutDao(): WebAppShortcutDao
 
     companion object {
@@ -163,6 +165,50 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Multi-Agent foundation. A deterministic default Agent makes the
+         * migration fully SQL-driven and lets every legacy session receive a
+         * non-null owner in the same transaction.
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS agents (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        avatar_path TEXT,
+                        instructions TEXT NOT NULL,
+                        preferred_language TEXT,
+                        default_model_binding TEXT,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        sort_order INTEGER NOT NULL,
+                        is_default INTEGER NOT NULL,
+                        is_archived INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                val now = System.currentTimeMillis()
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO agents (
+                        id, name, avatar_path, instructions, preferred_language,
+                        default_model_binding, created_at, updated_at, sort_order,
+                        is_default, is_archived
+                    ) VALUES (?, ?, NULL, '', 'auto', NULL, ?, ?, 0, 1, 0)
+                    """.trimIndent(),
+                    arrayOf(AgentIds.DEFAULT, "RikkaMinis", now, now),
+                )
+                db.execSQL(
+                    "ALTER TABLE sessions ADD COLUMN agent_id TEXT NOT NULL DEFAULT '${AgentIds.DEFAULT}'",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_sessions_agent_id ON sessions(agent_id)",
+                )
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -193,6 +239,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val CREATE_DEFAULT_AGENT_CALLBACK = object : RoomDatabase.Callback() {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                val now = System.currentTimeMillis()
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO agents (
+                        id, name, avatar_path, instructions, preferred_language,
+                        default_model_binding, created_at, updated_at, sort_order,
+                        is_default, is_archived
+                    ) VALUES (?, ?, NULL, '', 'auto', NULL, ?, ?, 0, 1, 0)
+                    """.trimIndent(),
+                    arrayOf(AgentIds.DEFAULT, "RikkaMinis", now, now),
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -200,7 +262,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addCallback(CREATE_DEFAULT_AGENT_CALLBACK)
                     .build()
                     .also { INSTANCE = it }
             }

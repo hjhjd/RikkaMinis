@@ -43,7 +43,7 @@ class SkillRepository(private val context: Context) {
     companion object {
         private const val TAG = "SkillRepository"
         private const val DB_NAME = "skills.db"
-        private const val DB_VERSION = 3
+        private const val DB_VERSION = 4
         private const val MAX_SKILLS_IN_PROMPT = 20
         private const val MAX_SKILL_DESC_LENGTH = 200
         private const val RECENT_WINDOW_MS = 7L * 24 * 3600 * 1000
@@ -175,6 +175,7 @@ class SkillRepository(private val context: Context) {
     fun delete(id: String) {
         db.execSQL("DELETE FROM skills WHERE id=?", arrayOf(id))
         db.execSQL("DELETE FROM session_skill_overrides WHERE skill_id=?", arrayOf(id))
+        db.execSQL("DELETE FROM agent_skill_bindings WHERE skill_id=?", arrayOf(id))
         val dir = File(skillsDir, id)
         dir.deleteRecursively()
         _skills.value = _skills.value.filter { it.id != id }
@@ -188,9 +189,43 @@ class SkillRepository(private val context: Context) {
         }
     }
 
-    // -- Session Overrides --
+    // -- Agent + Session Overrides --
 
-    fun isEnabledForSession(skillId: String, sessionId: String): Boolean {
+    /**
+     * Agent-level default. Legacy default Agent inherits the installed skill's
+     * global flag; a newly-created Agent has no rows and therefore starts with
+     * every skill disabled until explicitly configured.
+     */
+    fun isEnabledForAgent(skillId: String, agentId: String): Boolean {
+        val cursor = db.rawQuery(
+            "SELECT is_enabled FROM agent_skill_bindings WHERE agent_id=? AND skill_id=?",
+            arrayOf(agentId, skillId),
+        )
+        val bound = if (cursor.moveToFirst()) cursor.getInt(0) == 1 else null
+        cursor.close()
+        if (bound != null) return bound
+        return if (agentId == com.openminis.app.data.db.AgentIds.DEFAULT) {
+            _skills.value.find { it.id == skillId }?.isEnabled ?: false
+        } else {
+            false
+        }
+    }
+
+    fun setAgentBinding(agentId: String, skillId: String, enabled: Boolean) {
+        db.execSQL(
+            "INSERT OR REPLACE INTO agent_skill_bindings (agent_id, skill_id, is_enabled) VALUES (?, ?, ?)",
+            arrayOf<Any>(agentId, skillId, if (enabled) 1 else 0),
+        )
+    }
+
+    fun clearAgentBindings(agentId: String) {
+        db.execSQL("DELETE FROM agent_skill_bindings WHERE agent_id=?", arrayOf(agentId))
+    }
+
+    fun isEnabledForSession(skillId: String, sessionId: String): Boolean =
+        isEnabledForSession(skillId, com.openminis.app.data.db.AgentIds.DEFAULT, sessionId)
+
+    fun isEnabledForSession(skillId: String, agentId: String, sessionId: String): Boolean {
         val cursor = db.rawQuery(
             "SELECT is_enabled FROM session_skill_overrides WHERE session_id=? AND skill_id=?",
             arrayOf(sessionId, skillId)
@@ -198,7 +233,7 @@ class SkillRepository(private val context: Context) {
         val override = if (cursor.moveToFirst()) cursor.getInt(0) == 1 else null
         cursor.close()
         if (override != null) return override
-        return _skills.value.find { it.id == skillId }?.isEnabled ?: false
+        return isEnabledForAgent(skillId, agentId)
     }
 
     fun setSessionOverride(sessionId: String, skillId: String, enabled: Boolean) {
@@ -238,8 +273,11 @@ class SkillRepository(private val context: Context) {
      * (bundled > 7-day recent > most-used), matching iOS SkillStore.
      * Returns null when the session has no enabled skills.
      */
-    fun skillPromptFragment(sessionId: String): String? {
-        val enabled = _skills.value.filter { isEnabledForSession(it.id, sessionId) }
+    fun skillPromptFragment(sessionId: String): String? =
+        skillPromptFragment(com.openminis.app.data.db.AgentIds.DEFAULT, sessionId)
+
+    fun skillPromptFragment(agentId: String, sessionId: String): String? {
+        val enabled = _skills.value.filter { isEnabledForSession(it.id, agentId, sessionId) }
         if (enabled.isEmpty()) return null
 
         val total = enabled.size
@@ -1570,6 +1608,14 @@ class SkillRepository(private val context: Context) {
                     PRIMARY KEY (session_id, skill_id)
                 )
             """)
+            db.execSQL("""
+                CREATE TABLE agent_skill_bindings (
+                    agent_id TEXT NOT NULL,
+                    skill_id TEXT NOT NULL,
+                    is_enabled INTEGER NOT NULL,
+                    PRIMARY KEY (agent_id, skill_id)
+                )
+            """)
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -1582,6 +1628,23 @@ class SkillRepository(private val context: Context) {
                 try {
                     db.execSQL("ALTER TABLE skills ADD COLUMN use_count REAL NOT NULL DEFAULT 0")
                 } catch (_: Exception) { /* column may already exist */ }
+            }
+            if (oldVersion < 4) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS agent_skill_bindings (
+                        agent_id TEXT NOT NULL,
+                        skill_id TEXT NOT NULL,
+                        is_enabled INTEGER NOT NULL,
+                        PRIMARY KEY (agent_id, skill_id)
+                    )
+                """)
+                // Snapshot legacy global flags for the migrated default Agent.
+                // Explicit rows make later global-resource semantics changes
+                // unable to silently alter this Agent's configured skill set.
+                db.execSQL("""
+                    INSERT OR IGNORE INTO agent_skill_bindings(agent_id, skill_id, is_enabled)
+                    SELECT 'default', id, is_enabled FROM skills
+                """)
             }
         }
     }

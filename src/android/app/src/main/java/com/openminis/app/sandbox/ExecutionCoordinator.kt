@@ -359,6 +359,15 @@ object ExecutionCoordinator {
     }
 
     /**
+     * Read-only diagnostics for same-module tests. There is intentionally no
+     * singular "mounted session": each session owns an independent shell.
+     */
+    internal fun activeShellSessionIds(): Set<String> = shells.keys.toSet()
+
+    internal fun hasActiveShell(sessionId: String): Boolean =
+        shells[sessionId]?.isAlive == true
+
+    /**
      * Called when a session is closed. Stops and removes the shell.
      */
     fun sessionDidTerminate(sessionId: String) {

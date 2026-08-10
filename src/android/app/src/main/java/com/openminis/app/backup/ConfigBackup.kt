@@ -323,6 +323,7 @@ object ConfigBackup {
                     put("category", session.category)
                     put("lastMessage", session.lastMessage)
                     put("modelBinding", session.modelBinding)
+                    put("agentId", session.agentId)
                     put("source", session.source)
                     put("memoryEnabled", session.memoryEnabled)
                     put("pinnedAt", session.pinnedAt)
@@ -879,6 +880,7 @@ object ConfigBackup {
                         category = s.optString("category").ifEmpty { null },
                         lastMessage = s.optString("lastMessage").ifEmpty { null },
                         modelBinding = s.optString("modelBinding").ifEmpty { null },
+                        agentId = s.optString("agentId").ifEmpty { com.openminis.app.data.db.AgentIds.DEFAULT },
                         source = s.optString("source").ifEmpty { null },
                         memoryEnabled = s.optInt("memoryEnabled", 1),
                         pinnedAt = if (s.has("pinnedAt")) s.optLong("pinnedAt") else null,

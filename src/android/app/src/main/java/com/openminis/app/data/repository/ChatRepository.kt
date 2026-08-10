@@ -18,6 +18,7 @@ class ChatRepository(internal val dao: ChatDao) {
     suspend fun createSession(
         modelId: String,
         title: String? = null,
+        agentId: String = com.openminis.app.data.db.AgentIds.DEFAULT,
         // [T-memory-global-toggle-settings-ui-android] honor the global
         // memory default at row-insert time. Caller (ChatViewModel) reads
         // MemoryGlobalPrefs.isGlobalEnabled and passes the value through
@@ -44,6 +45,7 @@ class ChatRepository(internal val dao: ChatDao) {
             id = UUID.randomUUID().toString(),
             title = title,
             modelId = modelId,
+            agentId = agentId,
             createdAt = now,
             updatedAt = now,
             memoryEnabled = if (memoryEnabled) 1 else 0,

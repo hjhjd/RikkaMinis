@@ -2,9 +2,13 @@ package com.openminis.app.data.db
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "sessions")
+@Entity(
+    tableName = "sessions",
+    indices = [Index(value = ["agent_id"])],
+)
 data class ChatSessionEntity(
     @PrimaryKey val id: String,
     val title: String? = null,
@@ -14,6 +18,10 @@ data class ChatSessionEntity(
     val category: String? = null,
     @ColumnInfo(name = "last_message") val lastMessage: String? = null,
     @ColumnInfo(name = "model_binding") val modelBinding: String? = null,
+    // Every persisted topic belongs to exactly one Agent. The deterministic
+    // default id is created by AppDatabase migration 10→11 and keeps legacy
+    // constructors/backups source-compatible while callers become Agent-aware.
+    @ColumnInfo(name = "agent_id", defaultValue = "'default'") val agentId: String = AgentIds.DEFAULT,
     // iOS parity fields:
     @ColumnInfo(name = "source") val source: String? = null,             // e.g. "shortcut", "share"
     @ColumnInfo(name = "memory_enabled") val memoryEnabled: Int = 1,     // 1=on, 0=off
