@@ -385,6 +385,8 @@ private data class ScrollFollowKey(
 @Composable
 fun ChatScreen(
     sessionId: String,
+    /** Agent selected when this route represents an unpersisted draft. */
+    draftAgentId: String? = null,
     /**
      * [P0-0] When non-null, scroll to this message once after the list is
      * populated and briefly highlight it. Null (the default) reproduces the
@@ -441,6 +443,7 @@ fun ChatScreen(
         viewModelStoreOwner = ChatViewModelStore.ownerFor(sessionId),
         factory = ChatViewModel.factory(
             sessionId = sessionId,
+            draftAgentId = draftAgentId,
             chatRepository = chatRepository,
             providerRepository = providerRepository,
             appContext = context.applicationContext,

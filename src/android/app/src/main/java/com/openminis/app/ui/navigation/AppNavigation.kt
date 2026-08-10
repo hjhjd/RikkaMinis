@@ -100,7 +100,7 @@ object Routes {
      * working, and so all 20+ existing `Routes.chat(id)` call sites compile
      * untouched.
      */
-    const val CHAT = "chat/{sessionId}?focusMessageId={focusMessageId}"
+    const val CHAT = "chat/{sessionId}?focusMessageId={focusMessageId}&agentId={agentId}"
     const val SETTINGS = "settings"
     const val PROVIDER_LIST = "providers"
     const val ADD_PROVIDER = "add_provider"
@@ -198,11 +198,18 @@ object Routes {
      * `%20`. Message ids are UUID-ish today, but encoding costs nothing and
      * protects against ids that ever carry reserved characters.
      */
-    fun chat(sessionId: String, focusMessageId: String? = null): String {
+    fun chat(
+        sessionId: String,
+        focusMessageId: String? = null,
+        agentId: String? = null,
+    ): String {
+        fun enc(value: String) = java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+        val params = buildList {
+            focusMessageId?.takeIf { it.isNotBlank() }?.let { add("focusMessageId=${enc(it)}") }
+            agentId?.takeIf { it.isNotBlank() }?.let { add("agentId=${enc(it)}") }
+        }
         val base = "chat/$sessionId"
-        if (focusMessageId.isNullOrBlank()) return base
-        val enc = java.net.URLEncoder.encode(focusMessageId, "UTF-8").replace("+", "%20")
-        return "$base?focusMessageId=$enc"
+        return if (params.isEmpty()) base else "$base?${params.joinToString("&")}"
     }
     fun providerDetail(instanceId: String) = "provider/$instanceId"
     fun providerConnection(instanceId: String) = "provider_connection/$instanceId"
@@ -507,14 +514,23 @@ fun AppNavigation(
                     nullable = true
                     defaultValue = null
                 },
+                navArgument("agentId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
             ),
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
             val focusMessageId = backStackEntry.arguments
                 ?.getString("focusMessageId")
                 ?.takeIf { it.isNotBlank() }
+            val draftAgentId = backStackEntry.arguments
+                ?.getString("agentId")
+                ?.takeIf { it.isNotBlank() }
             ChatScreen(
                 sessionId = sessionId,
+                draftAgentId = draftAgentId,
                 focusMessageId = focusMessageId,
                 chatRepository = chatRepository,
                 providerRepository = providerRepository,

@@ -164,11 +164,11 @@ UI 合并，但底层仍需区分信任边界：
 
 ### 阶段 2：运行时 Agent 化
 
-- [ ] `ChatViewModel` 加载 session 时同时加载绑定 Agent。
-- [ ] 草稿 session id 旁保存/传递稳定 `agentId`；草稿提升为真实 session 时不丢绑定。
+- [x] `ChatViewModel` 加载 session 时恢复绑定 Agent id（Agent 实体内容加载待下一批）。
+- [x] 草稿路由携带稳定 `agentId`；草稿提升为真实 session 时保留绑定。
 - [ ] `buildSystemPrompt()` 改为显式接收/解析 Agent 配置。
 - [ ] 按“平台模板 → Agent 指令 → 技能/MCP → Agent 记忆 → runtime”固定装配顺序。
-- [ ] 技能 fragment 改用 agent + session 两层解析。
+- [x] 技能 fragment 改用 agent + session 两层解析。
 - [ ] memory tools、GLOBAL.md、daily logs 改用 Agent memory repository。
 - [ ] Agent 默认模型只用于新话题；已有 session 的模型不随 Agent 配置修改而强制改变。
 - [ ] 聊天气泡头部和通知展示 Agent 名称/头像；缺失 Agent 时回退默认 Agent并记录告警。

@@ -84,6 +84,7 @@ import java.io.ByteArrayOutputStream
 
 class ChatViewModel(
     internal val sessionId: String,
+    private val draftAgentId: String? = null,
     private val chatRepository: ChatRepository,
     private val providerRepository: ProviderRepository,
     internal val context: Context,
@@ -308,6 +309,7 @@ class ChatViewModel(
          */
         fun factory(
             sessionId: String,
+            draftAgentId: String? = null,
             chatRepository: ChatRepository,
             providerRepository: ProviderRepository,
             appContext: Context,
@@ -319,6 +321,7 @@ class ChatViewModel(
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 return ChatViewModel(
                     sessionId = sessionId,
+                    draftAgentId = draftAgentId,
                     chatRepository = chatRepository,
                     providerRepository = providerRepository,
                     context = appContext,
@@ -666,6 +669,12 @@ class ChatViewModel(
      *  this, opening a session that previously fell back mid-run flashes the
      *  default model name for one frame before the persisted binding settles. */
     private val sessionLoaded = MutableStateFlow(false)
+
+    private val _activeAgentId = MutableStateFlow(
+        draftAgentId?.takeIf { it.isNotBlank() }
+            ?: com.openminis.app.data.db.AgentIds.DEFAULT,
+    )
+    val activeAgentId: StateFlow<String> = _activeAgentId.asStateFlow()
 
     private val _sessionTitle = MutableStateFlow("New Chat")
     val sessionTitle: StateFlow<String> = _sessionTitle.asStateFlow()
@@ -2916,6 +2925,7 @@ class ChatViewModel(
         // before first send, that choice wins.
         val session = chatRepository.createSession(
             modelId = modelId,
+            agentId = _activeAgentId.value,
             memoryEnabled = _memoryEnabled.value,
             // [T-empty-session-residue] Same reasoning for the thinking
             // override: fold it into the insert so flipping /thinking on a
@@ -3100,6 +3110,9 @@ class ChatViewModel(
 
             // Existing session: load from DB
             val session = chatRepository.getSession(sessionId) ?: return@launch
+            // Persisted ownership is authoritative. Route agentId exists only
+            // for drafts and must never rebind an existing topic.
+            _activeAgentId.value = session.agentId
             _sessionTitle.value = session.title ?: "New Chat"
             _sessionCategory.value = session.category
             _memoryEnabled.value = session.memoryEnabled != 0
@@ -8941,7 +8954,10 @@ class ChatViewModel(
         // turn instead of "after kill app". Cheap: loadAll is a SQLite
         // SELECT + listFiles, no network.
         skillRepository?.reloadFromDisk()
-        val skillFragment = skillRepository?.skillPromptFragment(activeSessionId)
+        val skillFragment = skillRepository?.skillPromptFragment(
+            agentId = _activeAgentId.value,
+            sessionId = activeSessionId,
+        )
         // [T-mcp-integration-android] Re-read servers.json (the CLI / file
         // browser may have changed it out-of-band) then build the Top-20
         // enabled-MCP disclosure, injected right after the skills fragment.
