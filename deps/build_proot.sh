@@ -108,6 +108,8 @@ setup_toolchain() {
     case "$(uname -s)-$(uname -m)" in
         Darwin-*)         host_tag="darwin-x86_64" ;;
         Linux-x86_64)     host_tag="linux-x86_64" ;;
+        # aarch64 hosts run the x86_64 NDK toolchain via binfmt_misc + qemu-user
+        Linux-aarch64)    host_tag="linux-x86_64" ;;
         *)                log_error "Unsupported host: $(uname -s) $(uname -m)" ;;
     esac
 
