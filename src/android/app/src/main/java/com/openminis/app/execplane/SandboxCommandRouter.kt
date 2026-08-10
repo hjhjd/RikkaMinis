@@ -39,6 +39,8 @@ class SandboxCommandRouter(
                 exitCode = remote.exitCode,
                 durationMs = remote.durationMs ?: 0L,
                 sandboxName = server.name,
+                sandboxUser = remote.user,
+                sandboxUid = remote.uid,
             )
         } catch (error: RemoteChannelException) {
             if (explicit != null) {

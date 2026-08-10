@@ -37,6 +37,10 @@ data class RemoteExecResult(
     val stderr: String,
     val exitCode: Int,
     val durationMs: Long? = null,
+    val user: String? = null,
+    val uid: Int? = null,
+    val gid: Int? = null,
+    val cwd: String? = null,
 )
 
 class RemoteChannelException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -127,6 +131,10 @@ class ForwardConnection(
             stderr = result["stderr"]?.jsonPrimitive?.content.orEmpty(),
             exitCode = result["exitCode"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
             durationMs = result["durationMs"]?.jsonPrimitive?.content?.toLongOrNull(),
+            user = result["user"]?.jsonPrimitive?.content,
+            uid = result["uid"]?.jsonPrimitive?.content?.toIntOrNull(),
+            gid = result["gid"]?.jsonPrimitive?.content?.toIntOrNull(),
+            cwd = result["cwd"]?.jsonPrimitive?.content,
         )
     }
 

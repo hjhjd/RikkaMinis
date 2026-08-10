@@ -1,6 +1,18 @@
 # ExecPlane WebSocket 测试端
 
-## 反向连接：服务端主动连接 App
+## 使用低权限用户运行（推荐）
+
+服务端命令继承 `ws-server.py` 进程的真实 Linux UID，不会自行提权。以 root 启动时可用 `--user` 永久降权：
+
+```sh
+useradd --create-home --shell /bin/bash minis 2>/dev/null || true
+set -a; . /opt/execplane/server.env; set +a
+/opt/execplane/venv/bin/python /opt/execplane/ws-server.py \
+  --host 127.0.0.1 --port 8767 --user minis --workdir /home/minis
+```
+
+降权在开始监听前完成；之后即使命令被注入，也无法恢复 root。不要把 `minis` 加入 sudo/docker 等特权组，只给它需要访问的项目目录权限。
+
 
 ```sh
 EXECPLANE_TOKEN='App 中复制的令牌' python3 tools/execplane/ws-agent.py

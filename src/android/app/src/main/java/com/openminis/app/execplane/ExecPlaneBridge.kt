@@ -226,6 +226,10 @@ class ExecPlaneBridge(
                 stderr = result["stderr"]?.jsonPrimitive?.content.orEmpty(),
                 exitCode = result["exitCode"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
                 durationMs = result["durationMs"]?.jsonPrimitive?.content?.toLongOrNull(),
+                user = result["user"]?.jsonPrimitive?.content,
+                uid = result["uid"]?.jsonPrimitive?.content?.toIntOrNull(),
+                gid = result["gid"]?.jsonPrimitive?.content?.toIntOrNull(),
+                cwd = result["cwd"]?.jsonPrimitive?.content,
             )
         }
 
