@@ -151,41 +151,11 @@ fun SettingsScreen(
                 )
             }
 
-            // -- Agent Runtime --
+            // Agent-owned Skills / Soul / System Prompt / Memory moved into
+            // each Agent's settings page. Keep their routes for legacy deep
+            // links during the migration window, but do not duplicate them here.
             SettingsSection(title = stringResource(R.string.settings_section_agent_runtime)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Extension,
-                    iconColor = Color(0xFF007AFF),
-                    title = stringResource(R.string.settings_skills),
-                    subtitle = stringResource(R.string.settings_skills_subtitle),
-                    onClick = onSkillsClick,
-                )
-                // [T-soul-md] insertion between Skills and Memory per spec.
-                SettingsItem(
-                    icon = Icons.Outlined.AutoAwesome,
-                    iconColor = Color(0xFFFF9500),
-                    title = stringResource(R.string.settings_soul),
-                    subtitle = stringResource(R.string.settings_soul_subtitle),
-                    onClick = onSoulClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.Description,
-                    iconColor = Color(0xFFAF52DE),
-                    title = stringResource(R.string.settings_system_prompt),
-                    subtitle = stringResource(R.string.settings_system_prompt_subtitle),
-                    onClick = onSystemPromptClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.Psychology,
-                    iconColor = Color(0xFF5856D6),
-                    title = stringResource(R.string.settings_memory),
-                    subtitle = stringResource(R.string.settings_memory_subtitle),
-                    onClick = onMemoryClick,
-                )
-                // [T-mcp-integration-android] MCP Integrations — directly below Memory.
-                // [T-android-mcp-icon-distinct] Dashboard (2x2 block grid) instead of
-                // Extension so MCP no longer shares the Skills row's puzzle-piece icon —
-                // the grid reads as "multiple composed blocks/servers". teal unchanged.
+                // [T-mcp-integration-android] MCP remains global infrastructure.
                 SettingsItem(
                     icon = Icons.Outlined.Dashboard,
                     iconColor = Color(0xFF30B0C7),

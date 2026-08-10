@@ -139,8 +139,15 @@ fun ChatHistoryDrawer(
     // chat, ghost rows from /memory or /thinking toggles) stay hidden.
     val messageCounts by chatRepository.observeMessageCountsPerSession()
         .collectAsState(initial = emptyMap())
-    val visibleSessions = remember(sessions, messageCounts) {
-        sessions.filter { it.pinnedAt != null || (messageCounts[it.id] ?: 0) > 0 }
+    val agentById = remember(agents) { agents.associateBy { it.id } }
+    val visibleSessions = remember(sessions, messageCounts, searchQuery, drawerTab, agentById) {
+        val base = sessions.filter { it.pinnedAt != null || (messageCounts[it.id] ?: 0) > 0 }
+        val q = if (drawerTab == 1) searchQuery.trim() else ""
+        if (q.isEmpty()) base else base.filter { session ->
+            session.title.orEmpty().contains(q, ignoreCase = true) ||
+                session.lastMessage.orEmpty().contains(q, ignoreCase = true) ||
+                agentById[session.agentId]?.name.orEmpty().contains(q, ignoreCase = true)
+        }
     }
     val grouped = remember(visibleSessions) { groupSessionsByDate(visibleSessions) }
 
@@ -266,6 +273,7 @@ fun ChatHistoryDrawer(
                         items(group, key = { it.id }) { session ->
                             DrawerSessionRow(
                                 session = session,
+                                agent = agentById[session.agentId],
                                 selected = session.id == currentSessionId,
                                 onClick = { onSessionClick(session.id) },
                                 onLongClick = { deleteTarget = session },
@@ -416,6 +424,7 @@ private fun DrawerSectionHeader(period: DatePeriod) {
 @Composable
 private fun DrawerSessionRow(
     session: ChatSessionEntity,
+    agent: AgentEntity?,
     selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -424,6 +433,8 @@ private fun DrawerSessionRow(
 ) {
     val style = remember(session.category) { categoryStyle(session.category) }
     val ctx = LocalContext.current
+    val avatarStore = remember { AgentAvatarStore(ctx.applicationContext) }
+    val agentAvatar = remember(agent?.avatarPath) { avatarStore.resolve(agent?.avatarPath) }
     val timeText = remember(session.updatedAt, ctx) { relativeDate(ctx, session.updatedAt) }
     val activeSessions by SessionActivityTracker.activeSessions.collectAsState()
     val isActive = session.id in activeSessions
@@ -448,12 +459,16 @@ private fun DrawerSessionRow(
                 .background(color = style.color.copy(alpha = 0.18f), shape = CircleShape),
             contentAlignment = Alignment.Center,
         ) {
+            if (agentAvatar != null) {
+                AsyncImage(agentAvatar, contentDescription = agent?.name, modifier = Modifier.size(34.dp).clip(CircleShape))
+            } else {
             Icon(
                 imageVector = style.icon,
                 contentDescription = null,
                 tint = style.color,
                 modifier = Modifier.size(17.dp),
             )
+            }
             if (isActive) {
                 Box(
                     modifier = Modifier
@@ -473,6 +488,9 @@ private fun DrawerSessionRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            agent?.let {
+                Text(it.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             session.lastMessage?.takeIf { it.isNotBlank() }?.let { preview ->
                 Text(
                     text = preview,
