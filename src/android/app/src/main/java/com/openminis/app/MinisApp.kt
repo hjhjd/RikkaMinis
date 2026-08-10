@@ -91,6 +91,10 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     lateinit var backgroundSettingsRepository: BackgroundSettingsRepository
         private set
+    lateinit var execPlaneSettingsRepository: com.openminis.app.execplane.ExecPlaneSettingsRepository
+        private set
+    lateinit var execPlaneBridge: com.openminis.app.execplane.ExecPlaneBridge
+        private set
     lateinit var backgroundTaskNotifier: BackgroundTaskNotifier
         private set
     lateinit var mountedFoldersStore: MountedFoldersStore
@@ -466,6 +470,12 @@ class MinisApp : Application(), ImageLoaderFactory {
         // posts a tap-to-open notification when the app is backgrounded.
         // Mirrors iOS BackgroundKeepAliveManager.postBackgroundTaskNotification.
         backgroundSettingsRepository = BackgroundSettingsRepository(this)
+        // ExecPlane reverse WS manager is application-scoped so connections
+        // survive Settings navigation. It binds loopback only and currently
+        // accepts register/ping/status; remote exec stays disabled.
+        execPlaneSettingsRepository = com.openminis.app.execplane.ExecPlaneSettingsRepository(this)
+        execPlaneBridge = com.openminis.app.execplane.ExecPlaneBridge(execPlaneSettingsRepository)
+        execPlaneBridge.apply()
         backgroundTaskNotifier = BackgroundTaskNotifier(
             context = this,
             chatRepository = chatRepository,

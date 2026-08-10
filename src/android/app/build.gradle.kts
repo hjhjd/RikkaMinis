@@ -246,6 +246,10 @@ dependencies {
     // OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
+    // ExecPlane reverse connections: lightweight embedded WebSocket server.
+    // Protocol dispatch remains restricted to register/ping/status until the
+    // command Guard is implemented.
+    implementation("org.java-websocket:Java-WebSocket:1.6.0")
 
     // Kotlinx Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

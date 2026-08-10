@@ -95,6 +95,9 @@ class ConnectionManager(
             .toList()
 
     private fun publishLocked() {
-        mutableSnapshots.value = entries.mapValues { it.value.snapshot }.toMap()
+        // Keep disconnected executors visible in Settings as history; an
+        // active registration with the same name replaces its offline row.
+        val offline = mutableSnapshots.value.filterValues { !it.online }
+        mutableSnapshots.value = offline + entries.mapValues { it.value.snapshot }
     }
 }

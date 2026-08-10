@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -87,6 +88,7 @@ fun SettingsScreen(
     // OEM autostart guidance). Default no-op so older callers/tests
     // don't need to be retrofitted.
     onBackgroundClick: () -> Unit = {},
+    onSandboxClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
     Scaffold(
@@ -189,6 +191,13 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_env_vars),
                     subtitle = stringResource(R.string.settings_env_vars_subtitle),
                     onClick = onEnvVarsClick,
+                )
+                SettingsItem(
+                    icon = Icons.Outlined.CloudQueue,
+                    iconColor = Color(0xFF30B0C7),
+                    title = stringResource(R.string.sandbox_settings_title),
+                    subtitle = stringResource(R.string.settings_sandbox_subtitle),
+                    onClick = onSandboxClick,
                     showDivider = false,
                 )
             }

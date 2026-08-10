@@ -176,6 +176,7 @@ object Routes {
     const val APPEARANCE = "appearance"
     const val CHAT_MENU = "appearance/chat_menu"
     const val BACKGROUND = "background"
+    const val SANDBOX = "sandbox"
     const val ONBOARDING_MODELS = "onboarding_models"
     /** T219-2: Mount external folders settings + detail. */
     const val MOUNTED_FOLDERS = "mounted_folders"
@@ -583,6 +584,7 @@ fun AppNavigation(
                 onUsageClick = { navController.safeNavigate(Routes.USAGE_STATS) },
                 onAppearanceClick = { navController.safeNavigate(Routes.APPEARANCE) },
                 onBackgroundClick = { navController.safeNavigate(Routes.BACKGROUND) },
+                onSandboxClick = { navController.safeNavigate(Routes.SANDBOX) },
                 onLogsClick = { navController.safeNavigate(Routes.LOGS) },
                 onMountedFoldersClick = { navController.safeNavigate(Routes.MOUNTED_FOLDERS) },
                 onSharedFoldersClick = { navController.safeNavigate(Routes.SHARED_FOLDERS) },
@@ -1177,6 +1179,12 @@ fun AppNavigation(
 
         composable(Routes.CHAT_MENU) {
             ChatMenuSettingsScreen(
+                onBack = { navController.safePopBackStack() },
+            )
+        }
+
+        composable(Routes.SANDBOX) {
+            com.openminis.app.ui.settings.SandboxSettingsScreen(
                 onBack = { navController.safePopBackStack() },
             )
         }
