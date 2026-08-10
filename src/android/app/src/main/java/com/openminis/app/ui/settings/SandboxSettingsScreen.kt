@@ -60,7 +60,8 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
     val bridge = app.execPlaneBridge
     val enabled by settings.enabled.collectAsState()
     val savedPort by settings.port.collectAsState()
-    val defaultSandboxId by settings.defaultSandboxId.collectAsState()
+    val sandboxMode by settings.sandboxMode.collectAsState()
+    val defaultWsId by settings.defaultWsId.collectAsState()
     val savedServers by settings.forwardServers.collectAsState()
     val status by bridge.status.collectAsState()
     val servers by bridge.connections.snapshots.collectAsState()
@@ -99,18 +100,34 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                 ),
             ) {
                 SandboxChoiceRow(
-                    title = stringResource(R.string.sandbox_builtin_proot),
+                    title = stringResource(R.string.sandbox_mode_proot),
                     subtitle = stringResource(R.string.sandbox_builtin_proot_subtitle),
-                    selected = defaultSandboxId == com.openminis.app.execplane.ExecPlaneSettingsRepository.SANDBOX_PROOT,
-                    onClick = { settings.setDefaultSandbox(com.openminis.app.execplane.ExecPlaneSettingsRepository.SANDBOX_PROOT) },
+                    selected = sandboxMode == com.openminis.app.execplane.ExecPlaneSettingsRepository.MODE_PROOT,
+                    onClick = { settings.setSandboxMode(com.openminis.app.execplane.ExecPlaneSettingsRepository.MODE_PROOT) },
                 )
-                savedServers.sortedBy { it.name }.forEach { saved ->
-                    SandboxChoiceRow(
-                        title = saved.name,
-                        subtitle = saved.url,
-                        selected = defaultSandboxId == saved.id,
-                        onClick = { settings.setDefaultSandbox(saved.id) },
-                    )
+                SandboxChoiceRow(
+                    title = stringResource(R.string.sandbox_mode_ws),
+                    subtitle = stringResource(R.string.sandbox_mode_ws_subtitle),
+                    selected = sandboxMode == com.openminis.app.execplane.ExecPlaneSettingsRepository.MODE_WS,
+                    onClick = { settings.setSandboxMode(com.openminis.app.execplane.ExecPlaneSettingsRepository.MODE_WS) },
+                )
+            }
+            if (savedServers.isNotEmpty()) {
+                Text(stringResource(R.string.sandbox_default_ws_section), style = MaterialTheme.typography.titleMedium)
+                Column(
+                    Modifier.fillMaxWidth().background(
+                        MaterialTheme.colorScheme.surfaceContainerLow,
+                        RoundedCornerShape(12.dp),
+                    ),
+                ) {
+                    savedServers.sortedBy { it.name }.forEach { saved ->
+                        SandboxChoiceRow(
+                            title = saved.name,
+                            subtitle = saved.url,
+                            selected = defaultWsId == saved.id,
+                            onClick = { settings.setDefaultWsSandbox(saved.id) },
+                        )
+                    }
                 }
             }
             Text(

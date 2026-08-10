@@ -809,7 +809,10 @@ class ChatViewModel(
      * fixed list of definition objects, no I/O.
      */
     private val agentTools: List<AgentToolDefinition>
-        get() = AgentTools.makeAgentTools(memoryEnabled = _memoryEnabled.value)
+        get() = AgentTools.makeAgentTools(
+            memoryEnabled = _memoryEnabled.value,
+            sandboxPrompt = sandboxRuntimeSnapshot().toolDescription,
+        )
 
     /**
      * Per-session loop detector. Reset alongside [agentHistory] whenever the
@@ -8703,6 +8706,41 @@ class ChatViewModel(
             emptyMap()
         }
 
+    private data class SandboxRuntimeSnapshot(
+        val promptSection: String,
+        val toolDescription: String,
+    )
+
+    private fun sandboxRuntimeSnapshot(): SandboxRuntimeSnapshot {
+        val app = context.applicationContext as? com.openminis.app.MinisApp
+        val settings = app?.execPlaneSettingsRepository
+        val bridge = app?.execPlaneBridge
+        if (settings == null || bridge == null) {
+            return SandboxRuntimeSnapshot(
+                promptSection = "- 当前沙箱模式：PRoot\n- 首选沙箱：proot\n- 在线 WebSocket 沙箱：无",
+                toolDescription = "当前沙箱模式：PRoot；首选沙箱：proot；在线 WebSocket 沙箱：无。",
+            )
+        }
+        val selected = settings.selectedForwardServer()
+        val mode = if (selected == null) "PRoot" else "WebSocket"
+        val preferred = selected?.name ?: "proot"
+        val online = bridge.connections.snapshots.value.values
+            .filter { it.online }
+            .map { it.name }
+            .distinct()
+            .sorted()
+        val onlineText = online.joinToString("、").ifEmpty { "无" }
+        val rule = if (selected == null) {
+            "当前应默认使用 proot。"
+        } else {
+            "当前应默认使用 WebSocket 沙箱“$preferred”；不要为了省事主动改用 proot。仅当系统报告通道故障并自动容灾时，实际结果才可能是 proot。"
+        }
+        return SandboxRuntimeSnapshot(
+            promptSection = "- 当前沙箱模式：$mode\n- 默认 WebSocket 沙箱：${selected?.name ?: "未选择"}\n- 首选沙箱：$preferred\n- 当前在线 WebSocket 沙箱：$onlineText\n- 路由要求：$rule",
+            toolDescription = "当前沙箱模式：$mode；默认 WebSocket 沙箱：${selected?.name ?: "未选择"}；首选沙箱：$preferred；在线 WebSocket 沙箱：$onlineText。$rule",
+        )
+    }
+
     private fun buildSystemPrompt(): String? {
         // Cache-friendly layout: keep `base` byte-stable by stripping out anything
         // that varies per request, then append a "Runtime context" suffix at the
@@ -8921,7 +8959,9 @@ Environment variables:
             append("\n\nRuntime context:\n")
             append("- Current date: ").append(dateStr).append(" (").append(tzId).append(")\n")
             append("- Device language: ").append(lang).append("\n")
-            append("- minis-model-use models available: ").append(modelUseCount)
+            append("- minis-model-use models available: ").append(modelUseCount).append("\n")
+            append("\n沙箱运行上下文：\n")
+            append(sandboxRuntimeSnapshot().promptSection)
         }
     }
 

@@ -20,8 +20,9 @@ object AgentTools {
         // attempt those calls. Mirrors the iOS gate at
         // AIChatViewModel.makeAgentTools(memoryEnabled:).
         memoryEnabled: Boolean = true,
+        sandboxPrompt: String? = null,
     ): List<AgentToolDefinition> = buildList {
-        add(shellExecuteDefinition())
+        add(shellExecuteDefinition(sandboxPrompt))
         add(FileReadTool.definition())
         add(FileWriteTool.definition())
         add(FileEditTool.definition())
@@ -36,16 +37,17 @@ object AgentTools {
     }
 
     // Aligned with iOS AIChatViewModel.swift:4982-4993
-    private fun shellExecuteDefinition(): AgentToolDefinition = AgentToolDefinition(
+    private fun shellExecuteDefinition(sandboxPrompt: String?): AgentToolDefinition = AgentToolDefinition(
         name = "shell_execute",
         description = "Execute a command in a selectable sandbox. Set sandbox='proot' for built-in PRoot, or use a saved WebSocket Server name. " +
             "When sandbox is omitted, the Settings default is used; only that default route may fall back to PRoot on channel failure. " +
             "An explicitly named unavailable sandbox fails instead of running elsewhere. The result begins with the actual sandbox name. " +
+            (sandboxPrompt?.let { "$it " } ?: "") +
             "The command runs via /bin/sh -c with stdout and stderr merged. Each invocation is independent. Default timeout is 15 minutes.",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Install Python data analysis packages', 'List files in home directory'). Use the same language as the user."),
             "command" to AgentToolParam("string", "The shell command to execute. Supports multi-line commands directly — no special escaping needed. Keep under 1000 chars; for longer scripts, write to a file with file_write first, then run it."),
-            "sandbox" to AgentToolParam("string", "Sandbox for this invocation: 'proot' for built-in PRoot, or the exact name of a saved WebSocket Server. Omit to use the default selected in Settings."),
+            "sandbox" to AgentToolParam("string", "本次调用使用的沙箱：填写 'proot' 强制使用内置 PRoot，或填写已保存 WebSocket 服务端的准确名称。省略时必须使用设置中的当前模式和首选沙箱，不要自行改用 PRoot。"),
             "timeout" to AgentToolParam("integer", "Timeout in seconds (default: 900). Use a larger value for long-running commands like package installs."),
             "delay" to AgentToolParam("integer", "Delay in seconds before execution begins. The tool blocks the agent flow during this wait WITHOUT occupying the shell, so other concurrent tasks can use it. Use this instead of sleep commands to avoid resource contention."),
         ),

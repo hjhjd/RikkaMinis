@@ -20,18 +20,33 @@ class ExecPlaneSettingsRepository(context: Context) {
     val port: StateFlow<Int> = _port.asStateFlow()
     private val _forwardServers = MutableStateFlow(loadForwardServers())
     val forwardServers: StateFlow<List<ForwardServerConfig>> = _forwardServers.asStateFlow()
-    private val _defaultSandboxId = MutableStateFlow(prefs.getString(KEY_DEFAULT_SANDBOX, SANDBOX_PROOT) ?: SANDBOX_PROOT)
-    val defaultSandboxId: StateFlow<String> = _defaultSandboxId.asStateFlow()
+    private val legacyDefault = prefs.getString(KEY_DEFAULT_SANDBOX, SANDBOX_PROOT) ?: SANDBOX_PROOT
+    private val _sandboxMode = MutableStateFlow(
+        prefs.getString(KEY_SANDBOX_MODE, null) ?: if (legacyDefault == SANDBOX_PROOT) MODE_PROOT else MODE_WS,
+    )
+    val sandboxMode: StateFlow<String> = _sandboxMode.asStateFlow()
+    private val _defaultWsId = MutableStateFlow(
+        prefs.getString(KEY_DEFAULT_WS, null) ?: legacyDefault.takeUnless { it == SANDBOX_PROOT },
+    )
+    val defaultWsId: StateFlow<String?> = _defaultWsId.asStateFlow()
 
-    fun setDefaultSandbox(id: String) {
-        val valid = id == SANDBOX_PROOT || _forwardServers.value.any { it.id == id }
-        if (!valid) return
-        prefs.edit().putString(KEY_DEFAULT_SANDBOX, id).apply()
-        _defaultSandboxId.value = id
+    fun setSandboxMode(mode: String) {
+        if (mode != MODE_PROOT && mode != MODE_WS) return
+        prefs.edit().putString(KEY_SANDBOX_MODE, mode).apply()
+        _sandboxMode.value = mode
     }
 
-    fun selectedForwardServer(): ForwardServerConfig? =
-        _forwardServers.value.firstOrNull { it.id == _defaultSandboxId.value }
+    fun setDefaultWsSandbox(id: String) {
+        if (_forwardServers.value.none { it.id == id }) return
+        prefs.edit().putString(KEY_DEFAULT_WS, id).apply()
+        _defaultWsId.value = id
+    }
+
+    fun selectedForwardServer(): ForwardServerConfig? {
+        if (_sandboxMode.value != MODE_WS) return null
+        return _forwardServers.value.firstOrNull { it.id == _defaultWsId.value }
+            ?: _forwardServers.value.firstOrNull()
+    }
 
     fun setEnabled(value: Boolean) {
         prefs.edit().putBoolean(KEY_ENABLED, value).apply()
@@ -59,6 +74,7 @@ class ExecPlaneSettingsRepository(context: Context) {
         val existing = _forwardServers.value.firstOrNull { it.name.equals(trimmedName, ignoreCase = true) }
         val config = ForwardServerConfig(existing?.id ?: UUID.randomUUID().toString(), trimmedName, normalized, token)
         persistForwardServers(_forwardServers.value.filterNot { it.id == config.id } + config)
+        if (_defaultWsId.value == null) setDefaultWsSandbox(config.id)
         return config
     }
 
@@ -66,7 +82,12 @@ class ExecPlaneSettingsRepository(context: Context) {
         val updated = _forwardServers.value.filterNot { it.id == id }
         if (updated.size == _forwardServers.value.size) return false
         persistForwardServers(updated)
-        if (_defaultSandboxId.value == id) setDefaultSandbox(SANDBOX_PROOT)
+        if (_defaultWsId.value == id) {
+            val replacement = updated.firstOrNull()?.id
+            prefs.edit().putString(KEY_DEFAULT_WS, replacement).apply()
+            _defaultWsId.value = replacement
+            if (replacement == null) setSandboxMode(MODE_PROOT)
+        }
         return true
     }
 
@@ -90,11 +111,15 @@ class ExecPlaneSettingsRepository(context: Context) {
     companion object {
         const val DEFAULT_PORT = 8765
         const val SANDBOX_PROOT = "proot"
+        const val MODE_PROOT = "proot"
+        const val MODE_WS = "ws"
         private const val PREFS = "execplane_settings"
         private const val KEY_ENABLED = "enabled"
         private const val KEY_PORT = "port"
         private const val KEY_TOKEN = "token"
         private const val KEY_FORWARD_SERVERS = "forwardServers"
         private const val KEY_DEFAULT_SANDBOX = "defaultSandbox"
+        private const val KEY_SANDBOX_MODE = "sandboxMode"
+        private const val KEY_DEFAULT_WS = "defaultWsSandbox"
     }
 }
