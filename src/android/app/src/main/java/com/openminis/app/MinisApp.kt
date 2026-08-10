@@ -476,6 +476,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         execPlaneSettingsRepository = com.openminis.app.execplane.ExecPlaneSettingsRepository(this)
         execPlaneBridge = com.openminis.app.execplane.ExecPlaneBridge(execPlaneSettingsRepository)
         execPlaneBridge.apply()
+        execPlaneSettingsRepository.forwardServers.value.filter { it.enabled }.forEach(execPlaneBridge::connect)
         backgroundTaskNotifier = BackgroundTaskNotifier(
             context = this,
             chatRepository = chatRepository,

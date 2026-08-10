@@ -87,6 +87,26 @@ class ConnectionManager(
     fun online(name: String): ExecutorSnapshot? =
         entries[name]?.snapshot?.takeIf { it.online }
 
+    fun connection(name: String): ExecutorConnection? = entries[name]?.connection
+
+    /** User-initiated disconnect. Keeps an offline row for later inspection/deletion. */
+    fun disconnectByUser(name: String): Boolean {
+        val connection = synchronized(lock) { entries[name]?.connection } ?: return false
+        // Mark offline before close so UI updates even if a transport doesn't
+        // deliver its close callback (common with abrupt remote peers).
+        disconnect(name, connection.id)
+        connection.close(1000, "Disconnected by user")
+        return true
+    }
+
+    /** Removes a saved/offline row. Online connections must be disconnected first. */
+    fun delete(name: String): Boolean = synchronized(lock) {
+        if (entries.containsKey(name)) return@synchronized false
+        if (!mutableSnapshots.value.containsKey(name)) return@synchronized false
+        mutableSnapshots.value = mutableSnapshots.value - name
+        true
+    }
+
     fun onlineMatching(requiredCaps: Set<String>): List<ExecutorSnapshot> =
         entries.values.asSequence()
             .map { it.snapshot }

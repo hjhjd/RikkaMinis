@@ -36,6 +36,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import com.openminis.app.MinisApp
 import com.openminis.app.R
 import com.openminis.app.execplane.WsBridgeState
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,9 +59,15 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
     val enabled by settings.enabled.collectAsState()
     val savedPort by settings.port.collectAsState()
     val status by bridge.status.collectAsState()
-    val executors by bridge.connections.snapshots.collectAsState()
+    val servers by bridge.connections.snapshots.collectAsState()
+    val scope = rememberCoroutineScope()
     var portText by remember(savedPort) { mutableStateOf(savedPort.toString()) }
     var resetToken by remember { mutableStateOf(false) }
+    var addServer by remember { mutableStateOf(false) }
+    var commandTarget by remember { mutableStateOf<String?>(null) }
+    var command by remember { mutableStateOf("uname -a") }
+    var commandOutput by remember { mutableStateOf("") }
+    var commandRunning by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -147,13 +155,16 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
             }
 
             Text(stringResource(R.string.sandbox_executors_section), style = MaterialTheme.typography.titleMedium)
-            if (executors.isEmpty()) {
+            OutlinedButton(onClick = { addServer = true }) {
+                Text(stringResource(R.string.sandbox_add_server))
+            }
+            if (servers.isEmpty()) {
                 Text(
                     stringResource(R.string.sandbox_no_executors),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 12.dp),
                 )
-            } else executors.values.sortedBy { it.name }.forEach { executor ->
+            } else servers.values.sortedBy { it.name }.forEach { server ->
                 Row(
                     Modifier.fillMaxWidth().background(
                         MaterialTheme.colorScheme.surfaceContainerLow,
@@ -163,24 +174,88 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                 ) {
                     Icon(Icons.Outlined.Computer, contentDescription = null)
                     Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                        Text(executor.name)
+                        Text(server.name)
                         Text(
-                            "${if (executor.online) stringResource(R.string.sandbox_online) else stringResource(R.string.sandbox_offline)} · " +
-                                executor.caps.sorted().joinToString(", "),
+                            "${if (server.online) stringResource(R.string.sandbox_online) else stringResource(R.string.sandbox_offline)} · " +
+                                server.caps.sorted().joinToString(", "),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (server.online) {
+                                TextButton(onClick = { commandTarget = server.name }) {
+                                    Text(stringResource(R.string.sandbox_run_command))
+                                }
+                                TextButton(onClick = { bridge.disconnect(server.name) }) {
+                                    Text(stringResource(R.string.sandbox_disconnect))
+                                }
+                            } else {
+                                TextButton(onClick = { bridge.delete(server.name) }) {
+                                    Text(stringResource(R.string.sandbox_delete))
+                                }
+                            }
+                        }
                     }
-                    Text(executor.direction.name.lowercase(), style = MaterialTheme.typography.labelSmall)
+                    Text(server.direction.name.lowercase(), style = MaterialTheme.typography.labelSmall)
                 }
             }
             Text(
-                stringResource(R.string.sandbox_exec_disabled_footer),
+                stringResource(R.string.sandbox_exec_enabled_footer),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.padding(8.dp))
         }
+    }
+
+    if (addServer) AddWebSocketServerDialog(
+        onDismiss = { addServer = false },
+        onAdd = { name, url, token ->
+            settings.saveForwardServer(name, url, token)?.also(bridge::connect) != null
+        },
+    )
+
+    commandTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!commandRunning) commandTarget = null },
+            title = { Text(stringResource(R.string.sandbox_run_command_on, target)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = command,
+                        onValueChange = { command = it },
+                        label = { Text(stringResource(R.string.sandbox_command)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (commandOutput.isNotEmpty()) Text(commandOutput, fontFamily = FontFamily.Monospace)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !commandRunning && command.isNotBlank(), onClick = {
+                    commandRunning = true
+                    commandOutput = ""
+                    scope.launch {
+                        commandOutput = runCatching { bridge.exec(target, command) }
+                            .fold(
+                                onSuccess = { result ->
+                                    buildString {
+                                        append(result.stdout)
+                                        if (result.stderr.isNotBlank()) append("\nstderr:\n${result.stderr}")
+                                        append("\nexit: ${result.exitCode}")
+                                    }
+                                },
+                                onFailure = { "Error: ${it.message}" },
+                            )
+                        commandRunning = false
+                    }
+                }) { Text(if (commandRunning) stringResource(R.string.sandbox_running) else stringResource(R.string.sandbox_run)) }
+            },
+            dismissButton = {
+                TextButton(enabled = !commandRunning, onClick = { commandTarget = null }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
     }
 
     if (resetToken) AlertDialog(
@@ -213,4 +288,34 @@ private fun copyToken(context: Context, token: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("ExecPlane token", token))
     Toast.makeText(context, R.string.sandbox_token_copied, Toast.LENGTH_SHORT).show()
+}
+
+@Composable
+private fun AddWebSocketServerDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String, String, String) -> Boolean,
+) {
+    var name by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("wss://") }
+    var token by remember { mutableStateOf("") }
+    var invalid by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.sandbox_add_server)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.sandbox_server_name)) })
+                OutlinedTextField(url, { url = it }, label = { Text(stringResource(R.string.sandbox_server_url)) })
+                OutlinedTextField(token, { token = it }, label = { Text(stringResource(R.string.sandbox_server_token)) })
+                if (invalid) Text(stringResource(R.string.sandbox_invalid_server), color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.sandbox_forward_security), style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (onAdd(name, url, token)) onDismiss() else invalid = true
+            }) { Text(stringResource(R.string.sandbox_connect)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
+    )
 }

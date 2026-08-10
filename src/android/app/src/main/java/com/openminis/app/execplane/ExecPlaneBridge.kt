@@ -17,12 +17,20 @@ import com.openminis.app.execplane.protocol.ValidationResult
 import java.net.InetSocketAddress
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import okhttp3.OkHttpClient
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
@@ -44,6 +52,8 @@ class ExecPlaneBridge(
     private val _status = MutableStateFlow(WsBridgeStatus())
     val status: StateFlow<WsBridgeStatus> = _status.asStateFlow()
     private var server: ReverseServer? = null
+    private val forwardClient = OkHttpClient.Builder().pingInterval(5, java.util.concurrent.TimeUnit.SECONDS).build()
+    private val forwardConnections = ConcurrentHashMap<String, ForwardConnection>()
 
     fun apply(enabled: Boolean = settings.enabled.value, port: Int = settings.port.value) {
         if (!enabled) stop() else start(port)
@@ -63,6 +73,31 @@ class ExecPlaneBridge(
 
     fun stop() = synchronized(lock) { stopLocked() }
 
+    fun connect(config: ForwardServerConfig) {
+        forwardConnections.remove(config.id)?.close(1000, "Reconnecting")
+        ForwardConnection(config, connections, forwardClient).also {
+            forwardConnections[config.id] = it
+            it.connect()
+        }
+    }
+
+    fun disconnect(name: String): Boolean = connections.disconnectByUser(name)
+
+    fun delete(name: String): Boolean {
+        val forward = settings.forwardServers.value.firstOrNull { it.name == name }
+        if (forward != null) {
+            forwardConnections.remove(forward.id)?.close(1000, "Deleted by user")
+            settings.deleteForwardServer(forward.id)
+        }
+        return connections.delete(name) || forward != null
+    }
+
+    suspend fun exec(name: String, command: String, timeoutMs: Long = 600_000): RemoteExecResult {
+        val connection = connections.connection(name) as? RemoteCommandConnection
+            ?: error("WebSocket Server does not support app-initiated exec")
+        return connection.exec(command, timeoutMs)
+    }
+
     private fun stopLocked() {
         val active = server
         server = null
@@ -81,6 +116,7 @@ class ExecPlaneBridge(
         private val expectedToken: String,
     ) : WebSocketServer(InetSocketAddress("127.0.0.1", listenPort)) {
         private val peers = ConcurrentHashMap<WebSocket, Peer>()
+        private val pending = ConcurrentHashMap<Long, CompletableDeferred<RpcResponse>>()
 
         fun closePeers() {
             peers.keys.forEach { it.close(1001, "Bridge stopped") }
@@ -100,11 +136,18 @@ class ExecPlaneBridge(
                 conn.close(1008, "Unauthorized")
                 return
             }
-            peers[conn] = Peer(UUID.randomUUID().toString(), conn)
+            val peer = Peer(UUID.randomUUID().toString(), conn)
+            peer.execHandler = { command, timeoutMs -> executeReverse(peer, command, timeoutMs) }
+            peers[conn] = peer
         }
 
         override fun onMessage(conn: WebSocket, message: String) {
             val peer = peers[conn] ?: return
+            val response = runCatching { ExecPlaneJson.codec.decodeFromString<RpcResponse>(message) }.getOrNull()
+            if (response != null) {
+                pending[response.id]?.complete(response)
+                return
+            }
             val request = runCatching { ExecPlaneJson.codec.decodeFromString<RpcRequest>(message) }
                 .getOrElse {
                     sendError(conn, 0, ExecPlaneErrorCode.EXEC_INVALID_REQUEST, "Invalid request")
@@ -159,6 +202,31 @@ class ExecPlaneBridge(
             if (conn == null) reportError(listenPort, ex) else Log.w(TAG, "WS peer error: ${ex.message}")
         }
 
+        private suspend fun executeReverse(peer: Peer, command: String, timeoutMs: Long): RemoteExecResult {
+            val requestId = REQUEST_IDS.getAndIncrement()
+            val waiter = CompletableDeferred<RpcResponse>()
+            pending[requestId] = waiter
+            val params = buildJsonObject { put("cmd", command); put("timeoutMs", timeoutMs) }
+            val request = buildJsonObject {
+                put("id", requestId); put("method", "exec"); put("params", params); put("ts", System.currentTimeMillis())
+            }
+            if (!peer.socket.isOpen) {
+                pending.remove(requestId)
+                error("WebSocket Server is offline")
+            }
+            peer.socket.send(request.toString())
+            val response = try { withTimeout(timeoutMs + 5_000) { waiter.await() } }
+                finally { pending.remove(requestId) }
+            if (!response.ok) error(response.error?.message ?: "Remote command failed")
+            val result = response.result?.jsonObject ?: JsonObject(emptyMap())
+            return RemoteExecResult(
+                stdout = result["stdout"]?.jsonPrimitive?.content.orEmpty(),
+                stderr = result["stderr"]?.jsonPrimitive?.content.orEmpty(),
+                exitCode = result["exitCode"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
+                durationMs = result["durationMs"]?.jsonPrimitive?.content?.toLongOrNull(),
+            )
+        }
+
         private fun sendOk(conn: WebSocket, id: Long, result: JsonObject) =
             send(conn, RpcResponse(id, true, result = result))
 
@@ -173,14 +241,18 @@ class ExecPlaneBridge(
     private class Peer(
         override val id: String,
         val socket: WebSocket,
-    ) : ExecutorConnection {
+    ) : RemoteCommandConnection {
         @Volatile var name: String? = null
+        @Volatile var execHandler: (suspend (String, Long) -> RemoteExecResult)? = null
         override val direction = ConnectionDirection.REVERSE
+        override suspend fun exec(command: String, timeoutMs: Long): RemoteExecResult =
+            execHandler?.invoke(command, timeoutMs) ?: error("Command channel is not ready")
         override fun close(code: Int, reason: String) = socket.close(code, reason)
     }
 
     companion object {
         private const val TAG = "ExecPlaneBridge"
+        private val REQUEST_IDS = AtomicLong(1_000_000)
 
         fun constantTimeEquals(provided: String?, expected: String): Boolean {
             if (provided == null || provided.length != expected.length || expected.isEmpty()) return false
