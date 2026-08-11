@@ -4814,6 +4814,44 @@ class ChatViewModel(
         _editingMessageId.value = null
     }
 
+    /** Update one persisted user turn in place, preserving all later turns. */
+    fun updateUserMessageContent(messageId: String, editedText: String): Boolean {
+        val text = editedText.trim()
+        if (_isStreaming.value || text.isEmpty()) return false
+        val current = _messages.value.firstOrNull { it.id == messageId } ?: return false
+        if (current.role != "user") return false
+        val sourceId = current.sourceDbIds.firstOrNull() ?: current.id
+        _messages.value = _messages.value.map { msg ->
+            if (msg.id == messageId) msg.copy(content = text) else msg
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
+            val row = chatRepository.loadMessages(sid).firstOrNull { it.id == sourceId } ?: return@launch
+            val source = runCatching { org.json.JSONArray(row.partsJson) }.getOrElse { org.json.JSONArray() }
+            val output = org.json.JSONArray()
+            var replaced = false
+            for (i in 0 until source.length()) {
+                val part = source.optJSONObject(i) ?: continue
+                if (part.optString("type") == "text" &&
+                    !part.optString("value").contains("<user-attached-files>") && !replaced
+                ) {
+                    output.put(org.json.JSONObject().put("type", "text").put("value", text))
+                    replaced = true
+                } else {
+                    output.put(part)
+                }
+            }
+            if (!replaced) output.put(org.json.JSONObject().put("type", "text").put("value", text))
+            chatRepository.updateMessageParts(sourceId, output.toString())
+            val refreshed = chatRepository.loadMessages(sid)
+            agentHistory.clear()
+            toolLoopDetector.reset()
+            refreshed.forEach { agentHistory.add(it.toLLMMessage()) }
+            AppLogger.info(TAG_STREAM, "✏️ user message updated id=${messageId.take(8)}")
+        }
+        return true
+    }
+
     /**
      * Replace the visible text of an existing assistant message without
      * regenerating the conversation. A UI assistant bubble can represent

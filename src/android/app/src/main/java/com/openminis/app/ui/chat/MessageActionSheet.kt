@@ -23,6 +23,7 @@ internal fun MessageActionSheet(
     onCopy: () -> Unit,
     onRetry: () -> Unit,
     onEdit: (() -> Unit)?,
+    onEditResend: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -55,6 +56,7 @@ internal fun MessageActionSheet(
             // User messages prioritize editing; Agent replies prioritize regeneration.
             if (message.role == "user") {
                 if (onEdit != null) MessageActionRow("编辑消息", Icons.Outlined.Edit) { onDismiss(); onEdit() }
+                if (onEditResend != null) MessageActionRow("编辑重发", Icons.Outlined.Refresh) { onDismiss(); onEditResend() }
                 if (canRetry) MessageActionRow("重新生成回复", Icons.Outlined.Refresh) { onDismiss(); onRetry() }
             } else {
                 if (canRetry) MessageActionRow("重新生成回复", Icons.Outlined.Refresh) { onDismiss(); onRetry() }
@@ -88,6 +90,7 @@ private fun MessageActionRow(label: String, icon: androidx.compose.ui.graphics.v
 internal fun MessageEditScreen(
     initialText: String,
     role: String,
+    resend: Boolean = false,
     onCancel: () -> Unit,
     onSave: (String) -> Unit,
 ) {
@@ -97,7 +100,16 @@ internal fun MessageEditScreen(
         Scaffold(
             topBar = {
                 CenterAlignedTopAppBar(
-                    title = { Text(if (role == "assistant") "修改 Agent 回复" else "编辑消息", fontWeight = FontWeight.SemiBold) },
+                    title = {
+                        Text(
+                            when {
+                                role == "assistant" -> "修改 Agent 回复"
+                                resend -> "编辑重发"
+                                else -> "编辑消息"
+                            },
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    },
                     navigationIcon = { TextButton(onClick = onCancel) { Text("取消") } },
                     actions = {
                         TextButton(onClick = { onSave(text.trim()) }, enabled = text.isNotBlank()) {

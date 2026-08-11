@@ -704,6 +704,7 @@ fun ChatScreen(
     var actionMessage by remember(sessionId) { mutableStateOf<ChatMessage?>(null) }
     var editTargetMessage by remember(sessionId) { mutableStateOf<ChatMessage?>(null) }
     var editInitialText by remember(sessionId) { mutableStateOf<String?>(null) }
+    var editWillResend by remember(sessionId) { mutableStateOf(false) }
     var showSkillsSheet by remember { mutableStateOf(false) }
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     var showMcpsSheet by remember { mutableStateOf(false) }
@@ -5505,14 +5506,15 @@ fun ChatScreen(
                 }
             },
             onEdit = if (!isStreaming && !target.isQueued) ({
-                if (target.role == "user") {
-                    viewModel.editMessage(target.id)?.let {
-                        editTargetMessage = target
-                        editInitialText = it
-                    }
-                } else {
+                editWillResend = false
+                editTargetMessage = target
+                editInitialText = target.content
+            }) else null,
+            onEditResend = if (target.role == "user" && !isStreaming && !target.isQueued) ({
+                viewModel.editMessage(target.id)?.let {
+                    editWillResend = true
                     editTargetMessage = target
-                    editInitialText = target.content
+                    editInitialText = it
                 }
             }) else null,
             onDismiss = { actionMessage = null },
@@ -5524,19 +5526,25 @@ fun ChatScreen(
         MessageEditScreen(
             initialText = initialText,
             role = target?.role ?: "user",
+            resend = editWillResend,
             onCancel = {
-                if (target?.role == "user") viewModel.cancelEdit()
+                if (editWillResend) viewModel.cancelEdit()
                 editTargetMessage = null
                 editInitialText = null
+                editWillResend = false
             },
             onSave = { edited ->
+                val shouldResend = editWillResend
                 editTargetMessage = null
                 editInitialText = null
-                if (target?.role == "assistant") {
-                    viewModel.updateAssistantMessageContent(target.id, edited)
-                } else {
-                    stickToBottom = true
-                    viewModel.sendMessage(edited)
+                editWillResend = false
+                when {
+                    target?.role == "assistant" -> viewModel.updateAssistantMessageContent(target.id, edited)
+                    shouldResend -> {
+                        stickToBottom = true
+                        viewModel.sendMessage(edited)
+                    }
+                    target != null -> viewModel.updateUserMessageContent(target.id, edited)
                 }
             },
         )
