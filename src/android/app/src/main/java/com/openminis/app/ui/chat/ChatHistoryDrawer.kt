@@ -539,8 +539,10 @@ private fun DrawerAgentRow(
     onReveal: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val revealPx = remember(density) { with(density) { 72.dp.toPx() } }
     val avatar = remember(agent.avatarPath) { AgentAvatarStore(context).resolve(agent.avatarPath) }
-    var dragOffset by remember(agent.id, revealed) { mutableStateOf(if (revealed) 64f else 0f) }
+    var dragOffset by remember(agent.id, revealed, revealPx) { mutableStateOf(if (revealed) revealPx else 0f) }
     Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         Box(
             Modifier.matchParentSize().clip(RoundedCornerShape(16.dp))
@@ -557,9 +559,9 @@ private fun DrawerAgentRow(
                 .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
                 .pointerInput(agent.id) {
                     detectHorizontalDragGestures(
-                        onHorizontalDrag = { _, amount -> dragOffset = (dragOffset + amount).coerceIn(0f, 80f) },
-                        onDragEnd = { val open = dragOffset > 32f; dragOffset = if (open) 64f else 0f; onReveal(open) },
-                        onDragCancel = { dragOffset = if (revealed) 64f else 0f },
+                        onHorizontalDrag = { _, amount -> dragOffset = (dragOffset + amount).coerceIn(0f, revealPx) },
+                        onDragEnd = { val open = dragOffset > revealPx * 0.45f; dragOffset = if (open) revealPx else 0f; onReveal(open) },
+                        onDragCancel = { dragOffset = if (revealed) revealPx else 0f },
                     )
                 }
                 .clickable(onClick = onClick).padding(12.dp),

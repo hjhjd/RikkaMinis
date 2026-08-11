@@ -13,7 +13,7 @@ class AgentAvatarStore(private val context: Context) {
     fun file(agentId: String): File =
         File(context.filesDir, "minis-agents/${safeId(agentId)}/avatar.webp")
 
-    fun import(agentId: String, uri: Uri): String {
+    fun import(agentId: String, uri: Uri, zoom: Float = 1f): String {
         val resolver = context.contentResolver
         val source = resolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
             ?: error("Unable to decode selected image")
@@ -32,12 +32,13 @@ class AgentAvatarStore(private val context: Context) {
                 .also { source.recycle() }
         }
         val edge = minOf(oriented.width, oriented.height)
+        val cropEdge = (edge / zoom.coerceIn(1f, 3f)).toInt().coerceAtLeast(1)
         val square = Bitmap.createBitmap(
             oriented,
-            (oriented.width - edge) / 2,
-            (oriented.height - edge) / 2,
-            edge,
-            edge,
+            (oriented.width - cropEdge) / 2,
+            (oriented.height - cropEdge) / 2,
+            cropEdge,
+            cropEdge,
         )
         if (square !== oriented) oriented.recycle()
         val output = if (edge > MAX_EDGE) {

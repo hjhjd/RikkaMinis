@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 /** Application-scoped source of truth for Agent metadata. */
 class AgentRepository(private val dao: AgentDao) {
     fun observeActive(): Flow<List<AgentEntity>> = dao.observeActive()
+    fun observe(id: String): Flow<AgentEntity?> = dao.observe(id)
     suspend fun listAll(): List<AgentEntity> = dao.listAll()
     suspend fun get(id: String): AgentEntity? = dao.get(id)
 

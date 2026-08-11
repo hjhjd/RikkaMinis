@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -40,6 +41,8 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
     val modelGroups by providerRepository.config.collectAsState()
     var avatarPath by remember { mutableStateOf<String?>(null) }
     var pendingAvatar by remember { mutableStateOf<Uri?>(null) }
+    var avatarZoom by remember { mutableStateOf(1f) }
+    var showAvatarCrop by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(agentId != null) }
     var saving by remember { mutableStateOf(false) }
     var archiveCount by remember { mutableStateOf<Int?>(null) }
@@ -56,7 +59,9 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
         }
         loading = false
     }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) pendingAvatar = uri }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) { pendingAvatar = uri; avatarZoom = 1f; showAvatarCrop = true }
+    }
 
     fun save() {
         if (name.isBlank() || saving) return
@@ -65,7 +70,7 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
             runCatching {
                 withContext(Dispatchers.IO) {
                     val base = loadedAgent ?: agentRepository.create(name, instructions, language, defaultModelBinding)
-                    val updated = base.copy(name = name.trim(), instructions = instructions.trim(), preferredLanguage = language, defaultModelBinding = defaultModelBinding, avatarPath = pendingAvatar?.let { avatarStore.import(base.id, it) } ?: avatarPath)
+                    val updated = base.copy(name = name.trim(), instructions = instructions.trim(), preferredLanguage = language, defaultModelBinding = defaultModelBinding, avatarPath = pendingAvatar?.let { avatarStore.import(base.id, it, avatarZoom) } ?: avatarPath)
                     agentRepository.save(updated)
                     if (updated.id == AgentIds.DEFAULT) {
                         val old = SoulStore.load(context)
@@ -122,18 +127,38 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
                 }
             }
         }
-        loadedAgent?.takeIf { it.id != AgentIds.DEFAULT }?.let { agent ->
-            SettingsSection(header = "危险操作", footer = "归档后，该 Agent 的历史话题会迁移到默认 Agent；头像和记忆文件暂时保留。") {
-                OutlinedButton(
-                    onClick = { scope.launch { archiveCount = withContext(Dispatchers.IO) { agentRepository.sessionCount(agent.id) } } },
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text("归档 Agent") }
-            }
-        }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp, 8.dp)) }
-        Button(::save, Modifier.fillMaxWidth().padding(16.dp), enabled = name.isNotBlank() && !saving) { Text(if (saving) "正在保存…" else "保存") }
+        Button(::save, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), enabled = name.isNotBlank() && !saving) { Text(if (saving) "正在保存…" else "保存") }
+        loadedAgent?.takeIf { it.id != AgentIds.DEFAULT }?.let { agent ->
+            OutlinedButton(
+                onClick = { scope.launch { archiveCount = withContext(Dispatchers.IO) { agentRepository.sessionCount(agent.id) } } },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text("删除 Agent") }
+        }
         Spacer(Modifier.padding(bottom = 24.dp))
+    }
+
+    if (showAvatarCrop && pendingAvatar != null) {
+        AlertDialog(
+            onDismissRequest = { showAvatarCrop = false },
+            title = { Text("调整头像") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(220.dp).clip(CircleShape), contentAlignment = Alignment.Center) {
+                        AsyncImage(
+                            pendingAvatar,
+                            "头像预览",
+                            Modifier.fillMaxSize().graphicsLayer { scaleX = avatarZoom; scaleY = avatarZoom },
+                        )
+                    }
+                    Text("拖动滑块调整图片大小", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp))
+                    Slider(value = avatarZoom, onValueChange = { avatarZoom = it }, valueRange = 1f..3f)
+                }
+            },
+            dismissButton = { TextButton({ showAvatarCrop = false; pendingAvatar = null }) { Text("取消") } },
+            confirmButton = { TextButton({ showAvatarCrop = false }) { Text("完成") } },
+        )
     }
 
     archiveCount?.let { count ->

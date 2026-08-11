@@ -3741,7 +3741,7 @@ fun ChatScreen(
                                     { viewModel.revertCompact() }
                                 } else null,
                             )
-                            is FlatChatItem.AssistantTyping -> TypingIndicator()
+                            is FlatChatItem.AssistantTyping -> TypingIndicator(viewModel.activeAgent.value?.name)
                             is FlatChatItem.AssistantError -> InlineErrorBanner(
                                 error = item.error,
                                 onRetry = {

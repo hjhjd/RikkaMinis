@@ -16,6 +16,9 @@ interface AgentDao {
     suspend fun listAll(): List<AgentEntity>
 
     @Query("SELECT * FROM agents WHERE id = :id LIMIT 1")
+    fun observe(id: String): Flow<AgentEntity?>
+
+    @Query("SELECT * FROM agents WHERE id = :id LIMIT 1")
     suspend fun get(id: String): AgentEntity?
 
     @Query("SELECT * FROM agents WHERE is_default = 1 LIMIT 1")

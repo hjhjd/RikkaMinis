@@ -88,15 +88,11 @@ internal fun StreamingDotsText() {
 // ─── Typing Indicator (three dots pulsing) ────────────────────────────────────
 
 @Composable
-internal fun TypingIndicator() {
+internal fun TypingIndicator(agentName: String? = null) {
     val infiniteTransition = rememberInfiniteTransition(label = "typing")
-    // Live Soul name → "<custom name> is thinking…" when the user renamed
-    // the assistant in Soul settings. SoulStore.cachedMetadata is a StateFlow
-    // that's updated on save (SoulSettingsScreen) and at app start
-    // (MinisApp.onCreate via refreshCache); collectAsState makes Compose
-    // recompose the indicator immediately when it changes.
     val soulMeta by com.openminis.app.agent.SoulStore.cachedMetadata.collectAsState()
-    val soulName = soulMeta.name.trim().ifEmpty { com.openminis.app.agent.SoulMetadata.DEFAULT.name }
+    val soulName = agentName?.trim()?.takeIf { it.isNotEmpty() }
+        ?: soulMeta.name.trim().ifEmpty { com.openminis.app.agent.SoulMetadata.DEFAULT.name }
 
     Row(
         modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),

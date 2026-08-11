@@ -71,6 +71,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -2711,6 +2712,13 @@ class ChatViewModel(
 
     init {
         loadSession()
+        viewModelScope.launch {
+            activeAgentId.collectLatest { id ->
+                agentRepository.observe(id).collect { updated ->
+                    if (updated != null && updated.isArchived == 0) _activeAgent.value = updated
+                }
+            }
+        }
         // [composer-draft-v1] Restore the persisted unsent text of a resumed
         // draft session (__new__<id>) after a cold start. Non-draft sessions
         // keep the in-memory behavior (their VM survives in the store while
