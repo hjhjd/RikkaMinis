@@ -2,6 +2,7 @@ package com.openminis.app.ui.chat
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -155,7 +158,8 @@ fun ChatHistoryDrawer(
     var deleteTarget by remember { mutableStateOf<ChatSessionEntity?>(null) }
 
     ModalDrawerSheet(
-        modifier = Modifier.width(300.dp),
+        modifier = Modifier.width(320.dp),
+        drawerContainerColor = MaterialTheme.colorScheme.background,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             // Header: bare app title — all actions live at the bottom.
@@ -174,20 +178,46 @@ fun ChatHistoryDrawer(
                 )
             }
 
+            // Compact pill tabs and a filled search field mirror the reference
+            // drawer: controls sit on the neutral canvas instead of looking like
+            // two primary call-to-action buttons.
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (drawerTab == 0) Button({ drawerTab = 0; searchQuery = "" }, Modifier.weight(1f)) { Text("助手") }
-                else OutlinedButton({ drawerTab = 0; searchQuery = "" }, Modifier.weight(1f)) { Text("助手") }
-                if (drawerTab == 1) Button({ drawerTab = 1; searchQuery = "" }, Modifier.weight(1f)) { Text("话题") }
-                else OutlinedButton({ drawerTab = 1; searchQuery = "" }, Modifier.weight(1f)) { Text("话题") }
+                listOf("助手", "话题").forEachIndexed { index, label ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(if (drawerTab == index) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent)
+                            .clickable { drawerTab = index; searchQuery = "" }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(label, fontSize = 14.sp, fontWeight = if (drawerTab == index) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (drawerTab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text(if (drawerTab == 0) "搜索助手…" else "搜索话题…") },
+                placeholder = { Text(if (drawerTab == 0) "搜索助手" else "搜索话题") },
+                leadingIcon = { Icon(Icons.Outlined.Search, null, Modifier.size(19.dp)) },
                 singleLine = true,
+                shape = RoundedCornerShape(13.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                ),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             )
 
@@ -299,10 +329,17 @@ fun ChatHistoryDrawer(
                         )
                     }
                 }
-                Button(
+                OutlinedButton(
                     onClick = onCreateAgent,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                ) { Text("＋ 创建 Agent") }
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).height(50.dp),
+                ) {
+                    Icon(Icons.Outlined.Add, null, Modifier.size(19.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("创建 Agent", fontWeight = FontWeight.SemiBold)
+                }
             }
 
             // Footer: a configurable action bar rendered from the resolved pin
@@ -556,7 +593,12 @@ private fun DrawerAgentRow(
         Row(
             modifier = Modifier.fillMaxWidth().offset { IntOffset(dragOffset.roundToInt(), 0) }
                 .clip(RoundedCornerShape(16.dp))
-                .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
+                .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.78f) else MaterialTheme.colorScheme.surface)
+                .border(
+                    1.dp,
+                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.34f) else MaterialTheme.colorScheme.outlineVariant,
+                    RoundedCornerShape(16.dp),
+                )
                 .pointerInput(agent.id) {
                     detectHorizontalDragGestures(
                         onHorizontalDrag = { _, amount -> dragOffset = (dragOffset + amount).coerceIn(0f, revealPx) },

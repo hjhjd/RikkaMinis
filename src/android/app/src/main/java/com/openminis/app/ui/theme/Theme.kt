@@ -14,57 +14,51 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Teal accent matching iOS visual appearance
-private val TealPrimary = Color(0xFF2E8B8B)
+// Reference UI palette: cool neutral canvas, white cards and a restrained
+// violet accent. Keeping the palette semantic lets every existing Material
+// component adopt the new visual language without page-specific hard-coding.
+private val TealPrimary = Color(0xFF7C5CFC)
 private val TealOnPrimary = Color(0xFFFFFFFF)
-private val TealPrimaryContainer = Color(0xFFB2DFDB)
-private val TealOnPrimaryContainer = Color(0xFF00332F)
-private val TealSecondary = Color(0xFF4A6360)
+private val TealPrimaryContainer = Color(0xFFEAE5FF)
+private val TealOnPrimaryContainer = Color(0xFF2D1A72)
+private val TealSecondary = Color(0xFF666078)
 private val TealOnSecondary = Color(0xFFFFFFFF)
-private val TealSecondaryContainer = Color(0xFFCCE8E4)
-private val TealOnSecondaryContainer = Color(0xFF05201D)
-private val TealTertiary = Color(0xFF46617A)
+private val TealSecondaryContainer = Color(0xFFECEAF2)
+private val TealOnSecondaryContainer = Color(0xFF282532)
+private val TealTertiary = Color(0xFF5271C4)
 private val TealOnTertiary = Color(0xFFFFFFFF)
-private val TealTertiaryContainer = Color(0xFFCDE5FF)
-private val TealOnTertiaryContainer = Color(0xFF001D32)
-private val TealBackground = Color(0xFFF5FAFA)
-private val TealOnBackground = Color(0xFF171D1C)
-private val TealSurface = Color(0xFFF5FAFA)
-private val TealOnSurface = Color(0xFF171D1C)
-private val TealSurfaceVariant = Color(0xFFDAE5E2)
-private val TealOnSurfaceVariant = Color(0xFF3F4947)
-private val TealOutline = Color(0xFF6F7977)
+private val TealTertiaryContainer = Color(0xFFE3EAFF)
+private val TealOnTertiaryContainer = Color(0xFF172A61)
+private val TealOnBackground = Color(0xFF252733)
+private val TealOnSurface = Color(0xFF252733)
+private val TealOnSurfaceVariant = Color(0xFF6F7280)
 
-private val TealDarkPrimary = Color(0xFF4DD9D9)
-private val TealDarkOnPrimary = Color(0xFF003737)
-private val TealDarkPrimaryContainer = Color(0xFF1A6B6B)
-private val TealDarkOnPrimaryContainer = Color(0xFFB2DFDB)
-private val TealDarkSecondary = Color(0xFFB1CCC8)
-private val TealDarkOnSecondary = Color(0xFF1C3532)
-private val TealDarkSecondaryContainer = Color(0xFF334B48)
-private val TealDarkOnSecondaryContainer = Color(0xFFCCE8E4)
-private val TealDarkBackground = Color(0xFF0E1514)
-private val TealDarkOnBackground = Color(0xFFDEE4E2)
-private val TealDarkSurface = Color(0xFF0E1514)
-private val TealDarkOnSurface = Color(0xFFDEE4E2)
-private val TealDarkSurfaceVariant = Color(0xFF3F4947)
-private val TealDarkOnSurfaceVariant = Color(0xFFBEC9C6)
-private val TealDarkOutline = Color(0xFF899390)
+private val TealDarkPrimary = Color(0xFFB7A7FF)
+private val TealDarkOnPrimary = Color(0xFF28165F)
+private val TealDarkPrimaryContainer = Color(0xFF46358C)
+private val TealDarkOnPrimaryContainer = Color(0xFFE8E1FF)
+private val TealDarkSecondary = Color(0xFFCAC4D6)
+private val TealDarkOnSecondary = Color(0xFF322E3C)
+private val TealDarkSecondaryContainer = Color(0xFF494552)
+private val TealDarkOnSecondaryContainer = Color(0xFFE7E0EC)
+private val TealDarkOnBackground = Color(0xFFE8E8ED)
+private val TealDarkOnSurface = Color(0xFFE8E8ED)
+private val TealDarkOnSurfaceVariant = Color(0xFFB9B8C2)
 
 // Neutral grouped-card surfaces (iOS-style system-grouped background).
 // Override Material3's tonal `surfaceContainer*` so cards don't pick up the
 // teal primary tint.
 // Light: page = #F2F2F7 gray, card = white
 // Dark:  page = #000, card = #1C1C1E
-private val NeutralGroupedBg = Color(0xFFF2F2F7)
+private val NeutralGroupedBg = Color(0xFFF5F6F8)
 private val NeutralGroupedCard = Color(0xFFFFFFFF)
-private val NeutralGroupedCardElevated = Color(0xFFF7F7FA)
-private val NeutralOutline = Color(0xFFD1D1D6)
+private val NeutralGroupedCardElevated = Color(0xFFF0F1F5)
+private val NeutralOutline = Color(0xFFE2E3E9)
 
-private val NeutralDarkGroupedBg = Color(0xFF000000)
-private val NeutralDarkGroupedCard = Color(0xFF1C1C1E)
-private val NeutralDarkGroupedCardElevated = Color(0xFF2C2C2E)
-private val NeutralDarkOutline = Color(0xFF38383A)
+private val NeutralDarkGroupedBg = Color(0xFF121217)
+private val NeutralDarkGroupedCard = Color(0xFF1D1D24)
+private val NeutralDarkGroupedCardElevated = Color(0xFF292932)
+private val NeutralDarkOutline = Color(0xFF3B3B46)
 
 private val LightColorScheme = lightColorScheme(
     primary = TealPrimary,
@@ -81,9 +75,9 @@ private val LightColorScheme = lightColorScheme(
     onTertiaryContainer = TealOnTertiaryContainer,
     background = NeutralGroupedBg,
     onBackground = TealOnBackground,
-    surface = NeutralGroupedBg,
+    surface = NeutralGroupedCard,
     onSurface = TealOnSurface,
-    surfaceVariant = NeutralGroupedCard,
+    surfaceVariant = NeutralGroupedCardElevated,
     onSurfaceVariant = TealOnSurfaceVariant,
     surfaceContainerLowest = NeutralGroupedBg,
     surfaceContainerLow = NeutralGroupedCard,
@@ -105,9 +99,9 @@ private val DarkColorScheme = darkColorScheme(
     onSecondaryContainer = TealDarkOnSecondaryContainer,
     background = NeutralDarkGroupedBg,
     onBackground = TealDarkOnBackground,
-    surface = NeutralDarkGroupedBg,
+    surface = NeutralDarkGroupedCard,
     onSurface = TealDarkOnSurface,
-    surfaceVariant = NeutralDarkGroupedCard,
+    surfaceVariant = NeutralDarkGroupedCardElevated,
     onSurfaceVariant = TealDarkOnSurfaceVariant,
     surfaceContainerLowest = NeutralDarkGroupedBg,
     surfaceContainerLow = NeutralDarkGroupedCard,
@@ -127,11 +121,11 @@ fun minisFabColor(): Color = LocalChatPalette.current.fabAccent
 // App-wide shape system — larger corners for a modern, friendly feel
 // DropdownMenu uses extraSmall, Dialog uses extraLarge, BottomSheet uses extraLarge
 private val MinisShapes = Shapes(
-    extraSmall = RoundedCornerShape(12.dp),   // DropdownMenu, Tooltip, OutlinedTextField default
-    small = RoundedCornerShape(12.dp),        // Chip, TextField
-    medium = RoundedCornerShape(20.dp),       // Card, Snackbar
-    large = RoundedCornerShape(24.dp),        // NavigationDrawer
-    extraLarge = RoundedCornerShape(28.dp),   // Dialog, BottomSheet
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )
 
 @Composable

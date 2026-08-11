@@ -128,13 +128,24 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
             }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp, 8.dp)) }
-        Button(::save, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), enabled = name.isNotBlank() && !saving) { Text(if (saving) "正在保存…" else "保存") }
-        loadedAgent?.takeIf { it.id != AgentIds.DEFAULT }?.let { agent ->
-            OutlinedButton(
-                onClick = { scope.launch { archiveCount = withContext(Dispatchers.IO) { agentRepository.sessionCount(agent.id) } } },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) { Text("删除 Agent") }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            loadedAgent?.takeIf { it.id != AgentIds.DEFAULT }?.let { agent ->
+                OutlinedButton(
+                    onClick = { scope.launch { archiveCount = withContext(Dispatchers.IO) { agentRepository.sessionCount(agent.id) } } },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("删除 Agent") }
+            }
+            Button(
+                ::save,
+                Modifier.weight(if (loadedAgent?.id == AgentIds.DEFAULT) 1f else 1.45f).height(52.dp),
+                enabled = name.isNotBlank() && !saving,
+                shape = MaterialTheme.shapes.medium,
+            ) { Text(if (saving) "正在保存…" else "保存") }
         }
         Spacer(Modifier.padding(bottom = 24.dp))
     }
