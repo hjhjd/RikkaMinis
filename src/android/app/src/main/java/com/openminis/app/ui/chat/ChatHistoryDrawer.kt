@@ -74,7 +74,6 @@ import com.openminis.app.ui.components.MinisAlertDialog
 import com.openminis.app.ui.sessions.DatePeriod
 import com.openminis.app.ui.sessions.categoryStyle
 import com.openminis.app.ui.sessions.groupSessionsByDate
-import com.openminis.app.ui.sessions.relativeDate
 import kotlinx.coroutines.launch
 
 /**
@@ -484,7 +483,6 @@ private fun DrawerSessionRow(
     val ctx = LocalContext.current
     val avatarStore = remember { AgentAvatarStore(ctx.applicationContext) }
     val agentAvatar = remember(agent?.avatarPath) { avatarStore.resolve(agent?.avatarPath) }
-    val timeText = remember(session.updatedAt, ctx) { relativeDate(ctx, session.updatedAt) }
     val activeSessions by SessionActivityTracker.activeSessions.collectAsState()
     val isActive = session.id in activeSessions
 
@@ -550,12 +548,6 @@ private fun DrawerSessionRow(
                 )
             }
         }
-
-        Text(
-            text = timeText,
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.outline,
-        )
 
         // Pin toggle — inline icon, same style as the provider's favorite
         // star. Placed at the right edge of the row, after the timestamp.
