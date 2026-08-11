@@ -51,8 +51,15 @@ internal fun MessageActionSheet(
                 }
             }
             MessageActionRow("复制", Icons.Outlined.ContentCopy) { onDismiss(); onCopy() }
-            if (canRetry) MessageActionRow("重新生成", Icons.Outlined.Refresh) { onDismiss(); onRetry() }
-            if (onEdit != null) MessageActionRow("编辑消息", Icons.Outlined.Edit) { onDismiss(); onEdit() }
+            // The visual container is shared, while actions are role-aware.
+            // User messages prioritize editing; Agent replies prioritize regeneration.
+            if (message.role == "user") {
+                if (onEdit != null) MessageActionRow("编辑消息", Icons.Outlined.Edit) { onDismiss(); onEdit() }
+                if (canRetry) MessageActionRow("重新生成回复", Icons.Outlined.Refresh) { onDismiss(); onRetry() }
+            } else {
+                if (canRetry) MessageActionRow("重新生成回复", Icons.Outlined.Refresh) { onDismiss(); onRetry() }
+                if (onEdit != null) MessageActionRow("修改 Agent 回复", Icons.Outlined.Edit) { onDismiss(); onEdit() }
+            }
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -80,6 +87,7 @@ private fun MessageActionRow(label: String, icon: androidx.compose.ui.graphics.v
 @Composable
 internal fun MessageEditScreen(
     initialText: String,
+    role: String,
     onCancel: () -> Unit,
     onSave: (String) -> Unit,
 ) {
@@ -89,7 +97,7 @@ internal fun MessageEditScreen(
         Scaffold(
             topBar = {
                 CenterAlignedTopAppBar(
-                    title = { Text("编辑消息", fontWeight = FontWeight.SemiBold) },
+                    title = { Text(if (role == "assistant") "修改 Agent 回复" else "编辑消息", fontWeight = FontWeight.SemiBold) },
                     navigationIcon = { TextButton(onClick = onCancel) { Text("取消") } },
                     actions = {
                         TextButton(onClick = { onSave(text.trim()) }, enabled = text.isNotBlank()) {

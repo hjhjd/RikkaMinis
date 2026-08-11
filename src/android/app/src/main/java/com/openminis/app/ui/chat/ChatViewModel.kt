@@ -4815,6 +4815,75 @@ class ChatViewModel(
     }
 
     /**
+     * Replace the visible text of an existing assistant message without
+     * regenerating the conversation. A UI assistant bubble can represent
+     * several consecutive Room rows, so the edited text is written into the
+     * first source row and text parts are removed from the remaining source
+     * rows; non-text parts (thinking/tool calls) stay intact. The LLM history
+     * is rebuilt afterwards so subsequent turns see the user's edited output.
+     */
+    fun updateAssistantMessageContent(messageId: String, editedText: String): Boolean {
+        val text = editedText.trim()
+        if (_isStreaming.value || text.isEmpty()) return false
+        val current = _messages.value.firstOrNull { it.id == messageId } ?: return false
+        if (current.role != "assistant") return false
+        val sourceIds = current.sourceDbIds.ifEmpty { listOf(current.id) }
+
+        val replacementBlock = AssistantBlock(
+            id = "text_edited_${sourceIds.first()}",
+            kind = "text",
+            content = text,
+        )
+        _messages.value = _messages.value.map { msg ->
+            if (msg.id != messageId) msg else msg.copy(
+                content = text,
+                toolBlocks = listOf(replacementBlock) + msg.toolBlocks.filterNot { it.isText },
+            )
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
+            val rows = chatRepository.loadMessages(sid)
+            val sourceSet = sourceIds.toSet()
+            var wroteText = false
+            for (row in rows) {
+                if (row.id !in sourceSet) continue
+                val source = runCatching { org.json.JSONArray(row.partsJson) }
+                    .getOrElse { org.json.JSONArray() }
+                val output = org.json.JSONArray()
+                var insertedInRow = false
+                for (i in 0 until source.length()) {
+                    val part = source.optJSONObject(i) ?: continue
+                    if (part.optString("type") == "text") {
+                        if (!wroteText && !insertedInRow) {
+                            output.put(org.json.JSONObject().put("type", "text").put("value", text))
+                            insertedInRow = true
+                            wroteText = true
+                        }
+                    } else {
+                        output.put(part)
+                    }
+                }
+                if (!wroteText && row.id == sourceIds.first()) {
+                    output.put(org.json.JSONObject().put("type", "text").put("value", text))
+                    wroteText = true
+                }
+                chatRepository.updateMessageParts(row.id, output.toString())
+            }
+            chatRepository.updateSessionPreview(
+                sid,
+                org.json.JSONArray().put(org.json.JSONObject().put("type", "text").put("value", text)).toString(),
+            )
+            val refreshed = chatRepository.loadMessages(sid)
+            agentHistory.clear()
+            toolLoopDetector.reset()
+            refreshed.forEach { agentHistory.add(it.toLLMMessage()) }
+            AppLogger.info(TAG_STREAM, "✏️ assistant message updated id=${messageId.take(8)} rows=${sourceIds.size}")
+        }
+        return true
+    }
+
+    /**
      * T187: drop the message at [messageId] *and* every later message
      * (in UI, in agentHistory, and on disk) so the new sendMessage()
      * call below this can persist the edited text as a fresh user

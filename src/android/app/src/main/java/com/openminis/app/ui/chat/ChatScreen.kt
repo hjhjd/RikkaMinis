@@ -702,7 +702,8 @@ fun ChatScreen(
     }
     var highlightedMessageId by remember(sessionId) { mutableStateOf<String?>(null) }
     var actionMessage by remember(sessionId) { mutableStateOf<ChatMessage?>(null) }
-    var editMessageText by remember(sessionId) { mutableStateOf<String?>(null) }
+    var editTargetMessage by remember(sessionId) { mutableStateOf<ChatMessage?>(null) }
+    var editInitialText by remember(sessionId) { mutableStateOf<String?>(null) }
     var showSkillsSheet by remember { mutableStateOf(false) }
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     var showMcpsSheet by remember { mutableStateOf(false) }
@@ -5503,24 +5504,40 @@ fun ChatScreen(
                     viewModel.retryFromMessage(it.id)
                 }
             },
-            onEdit = if (target.role == "user" && !isStreaming && !target.isQueued) ({
-                viewModel.editMessage(target.id)?.let { editMessageText = it }
+            onEdit = if (!isStreaming && !target.isQueued) ({
+                if (target.role == "user") {
+                    viewModel.editMessage(target.id)?.let {
+                        editTargetMessage = target
+                        editInitialText = it
+                    }
+                } else {
+                    editTargetMessage = target
+                    editInitialText = target.content
+                }
             }) else null,
             onDismiss = { actionMessage = null },
         )
     }
 
-    editMessageText?.let { initialText ->
+    editInitialText?.let { initialText ->
+        val target = editTargetMessage
         MessageEditScreen(
             initialText = initialText,
+            role = target?.role ?: "user",
             onCancel = {
-                viewModel.cancelEdit()
-                editMessageText = null
+                if (target?.role == "user") viewModel.cancelEdit()
+                editTargetMessage = null
+                editInitialText = null
             },
             onSave = { edited ->
-                editMessageText = null
-                stickToBottom = true
-                viewModel.sendMessage(edited)
+                editTargetMessage = null
+                editInitialText = null
+                if (target?.role == "assistant") {
+                    viewModel.updateAssistantMessageContent(target.id, edited)
+                } else {
+                    stickToBottom = true
+                    viewModel.sendMessage(edited)
+                }
             },
         )
     }
