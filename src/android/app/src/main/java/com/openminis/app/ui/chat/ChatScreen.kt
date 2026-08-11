@@ -1402,7 +1402,9 @@ fun ChatScreen(
         }
         .distinctUntilChanged()
         .collect { (idx, off) ->
-            if (isUserDragging) return@collect
+            // Both a finger drag and an explicit history-focus request own the
+            // scroll position. Never let passive bottom follow race either.
+            if (isUserDragging || pendingFocusId != null) return@collect
             val now = SystemClock.elapsedRealtime()
             // [bottom-fix] Right after a drag ends, the layout / isNearBottom /
             // stickToBottom state is mid-settle. Skipping compensation for
@@ -1432,8 +1434,15 @@ fun ChatScreen(
             // event during a scroll (Press / Cancel / Stop). String-building
             // logs here added measurable load. Gate behind a constant.
             when (interaction) {
-                is androidx.compose.foundation.interaction.DragInteraction.Start ->
+                is androidx.compose.foundation.interaction.DragInteraction.Start -> {
                     isUserDragging = true
+                    // A real finger drag is an explicit request to browse the
+                    // transcript. Disengage follow immediately instead of
+                    // waiting for DragInteraction.Stop; otherwise the anchor
+                    // guard can race the first drag frames, especially while
+                    // the IME is resizing the viewport.
+                    stickToBottom = false
+                }
                 is androidx.compose.foundation.interaction.DragInteraction.Stop -> {
                     isUserDragging = false
                     lastDragStopMs = SystemClock.elapsedRealtime()
@@ -1471,7 +1480,7 @@ fun ChatScreen(
     // they were reading.
     val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(imeBottomPx) {
-        if (!stickToBottom && isNearBottom.value) {
+        if (!stickToBottom && !isUserDragging && pendingFocusId == null && isNearBottom.value) {
             // The IME reshaped the viewport while the user was actually at the
             // bottom — keep the follow state in sync.
             stickToBottom = true
@@ -2745,19 +2754,11 @@ fun ChatScreen(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            // Dismiss keyboard when the USER scrolls the messages. Gated on
-            // `isUserDragging` (a real finger drag) rather than
-            // `listState.isScrollInProgress` — the latter is also true during
-            // the streaming auto-follow's programmatic glide, so the old code
-            // hid the keyboard + cleared focus on every streaming tick, which
-            // closed the IME mid-stream and dropped the user's in-flight
-            // keystroke. [T-android-composer-input-blocked-while-streaming]
-            LaunchedEffect(isUserDragging) {
-                if (isUserDragging) {
-                    keyboardController?.hide()
-                    focusManager.clearFocus()
-                }
-            }
+            // Keep composer focus and the IME while the user browses messages.
+            // Hiding the keyboard on DragInteraction.Start changes the viewport
+            // in the middle of the same gesture; combined with reverseLayout
+            // bottom anchoring that made the transcript repeatedly spring back.
+            // The keyboard now closes only through explicit back/dismiss actions.
 
             // Messages + scroll-to-bottom button
             Box(modifier = Modifier.weight(1f)) {
@@ -3167,6 +3168,11 @@ fun ChatScreen(
                         pendingFocusId = null
                         return@LaunchedEffect
                     }
+                    // A history selection is explicit navigation away from the
+                    // newest message. Disable bottom follow before scrolling so
+                    // the anchor guard cannot immediately undo this jump when
+                    // the sheet was opened while the chat sat at the bottom.
+                    stickToBottom = false
                     tracedScrollToItem("FOCUS-MESSAGE", idx, 0)
                     highlightedMessageId = originalMessageId(target)
                     // Clearing pendingFocusId cancels THIS coroutine (it is a
