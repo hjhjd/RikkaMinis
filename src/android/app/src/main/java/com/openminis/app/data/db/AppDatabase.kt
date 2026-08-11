@@ -14,14 +14,16 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageEntity::class,
         CompactMarkerEntity::class,
         WebAppShortcutEntity::class,
+        TarvenRuleEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun agentDao(): AgentDao
     abstract fun webAppShortcutDao(): WebAppShortcutDao
+    abstract fun tarvenRuleDao(): TarvenRuleDao
 
     companion object {
         @Volatile
@@ -218,6 +220,34 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Tarven request-context injection rules. */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS tarven_rules (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        rule_type TEXT NOT NULL,
+                        is_enabled INTEGER NOT NULL,
+                        content TEXT NOT NULL,
+                        scope TEXT NOT NULL,
+                        agent_id TEXT,
+                        wrap INTEGER NOT NULL,
+                        role TEXT,
+                        depth INTEGER,
+                        position TEXT,
+                        sort_order INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_tarven_rules_rule_type_is_enabled_sort_order ON tarven_rules(rule_type, is_enabled, sort_order)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_tarven_rules_agent_id ON tarven_rules(agent_id)")
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -271,7 +301,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                     .addCallback(CREATE_DEFAULT_AGENT_CALLBACK)
                     .build()
                     .also { INSTANCE = it }

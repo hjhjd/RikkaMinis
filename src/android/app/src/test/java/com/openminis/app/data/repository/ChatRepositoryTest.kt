@@ -163,6 +163,7 @@ class ChatRepositoryCreateSessionTest {
         override suspend fun loadUserMessagesSince(since: Long, limit: Int): List<MessageEntity> = emptyList()
         override suspend fun nextSortOrder(sessionId: String): Int = 0
         override suspend fun deleteMessages(sessionId: String) {}
+        override suspend fun deleteMessagesByIds(ids: List<String>) {}
         override suspend fun deleteMessagesAfter(sessionId: String, keepCount: Int) {}
         override suspend fun totalMessageCount(): Int = 0
         override suspend fun tokenUsages(sessionId: String): List<String> = emptyList()

@@ -165,10 +165,12 @@ object Routes {
     const val AGENT_EDIT = "agents/{agentId}"
     const val AGENT_SKILLS = "agents/{agentId}/skills"
     const val AGENT_MEMORY = "agents/{agentId}/memory"
+    const val AGENT_RULES = "agents/{agentId}/rules"
     const val AGENT_MEMORY_FILE = "agents/{agentId}/memory/{fileName}/{isGlobal}"
     fun agentEdit(agentId: String) = "agents/${android.net.Uri.encode(agentId)}"
     fun agentSkills(agentId: String) = "agents/${android.net.Uri.encode(agentId)}/skills"
     fun agentMemory(agentId: String) = "agents/${android.net.Uri.encode(agentId)}/memory"
+    fun agentRules(agentId: String) = "agents/${android.net.Uri.encode(agentId)}/rules"
     fun agentMemoryFile(agentId: String, fileName: String, isGlobal: Boolean) =
         "agents/${android.net.Uri.encode(agentId)}/memory/${android.net.Uri.encode(fileName)}/$isGlobal"
     const val MEMORY_FILE_EDIT = "memory_file/{fileName}/{isGlobal}"
@@ -602,6 +604,7 @@ fun AppNavigation(
                     }
                 },
                 onOpenAgentSettings = { navController.safeNavigate(Routes.agentEdit(it)) },
+                onOpenRules = { navController.safeNavigate(Routes.agentRules(it)) },
                 onCreateAgent = { navController.safeNavigate(Routes.AGENT_NEW) },
                 onOpenSettings = { navController.safeNavigate(Routes.SETTINGS) },
             )
@@ -1164,6 +1167,7 @@ fun AppNavigation(
                 onSaved = { id -> navController.safeNavigate(Routes.agentEdit(id)) { popUpTo(Routes.AGENT_NEW) { inclusive = true } } },
                 onSkills = { navController.safeNavigate(Routes.agentSkills(it)) },
                 onMemory = { navController.safeNavigate(Routes.agentMemory(it)) },
+                onRules = { navController.safeNavigate(Routes.agentRules(it)) },
             )
         }
 
@@ -1177,12 +1181,19 @@ fun AppNavigation(
                 onSaved = { navController.safePopBackStack() },
                 onSkills = { navController.safeNavigate(Routes.agentSkills(it)) },
                 onMemory = { navController.safeNavigate(Routes.agentMemory(it)) },
+                onRules = { navController.safeNavigate(Routes.agentRules(it)) },
             )
         }
 
         composable(Routes.AGENT_SKILLS, arguments = listOf(navArgument("agentId") { type = NavType.StringType })) { entry ->
             val id = entry.arguments?.getString("agentId") ?: return@composable
             if (skillRepository != null) com.openminis.app.ui.agents.AgentSkillsScreen(id, skillRepository) { navController.safePopBackStack() }
+        }
+
+        composable(Routes.AGENT_RULES, arguments = listOf(navArgument("agentId") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("agentId") ?: return@composable
+            val repo = (context.applicationContext as com.openminis.app.MinisApp).tarvenRuleRepository
+            com.openminis.app.ui.agents.TarvenRulesScreen(id, repo) { navController.safePopBackStack() }
         }
 
         composable(Routes.AGENT_MEMORY, arguments = listOf(navArgument("agentId") { type = NavType.StringType })) { entry ->

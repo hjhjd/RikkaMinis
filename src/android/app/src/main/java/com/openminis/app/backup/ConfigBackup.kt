@@ -117,6 +117,7 @@ object ConfigBackup {
         chatRepo: ChatRepository? = null,
         agentRepo: com.openminis.app.data.repository.AgentRepository? = null,
         agentMemoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory? = null,
+        tarvenRepo: com.openminis.app.data.repository.TarvenRuleRepository? = null,
         chatWindowDays: Int = 90,
     ): String {
         val registry = ConfigRegistry.get()
@@ -390,6 +391,17 @@ object ConfigBackup {
             }
         }
 
+        val tarvenRules = JSONArray()
+        tarvenRepo?.listAll()?.forEach { rule ->
+            tarvenRules.put(JSONObject().apply {
+                put("id", rule.id); put("name", rule.name); put("ruleType", rule.ruleType)
+                put("isEnabled", rule.isEnabled); put("content", rule.content); put("scope", rule.scope)
+                put("agentId", rule.agentId); put("wrap", rule.wrap); put("role", rule.role)
+                put("depth", rule.depth); put("position", rule.position); put("sortOrder", rule.sortOrder)
+                put("createdAt", rule.createdAt); put("updatedAt", rule.updatedAt)
+            })
+        }
+
         return JSONObject().apply {
             put("format", "openminis.config.backup")
             put("version", FORMAT_VERSION)
@@ -403,6 +415,7 @@ object ConfigBackup {
             put("memoryFiles", memoryFiles)
             put("mcpServers", mcpServers)
             put("agents", agents)
+            put("tarvenRules", tarvenRules)
             put("chatSessions", chatSessions)
             put("chatMessages", chatMessages)
             if (readFailures > 0) put("readFailures", readFailures)
@@ -464,6 +477,7 @@ object ConfigBackup {
         chatRepo: ChatRepository? = null,
         agentRepo: com.openminis.app.data.repository.AgentRepository? = null,
         agentMemoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory? = null,
+        tarvenRepo: com.openminis.app.data.repository.TarvenRuleRepository? = null,
     ): ImportResult {
         // [fix-audit-p1-2] Reject oversized documents BEFORE any parsing /
         // decoding: a backup with embedded skill archives or chat history is
@@ -1023,6 +1037,23 @@ object ConfigBackup {
             skipped.add("${chatSessionsArr.length()} chat session(s): not restorable here")
         }
 
+        root.optJSONArray("tarvenRules")?.let { rules ->
+            if (tarvenRepo == null) {
+                if (rules.length() > 0) skipped.add("${rules.length()} Tarven rule(s): not restorable here")
+            } else for (i in 0 until rules.length()) {
+                val r = rules.optJSONObject(i) ?: continue
+                runCatching {
+                    tarvenRepo.importRule(com.openminis.app.data.db.TarvenRuleEntity(
+                        id = r.optString("id"), name = r.optString("name"), ruleType = r.optString("ruleType"),
+                        isEnabled = r.optInt("isEnabled", 1), content = r.optString("content"), scope = r.optString("scope", "global"),
+                        agentId = r.optString("agentId").ifBlank { null }?.let { agentIdMap[it] ?: it }, wrap = r.optInt("wrap", 1), role = r.optString("role").ifBlank { null },
+                        depth = if (r.has("depth") && !r.isNull("depth")) r.optInt("depth") else null,
+                        position = r.optString("position").ifBlank { null }, sortOrder = r.optInt("sortOrder", i),
+                        createdAt = r.optLong("createdAt", System.currentTimeMillis()), updatedAt = r.optLong("updatedAt", System.currentTimeMillis()),
+                    ))
+                }.onFailure { skipped.add("Tarven rule #${i + 1}: ${it.message}") }
+            }
+        }
 
         } catch (t: Throwable) {
             fatal = t.message ?: "import failed"

@@ -432,6 +432,7 @@ fun ChatScreen(
     /** Open the selected Agent's latest topic, or a fresh draft when none exists. */
     onOpenAgent: suspend (String) -> Unit = {},
     onOpenAgentSettings: (String) -> Unit = {},
+    onOpenRules: (String) -> Unit = {},
     onCreateAgent: () -> Unit = {},
     /** Open Settings from the chat-history drawer footer. */
     onOpenSettings: () -> Unit = {},
@@ -475,6 +476,12 @@ fun ChatScreen(
     val modelName by viewModel.modelName.collectAsState()
     val sessionCategory by viewModel.sessionCategory.collectAsState()
     val attachments by viewModel.attachments.collectAsState()
+    val activeAgentId by viewModel.activeAgentId.collectAsState()
+    val tarvenRepository = remember { (context.applicationContext as com.openminis.app.MinisApp).tarvenRuleRepository }
+    val allTarvenRules by tarvenRepository.observeAll().collectAsState(initial = emptyList())
+    val hasActiveTarvenRules = allTarvenRules.any {
+        it.isEnabled != 0 && (it.scope == com.openminis.app.data.db.TarvenScope.GLOBAL || it.agentId == activeAgentId)
+    }
     val availableGroups by viewModel.availableGroups.collectAsState()
     val selectedGroupId by viewModel.selectedGroupId.collectAsState()
     val showBrowserSheet by viewModel.showBrowserSheet.collectAsState()
@@ -685,6 +692,7 @@ fun ChatScreen(
     // AIChatView.showThinkingLevelSheet.
     var showThinkingLevelSheet by remember { mutableStateOf(false) }
     var showAttachMenu by remember { mutableStateOf(false) }
+    var showTarvenSelector by remember { mutableStateOf(false) }
     var showChatMenu by remember { mutableStateOf(false) }
     // [T-input-history] "Input History" sheet visibility, mirrors rikkahub's
     // top-bar Chat Options preview. Treated as a pinned, always-visible
@@ -5202,17 +5210,36 @@ fun ChatScreen(
                             InputCircleButton(
                                 onClick = { showAttachMenu = true },
                             ) {
-                                Icon(
-                                    Icons.Default.Add,
-                                    contentDescription = "Attach",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp),
-                                )
+                                Box {
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = "Attach",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    if (hasActiveTarvenRules) {
+                                        Box(
+                                            Modifier
+                                                .align(Alignment.TopEnd)
+                                                .offset(x = 5.dp, y = (-4).dp)
+                                                .size(7.dp)
+                                                .background(MaterialTheme.colorScheme.primary, CircleShape),
+                                        )
+                                    }
+                                }
                             }
                             MinisMenu(
                                 expanded = showAttachMenu,
                                 onDismissRequest = { showAttachMenu = false },
                             ) {
+                                DropdownMenuItem(
+                                    text = { Text("规则仓") },
+                                    leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null) },
+                                    onClick = {
+                                        showAttachMenu = false
+                                        showTarvenSelector = true
+                                    },
+                                )
                                 // Order: Choose Photos & Videos / Add File / Take
                                 // Photo. Diverges from the iOS ordering on
                                 // purpose — picking existing media is by far the
@@ -5584,6 +5611,19 @@ fun ChatScreen(
             onExport = { format ->
                 showExportFormatSheet = false
                 exportCurrentChat(context, viewModel, chatRepository, coroutineScope, format)
+            },
+        )
+    }
+
+    if (showTarvenSelector) {
+        val tarvenRepository = (context.applicationContext as com.openminis.app.MinisApp).tarvenRuleRepository
+        TarvenSelectorSheet(
+            agentId = viewModel.activeAgentId.value,
+            repository = tarvenRepository,
+            onDismiss = { showTarvenSelector = false },
+            onManage = {
+                showTarvenSelector = false
+                onOpenRules(viewModel.activeAgentId.value)
             },
         )
     }

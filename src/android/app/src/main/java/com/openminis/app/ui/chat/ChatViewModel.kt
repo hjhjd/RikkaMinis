@@ -6811,9 +6811,13 @@ class ChatViewModel(
                     // [_compactSummary] is prepended as a `<context-summary>`
                     // user message. Falls through to the raw agentHistory when
                     // no compact has happened, so the common path stays zero-copy.
+                    val tarvenRequest = applyTarvenRules(
+                        systemPrompt = systemPrompt,
+                        messages = effectiveAgentHistory(),
+                    )
                     currentProvider.streamMessage(
-                        applyRequestImageBudget(effectiveAgentHistory()),
-                        systemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
+                        applyRequestImageBudget(tarvenRequest.messages),
+                        tarvenRequest.systemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
                         tools = agentTools,
                         thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
                     ).collect { chunk ->
@@ -9044,6 +9048,27 @@ class ChatViewModel(
             promptSection = "- 当前沙箱模式：$mode\n- 默认 WebSocket 沙箱：${selected?.name ?: "未选择"}\n- 首选沙箱：$preferred\n- 当前在线 WebSocket 沙箱：$onlineText\n- 路由要求：$rule",
             toolDescription = "当前沙箱模式：$mode；默认 WebSocket 沙箱：${selected?.name ?: "未选择"}；首选沙箱：$preferred；在线 WebSocket 沙箱：$onlineText。$rule",
         )
+    }
+
+    private suspend fun applyTarvenRules(
+        systemPrompt: String?,
+        messages: List<LLMMessage>,
+    ): com.openminis.app.agent.TarvenInjectionResult {
+        val app = context.applicationContext as? com.openminis.app.MinisApp
+            ?: return com.openminis.app.agent.TarvenInjectionResult(systemPrompt, messages)
+        val rules = app.tarvenRuleRepository.activeForAgent(_activeAgentId.value)
+        if (rules.isEmpty()) return com.openminis.app.agent.TarvenInjectionResult(systemPrompt, messages)
+        val today = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+        val placeholders = mapOf(
+            "agent_name" to (_activeAgent.value?.name ?: "Agent"),
+            "AgentName" to (_activeAgent.value?.name ?: "Agent"),
+            "session_id" to activeSessionId,
+            "current_date" to today,
+            "device_language" to context.resources.configuration.locales[0].toLanguageTag(),
+            "runtime_context" to "运行时上下文：当前日期 $today，设备语言 ${context.resources.configuration.locales[0].toLanguageTag()}",
+            "sandbox_runtime_context" to "沙箱运行上下文：\n${sandboxRuntimeSnapshot().promptSection}",
+        )
+        return com.openminis.app.agent.TarvenInjectionEngine.apply(systemPrompt, messages, rules, placeholders)
     }
 
     private fun buildSystemPrompt(): String? {

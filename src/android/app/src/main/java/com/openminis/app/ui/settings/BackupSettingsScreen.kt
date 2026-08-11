@@ -115,6 +115,7 @@ fun BackupSettingsScreen(
     // so navigating away cannot cancel them mid-flight. Completion is
     // reported via a system notification if the screen is gone by then.
     val application = remember { context.applicationContext as MinisApp }
+    val tarvenRepository = remember { application.tarvenRuleRepository }
     val notifier = remember { application.backgroundTaskNotifier }
     var webDavConfig by remember { mutableStateOf(webDavStore.load()) }
     var showWebDavConfig by remember { mutableStateOf(false) }
@@ -188,6 +189,7 @@ fun BackupSettingsScreen(
                         chatRepo = chatRepository,
                         agentRepo = agentRepository,
                         agentMemoryFactory = agentMemoryFactory,
+                        tarvenRepo = tarvenRepository,
                         chatWindowDays = chatWindowDays,
                     )
                 }
@@ -226,6 +228,7 @@ fun BackupSettingsScreen(
                         chatRepo = chatRepository,
                         agentRepo = agentRepository,
                         agentMemoryFactory = agentMemoryFactory,
+                        tarvenRepo = tarvenRepository,
                     )
                 }
                 withContext(Dispatchers.Main) {
@@ -432,6 +435,7 @@ fun BackupSettingsScreen(
                             memoryRepo = memoryRepository,
                             mcpRepo = mcpRepository,
                             chatRepo = chatRepository,
+                            tarvenRepo = tarvenRepository,
                             chatWindowDays = chatWindowDays,
                         )
                     }

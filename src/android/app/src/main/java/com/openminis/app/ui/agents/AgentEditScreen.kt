@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, providerRepository: com.openminis.app.data.repository.ProviderRepository, onBack: () -> Unit, onSaved: (String) -> Unit, onSkills: (String) -> Unit, onMemory: (String) -> Unit) {
+fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, providerRepository: com.openminis.app.data.repository.ProviderRepository, onBack: () -> Unit, onSaved: (String) -> Unit, onSkills: (String) -> Unit, onMemory: (String) -> Unit, onRules: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val avatarStore = remember { AgentAvatarStore(context.applicationContext) }
@@ -184,9 +184,12 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
         }
         loadedAgent?.let { agent ->
             SettingsSection(header = "能力与数据") {
-                Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton({ onSkills(agent.id) }, Modifier.weight(1f)) { Text("技能") }
-                    OutlinedButton({ onMemory(agent.id) }, Modifier.weight(1f)) { Text("记忆") }
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton({ onSkills(agent.id) }, Modifier.weight(1f)) { Text("技能") }
+                        OutlinedButton({ onMemory(agent.id) }, Modifier.weight(1f)) { Text("记忆") }
+                    }
+                    OutlinedButton({ onRules(agent.id) }, Modifier.fillMaxWidth()) { Text("规则仓") }
                 }
             }
         }
