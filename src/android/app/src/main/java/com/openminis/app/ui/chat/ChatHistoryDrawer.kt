@@ -161,13 +161,13 @@ fun ChatHistoryDrawer(
     val grouped = remember(visibleSessions) { groupSessionsByDate(visibleSessions) }
 
     var deleteTarget by remember { mutableStateOf<ChatSessionEntity?>(null) }
-    val drawerWidth = LocalConfiguration.current.screenWidthDp.dp * 0.68f
+    val drawerWidth = LocalConfiguration.current.screenWidthDp.dp * 0.8f
 
     ModalDrawerSheet(
         // ModalDrawerSheet is measured in the drawer content slot, where a
         // fractional fill can resolve against the sheet's own default maximum
-        // instead of the window. An explicit screen-derived width makes the
-        // right edge land at the user's marked ~68% position on every phone.
+        // instead of the window. Derive the width explicitly from the screen
+        // so the drawer consistently occupies 80% on every phone.
         modifier = Modifier.requiredWidth(drawerWidth),
         drawerContainerColor = MaterialTheme.colorScheme.background,
     ) {
