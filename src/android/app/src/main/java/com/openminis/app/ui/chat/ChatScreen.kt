@@ -461,6 +461,14 @@ fun ChatScreen(
             mcpRepository = mcpRepository,
         ),
     )
+    // The process-level store is keyed by session id. ComposerDraftStore reuses
+    // that id for the single unsent draft, so selecting another Agent can return
+    // the already-created ViewModel and its original constructor argument. Apply
+    // the route's Agent explicitly on every draft-agent navigation; the VM guards
+    // persisted sessions and no-op repetitions.
+    LaunchedEffect(viewModel, draftAgentId) {
+        draftAgentId?.let { viewModel.switchDraftAgent(it) }
+    }
     // [T-android-larky-longsession-followup] Consume the tail-windowed
     // view instead of the canonical full list. For sessions with ≤300
     // messages this is the SAME reference (zero overhead); for longer

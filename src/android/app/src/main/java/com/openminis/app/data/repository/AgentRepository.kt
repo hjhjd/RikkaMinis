@@ -72,14 +72,27 @@ class AgentRepository(private val dao: AgentDao) {
     }
 
     suspend fun archive(id: String) {
-        require(id != defaultAgent().id) { "The default Agent cannot be archived" }
+        val target = requireNotNull(dao.get(id)) { "Agent not found: $id" }
+        if (target.isDefault != 0) {
+            val replacement = dao.listAll().firstOrNull { it.id != id && it.isArchived == 0 }
+                ?: error("At least one active Agent must remain")
+            dao.setDefault(replacement.id, System.currentTimeMillis())
+        }
         dao.setArchived(id, 1, System.currentTimeMillis())
     }
 
     suspend fun archiveAndReassignToDefault(id: String) {
-        val fallback = defaultAgent()
-        require(id != fallback.id) { "The default Agent cannot be archived" }
-        requireNotNull(dao.get(id)) { "Agent not found: $id" }
+        val target = requireNotNull(dao.get(id)) { "Agent not found: $id" }
+        val fallback = if (target.isDefault != 0) {
+            // Deleting the current default is valid as long as another active
+            // Agent can take over the invariant. Promote it before moving topics
+            // so every session always resolves to a live default Agent.
+            dao.listAll().firstOrNull { it.id != id && it.isArchived == 0 }
+                ?: error("At least one active Agent must remain")
+        } else {
+            defaultAgent()
+        }
+        dao.setDefault(fallback.id, System.currentTimeMillis())
         dao.reassignSessions(id, fallback.id)
         dao.setArchived(id, 1, System.currentTimeMillis())
     }

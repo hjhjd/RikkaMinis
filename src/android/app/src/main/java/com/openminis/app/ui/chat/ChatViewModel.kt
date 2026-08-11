@@ -691,7 +691,8 @@ class ChatViewModel(
     val activeAgent: StateFlow<com.openminis.app.data.db.AgentEntity?> = _activeAgent.asStateFlow()
 
     private suspend fun loadActiveAgent(id: String) {
-        val resolved = agentRepository.get(id) ?: agentRepository.defaultAgent()
+        val resolved = agentRepository.get(id)?.takeIf { it.isArchived == 0 }
+            ?: agentRepository.defaultAgent()
         _activeAgentId.value = resolved.id
         _activeAgent.value = resolved
         if (sessionId.startsWith("__new__")) {
@@ -705,6 +706,33 @@ class ChatViewModel(
                 com.openminis.app.sandbox.PRootKernel.setSessionMemoryDirectory(real, dir)
             }
         }
+    }
+
+    /**
+     * Rebind a cached draft ViewModel when navigation selects another Agent.
+     *
+     * Draft ViewModels are cached by session id, while ComposerDraftStore deliberately
+     * reuses one stable draft id. Therefore navigating to the same draft with a new
+     * `agentId` does not recreate this ViewModel and the constructor argument alone is
+     * insufficient. Persisted sessions remain immutable: their stored agent is always
+     * authoritative.
+     */
+    suspend fun switchDraftAgent(agentId: String) {
+        if (!isDraft || agentId.isBlank() || agentId == _activeAgentId.value) return
+        loadActiveAgent(agentId)
+
+        // A newly selected Agent must also receive its own default model binding,
+        // rather than retaining the previous Agent's resolved provider/group.
+        val effectiveGroupId = initialGroupId ?: agentDefaultGroupId() ?: providerRepository.defaultPrimaryGroupId
+        val resolved = effectiveGroupId?.let { groupId ->
+            resolveProviderFromGroup(groupId).also { success ->
+                if (success) {
+                    _selectedGroupId.value = groupId
+                    applyGroupSessionDefaults(groupId)
+                }
+            }
+        } ?: false
+        if (!resolved) applyNewChatDefaultModel()
     }
 
     private val _sessionTitle = MutableStateFlow("New Chat")

@@ -198,7 +198,7 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            loadedAgent?.takeIf { it.id != AgentIds.DEFAULT }?.let { agent ->
+            loadedAgent?.let { agent ->
                 OutlinedButton(
                     onClick = { scope.launch { archiveCount = withContext(Dispatchers.IO) { agentRepository.sessionCount(agent.id) } } },
                     modifier = Modifier.weight(1f).height(52.dp),
@@ -208,7 +208,7 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
             }
             Button(
                 ::save,
-                Modifier.weight(if (loadedAgent?.id == AgentIds.DEFAULT) 1f else 1.45f).height(52.dp),
+                Modifier.weight(if (loadedAgent == null) 1f else 1.45f).height(52.dp),
                 enabled = name.isNotBlank() && !saving,
                 shape = MaterialTheme.shapes.medium,
             ) { Text(if (saving) "正在保存…" else "保存") }
@@ -242,7 +242,10 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
         AlertDialog(
             onDismissRequest = { archiveCount = null },
             title = { Text("归档这个 Agent？") },
-            text = { Text("该 Agent 的 $count 个话题将迁移到默认 Agent。头像和记忆文件不会立即删除。") },
+            text = {
+                val destination = if (loadedAgent?.isDefault != 0) "新的默认 Agent" else "默认 Agent"
+                Text("该 Agent 的 $count 个话题将迁移到$destination。头像和记忆文件不会立即删除。")
+            },
             dismissButton = { TextButton({ archiveCount = null }) { Text("取消") } },
             confirmButton = {
                 TextButton(onClick = {
