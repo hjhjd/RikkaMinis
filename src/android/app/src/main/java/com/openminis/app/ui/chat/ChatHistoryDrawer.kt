@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -54,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -160,11 +162,14 @@ fun ChatHistoryDrawer(
     val grouped = remember(visibleSessions) { groupSessionsByDate(visibleSessions) }
 
     var deleteTarget by remember { mutableStateOf<ChatSessionEntity?>(null) }
+    val drawerWidth = LocalConfiguration.current.screenWidthDp.dp * 0.68f
 
     ModalDrawerSheet(
-        // Keep enough of the chat visible to preserve spatial context when the
-        // drawer opens, and scale consistently across phone screen widths.
-        modifier = Modifier.fillMaxWidth(0.7f),
+        // ModalDrawerSheet is measured in the drawer content slot, where a
+        // fractional fill can resolve against the sheet's own default maximum
+        // instead of the window. An explicit screen-derived width makes the
+        // right edge land at the user's marked ~68% position on every phone.
+        modifier = Modifier.requiredWidth(drawerWidth),
         drawerContainerColor = MaterialTheme.colorScheme.background,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -485,8 +490,10 @@ private fun DrawerSessionRow(
 
     Row(
         modifier = Modifier
-            .fillMaxWidth()
+            // Outer padding comes before sizing so the visible card bounds are
+            // guaranteed to align with the search field at 16dp on both sides.
             .padding(horizontal = 16.dp, vertical = 3.dp)
+            .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(
                 if (selected) MaterialTheme.colorScheme.surfaceContainerHigh
@@ -584,7 +591,7 @@ private fun DrawerAgentRow(
     val revealPx = remember(density) { with(density) { 72.dp.toPx() } }
     val avatar = remember(agent.avatarPath) { AgentAvatarStore(context).resolve(agent.avatarPath) }
     var dragOffset by remember(agent.id, revealed, revealPx) { mutableStateOf(if (revealed) revealPx else 0f) }
-    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+    Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth()) {
         Box(
             Modifier.matchParentSize().clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
