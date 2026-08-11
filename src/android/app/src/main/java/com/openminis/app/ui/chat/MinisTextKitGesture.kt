@@ -76,8 +76,10 @@ fun Modifier.minisTextKitSelectionGesture(
     rootCoordinates: () -> LayoutCoordinates?,
     /** Set true when the LazyColumn uses `reverseLayout = true` (chat lists). */
     reverseLayout: Boolean = false,
+    enabled: Boolean = true,
     onLongPressEngaged: () -> Unit = {},
-): Modifier = pointerInput(controller, listState, reverseLayout) {
+): Modifier = pointerInput(controller, listState, reverseLayout, enabled) {
+    if (!enabled) return@pointerInput
     val longPressTimeoutMs = android.view.ViewConfiguration.getLongPressTimeout().toLong()
     val touchSlopPx = viewConfiguration.touchSlop
     awaitEachGesture {

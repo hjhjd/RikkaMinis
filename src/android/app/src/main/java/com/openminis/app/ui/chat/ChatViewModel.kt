@@ -4814,6 +4814,27 @@ class ChatViewModel(
         _editingMessageId.value = null
     }
 
+    /** Delete one visible UI message and all Room rows merged into it. */
+    fun deleteMessage(messageId: String): Boolean {
+        if (_isStreaming.value) return false
+        val target = _messages.value.firstOrNull { it.id == messageId } ?: return false
+        val sourceIds = target.sourceDbIds.ifEmpty { listOf(target.id) }
+        _messages.value = _messages.value.filterNot { it.id == messageId }
+        revokeMemoryWritesInDeletedMessages(listOf(target))
+        viewModelScope.launch(Dispatchers.IO) {
+            val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
+            chatRepository.deleteMessagesByIds(sourceIds)
+            val refreshed = chatRepository.loadMessages(sid)
+            agentHistory.clear()
+            toolLoopDetector.reset()
+            refreshed.forEach { agentHistory.add(it.toLLMMessage()) }
+            val last = refreshed.lastOrNull()
+            if (last != null) chatRepository.updateSessionPreview(sid, last.partsJson)
+            AppLogger.info(TAG_STREAM, "🗑️ message deleted id=${messageId.take(8)} rows=${sourceIds.size}")
+        }
+        return true
+    }
+
     /** Update one persisted user turn in place, preserving all later turns. */
     fun updateUserMessageContent(messageId: String, editedText: String): Boolean {
         val text = editedText.trim()

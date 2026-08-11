@@ -702,6 +702,8 @@ fun ChatScreen(
     }
     var highlightedMessageId by remember(sessionId) { mutableStateOf<String?>(null) }
     var actionMessage by remember(sessionId) { mutableStateOf<ChatMessage?>(null) }
+    var actionPressPoint by remember(sessionId) { mutableStateOf<Offset?>(null) }
+    val selectionController = remember(sessionId) { SelectionController() }
     var editTargetMessage by remember(sessionId) { mutableStateOf<ChatMessage?>(null) }
     var editInitialText by remember(sessionId) { mutableStateOf<String?>(null) }
     var editWillResend by remember(sessionId) { mutableStateOf(false) }
@@ -3241,7 +3243,6 @@ fun ChatScreen(
                 // but the (messageId, shardId, charOffset) endpoints stay valid;
                 // scrolling back in re-registers the shard and the highlight
                 // redraws automatically.
-                val selectionController = remember { SelectionController() }
                 val markdownToolbar = remember(context, messageBounds, viewModel, inputFocusRequester, keyboardController, selectionController) {
                     MinisMarkdownTextToolbar(
                         context = context,
@@ -3339,6 +3340,9 @@ fun ChatScreen(
                             // the bottom edge reveals NEWER messages (lower
                             // index) rather than jumping backward.
                             reverseLayout = true,
+                            // Message bubbles own the first long-press. Text
+                            // selection is entered explicitly via 快速复制.
+                            enabled = false,
                         )
                         // T29 dismiss-on-tap spy. Only active while the slash
                         // popup is showing. awaitFirstDown(requireUnconsumed=false,
@@ -3596,7 +3600,10 @@ fun ChatScreen(
                                 onWithdraw = if (item.message.isQueued) {
                                     { safeMutate { viewModel.withdrawQueuedMessage(item.message.id) } }
                                 } else null,
-                                onLongPress = { actionMessage = item.message },
+                                onLongPress = { point ->
+                                    actionPressPoint = point
+                                    actionMessage = item.message
+                                },
                                 onPreviewFile = { uri, name ->
                                     // T150: turn the persisted file:// URI back
                                     // into a FileItem and hand off to the host
@@ -3624,7 +3631,10 @@ fun ChatScreen(
                                 messageId = item.messageId,
                                 slotKey = "text:${item.block.id}",
                                 markdown = item.messageMarkdown,
-                                onLongPress = { messages.firstOrNull { it.id == item.messageId }?.let { actionMessage = it } },
+                                onLongPress = { point ->
+                                    actionPressPoint = point
+                                    messages.firstOrNull { it.id == item.messageId }?.let { actionMessage = it }
+                                },
                             ) {
                                 // T-android-gc-storm-issue17: collapse oversized frozen
                                 // assistant text before feeding the markdown parser, which
@@ -3651,7 +3661,10 @@ fun ChatScreen(
                                 messageId = item.messageId,
                                 slotKey = "mdblock:${item.parentBlockId}:${item.blockIndex}",
                                 markdown = item.messageMarkdown,
-                                onLongPress = { messages.firstOrNull { it.id == item.messageId }?.let { actionMessage = it } },
+                                onLongPress = { point ->
+                                    actionPressPoint = point
+                                    messages.firstOrNull { it.id == item.messageId }?.let { actionMessage = it }
+                                },
                             ) {
                                 LargeContentGuard(
                                     content = item.rawText,
@@ -3766,7 +3779,10 @@ fun ChatScreen(
                                 messageId = item.messageId,
                                 slotKey = "legacy",
                                 markdown = item.messageMarkdown,
-                                onLongPress = { messages.firstOrNull { it.id == item.messageId }?.let { actionMessage = it } },
+                                onLongPress = { point ->
+                                    actionPressPoint = point
+                                    messages.firstOrNull { it.id == item.messageId }?.let { actionMessage = it }
+                                },
                             ) {
                                 LargeContentGuard(
                                     content = item.content,
@@ -5499,6 +5515,10 @@ fun ChatScreen(
                 val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("message", target.content))
             },
+            onQuickCopy = {
+                actionPressPoint?.let { selectionController.beginSelectionWordAt(it) }
+            },
+            onDelete = { viewModel.deleteMessage(target.id) },
             onRetry = {
                 retryUser?.let {
                     stickToBottom = true

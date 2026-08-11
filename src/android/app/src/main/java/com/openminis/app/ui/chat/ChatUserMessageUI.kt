@@ -288,13 +288,14 @@ internal fun UserMessageBubble(
     onRetry: (() -> Unit)? = {},
     onEdit: (() -> Unit)? = null,
     onWithdraw: (() -> Unit)? = null,
-    onLongPress: (() -> Unit)? = null,
+    onLongPress: ((Offset) -> Unit)? = null,
     onPreviewFile: (Uri, String) -> Unit = { _, _ -> },
 ) {
     // Legacy anchored menu remains composed for source compatibility but is no
     // longer opened; all message types now route long-press to MessageActionSheet.
     var showMenu by remember { mutableStateOf(false) }
     val isQueued = message.isQueued
+    var bubbleCoordinates by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -323,9 +324,13 @@ internal fun UserMessageBubble(
                 // anywhere on the bubble (text or attachments) opens the menu;
                 // press coords are stored in this box's coordinate space, which
                 // is exactly what DropdownMenu's `offset` parameter expects.
+                .onGloballyPositioned { bubbleCoordinates = it }
                 .pointerInput(message.id) {
                     detectTapGestures(
-                        onLongPress = { onLongPress?.invoke() }
+                        onLongPress = { local ->
+                            val origin = bubbleCoordinates?.positionInWindow() ?: Offset.Zero
+                            onLongPress?.invoke(origin + local)
+                        }
                     )
                 }
         ) {
@@ -404,14 +409,39 @@ internal fun UserMessageBubble(
                                 isStreaming = false,
                                 stableKey = "user:${message.id}",
                             ) {
+                                var textLayout by remember(message.id) { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+                                val coords = remember(message.id) { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+                                val controller = LocalMinisSelectionController.current
+                                val shardId = remember(message.id) { TextShardId(message.id, "user") }
+                                val shard = remember(textLayout, message.content) {
+                                    textLayout?.let {
+                                        buildTextShard(
+                                            id = shardId,
+                                            plainText = message.content,
+                                            layoutResult = it,
+                                            coordinatesProvider = { coords[0] },
+                                        )
+                                    }
+                                }
+                                RegisterSelectionShard(shard)
+                                val selection = controller?.selection?.value
+                                val highlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
                                 Text(
                                     text = message.content,
                                     color = textColor,
                                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.5.sp),
+                                    onTextLayout = { textLayout = it },
                                     modifier = bubbleModifier
                                         .background(bubbleBg, shape)
                                         .clip(shape)
                                         .then(dashedStroke)
+                                        .onGloballyPositioned { coords[0] = it }
+                                        .drawBehind {
+                                            val result = textLayout
+                                            if (result != null && selection != null) {
+                                                drawSelectionForShard(shardId, result, selection, controller, highlight)
+                                            }
+                                        }
                                         .padding(horizontal = 14.dp, vertical = 8.dp),
                                 )
                             }

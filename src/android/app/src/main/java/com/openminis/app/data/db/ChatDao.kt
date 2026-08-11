@@ -135,6 +135,9 @@ interface ChatDao {
     @Query("DELETE FROM messages WHERE session_id = :sessionId")
     suspend fun deleteMessages(sessionId: String)
 
+    @Query("DELETE FROM messages WHERE id IN (:ids)")
+    suspend fun deleteMessagesByIds(ids: List<String>)
+
     @Query("DELETE FROM messages WHERE session_id = :sessionId AND sort_order >= :keepCount")
     suspend fun deleteMessagesAfter(sessionId: String, keepCount: Int)
 

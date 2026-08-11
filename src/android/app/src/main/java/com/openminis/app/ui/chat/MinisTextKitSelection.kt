@@ -288,6 +288,13 @@ class SelectionController {
         selection.value = TextSelection(start = pos, end = pos)
     }
 
+    /** Start the original word-selection UI directly at a saved window point. */
+    fun beginSelectionWordAt(windowPoint: Offset): Boolean {
+        val hit = hitTestStrict(windowPoint) ?: return false
+        beginSelectionWord(hit)
+        return true
+    }
+
     /**
      * Begin a selection that snaps to the WORD under [pos]. Mirrors iOS long-
      * press semantics: a one-finger long press should reveal a real, non-zero-

@@ -7,6 +7,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.ContentCut
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -21,6 +23,8 @@ internal fun MessageActionSheet(
     message: ChatMessage,
     canRetry: Boolean,
     onCopy: () -> Unit,
+    onQuickCopy: () -> Unit,
+    onDelete: () -> Unit,
     onRetry: () -> Unit,
     onEdit: (() -> Unit)?,
     onEditResend: (() -> Unit)? = null,
@@ -51,7 +55,8 @@ internal fun MessageActionSheet(
                     )
                 }
             }
-            MessageActionRow("复制", Icons.Outlined.ContentCopy) { onDismiss(); onCopy() }
+            MessageActionRow("复制全文", Icons.Outlined.ContentCopy) { onDismiss(); onCopy() }
+            MessageActionRow("快速复制", Icons.Outlined.ContentCut) { onDismiss(); onQuickCopy() }
             // The visual container is shared, while actions are role-aware.
             // User messages prioritize editing; Agent replies prioritize regeneration.
             if (message.role == "user") {
@@ -62,20 +67,30 @@ internal fun MessageActionSheet(
                 if (canRetry) MessageActionRow("重新生成回复", Icons.Outlined.Refresh) { onDismiss(); onRetry() }
                 if (onEdit != null) MessageActionRow("修改 Agent 回复", Icons.Outlined.Edit) { onDismiss(); onEdit() }
             }
+            MessageActionRow(
+                "删除消息",
+                Icons.Outlined.DeleteOutline,
+                contentColor = MaterialTheme.colorScheme.error,
+            ) { onDismiss(); onDelete() }
             Spacer(Modifier.height(8.dp))
         }
     }
 }
 
 @Composable
-private fun MessageActionRow(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+private fun MessageActionRow(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
+    onClick: () -> Unit,
+) {
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().height(52.dp),
         shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.outlinedButtonColors(
             containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            contentColor = contentColor,
         ),
     ) {
         Icon(icon, null, Modifier.size(20.dp))
