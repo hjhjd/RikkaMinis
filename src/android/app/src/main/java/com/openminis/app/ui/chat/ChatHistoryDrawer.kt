@@ -144,13 +144,17 @@ fun ChatHistoryDrawer(
     val messageCounts by chatRepository.observeMessageCountsPerSession()
         .collectAsState(initial = emptyMap())
     val agentById = remember(agents) { agents.associateBy { it.id } }
-    val visibleSessions = remember(sessions, messageCounts, searchQuery, drawerTab, agentById) {
-        val base = sessions.filter { it.pinnedAt != null || (messageCounts[it.id] ?: 0) > 0 }
+    val visibleSessions = remember(sessions, messageCounts, searchQuery, drawerTab, currentAgentId) {
+        // The topic tab is scoped to the selected Agent. Agent identity is no
+        // longer part of topic search because every visible row has one owner.
+        val base = sessions.filter { session ->
+            session.agentId == currentAgentId &&
+                (session.pinnedAt != null || (messageCounts[session.id] ?: 0) > 0)
+        }
         val q = if (drawerTab == 1) searchQuery.trim() else ""
         if (q.isEmpty()) base else base.filter { session ->
             session.title.orEmpty().contains(q, ignoreCase = true) ||
-                session.lastMessage.orEmpty().contains(q, ignoreCase = true) ||
-                agentById[session.agentId]?.name.orEmpty().contains(q, ignoreCase = true)
+                session.lastMessage.orEmpty().contains(q, ignoreCase = true)
         }
     }
     val grouped = remember(visibleSessions) { groupSessionsByDate(visibleSessions) }
@@ -480,12 +484,13 @@ private fun DrawerSessionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .padding(horizontal = 16.dp, vertical = 3.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(
-                if (selected) MaterialTheme.colorScheme.secondaryContainer
-                else androidx.compose.ui.graphics.Color.Transparent,
+                if (selected) MaterialTheme.colorScheme.surfaceContainerHigh
+                else MaterialTheme.colorScheme.surface,
             )
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -526,9 +531,6 @@ private fun DrawerSessionRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            agent?.let {
-                Text(it.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
             session.lastMessage?.takeIf { it.isNotBlank() }?.let { preview ->
                 Text(
                     text = preview,
@@ -580,7 +582,7 @@ private fun DrawerAgentRow(
     val revealPx = remember(density) { with(density) { 72.dp.toPx() } }
     val avatar = remember(agent.avatarPath) { AgentAvatarStore(context).resolve(agent.avatarPath) }
     var dragOffset by remember(agent.id, revealed, revealPx) { mutableStateOf(if (revealed) revealPx else 0f) }
-    Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
         Box(
             Modifier.matchParentSize().clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
@@ -593,10 +595,10 @@ private fun DrawerAgentRow(
         Row(
             modifier = Modifier.fillMaxWidth().offset { IntOffset(dragOffset.roundToInt(), 0) }
                 .clip(RoundedCornerShape(16.dp))
-                .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.78f) else MaterialTheme.colorScheme.surface)
+                .background(if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surface)
                 .border(
                     1.dp,
-                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.34f) else MaterialTheme.colorScheme.outlineVariant,
+                    MaterialTheme.colorScheme.outlineVariant,
                     RoundedCornerShape(16.dp),
                 )
                 .pointerInput(agent.id) {
