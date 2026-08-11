@@ -159,36 +159,53 @@ private fun RuleCard(
         color = if (rule.isEnabled != 0) accent.copy(alpha = .055f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .35f),
         border = BorderStroke(1.dp, if (rule.isEnabled != 0) accent.copy(alpha = .35f) else MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(horizontal = 11.dp, vertical = 9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).background(accent.copy(alpha = .12f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.AutoAwesome, null, tint = accent, modifier = Modifier.size(20.dp))
+                Box(Modifier.size(32.dp).background(accent.copy(alpha = .12f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.AutoAwesome, null, tint = accent, modifier = Modifier.size(17.dp))
                 }
-                Spacer(Modifier.width(11.dp))
+                Spacer(Modifier.width(9.dp))
                 Text(rule.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, color = if (rule.isEnabled != 0) accent else MaterialTheme.colorScheme.onSurface)
                 Switch(checked = rule.isEnabled != 0, onCheckedChange = { onToggle() })
             }
-            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.padding(top = 5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Tag(typeShortLabel(rule.ruleType), accent)
                 Tag(if (rule.scope == TarvenScope.GLOBAL) "全局" else "当前 Agent", MaterialTheme.colorScheme.onSurfaceVariant)
                 Tag(if (rule.ruleType == TarvenRuleType.CONTEXT_INJECT) "${rule.role ?: "user"} · 深度 ${rule.depth ?: 0}" else if (rule.position == "prepend") "前置" else "后置", MaterialTheme.colorScheme.onSurfaceVariant)
                 if (rule.wrap != 0) Tag("XML", MaterialTheme.colorScheme.tertiary)
             }
-            HorizontalDivider(Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = onUp, enabled = canUp) { Icon(Icons.Default.KeyboardArrowUp, "上移") }
-                IconButton(onClick = onDown, enabled = canDown) { Icon(Icons.Default.KeyboardArrowDown, "下移") }
-                IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "编辑", tint = accent) }
-                IconButton(onClick = onDelete) { Icon(Icons.Default.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.error) }
+            HorizontalDivider(Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                CompactRuleAction(Icons.Default.KeyboardArrowUp, "上移", canUp, MaterialTheme.colorScheme.onSurfaceVariant, onUp)
+                CompactRuleAction(Icons.Default.KeyboardArrowDown, "下移", canDown, MaterialTheme.colorScheme.onSurfaceVariant, onDown)
+                CompactRuleAction(Icons.Default.Edit, "编辑", true, accent, onEdit)
+                CompactRuleAction(Icons.Default.DeleteOutline, "删除", true, MaterialTheme.colorScheme.error, onDelete)
             }
         }
     }
 }
 
 @Composable
+private fun CompactRuleAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    enabled: Boolean,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(36.dp),
+    ) {
+        Icon(icon, description, tint = tint, modifier = Modifier.size(19.dp))
+    }
+}
+
+@Composable
 private fun Tag(text: String, color: Color) {
-    Surface(shape = RoundedCornerShape(7.dp), color = color.copy(alpha = .10f), border = BorderStroke(.5.dp, color.copy(alpha = .22f))) {
-        Text(text, color = color, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
+    Surface(shape = RoundedCornerShape(6.dp), color = color.copy(alpha = .10f), border = BorderStroke(.5.dp, color.copy(alpha = .22f))) {
+        Text(text, color = color, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
     }
 }
 

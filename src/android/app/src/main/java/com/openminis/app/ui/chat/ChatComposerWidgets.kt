@@ -194,6 +194,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -386,6 +387,101 @@ internal fun InputCircleButton(
         content()
     }
 }
+private val TarvenSystemBlue = Color(0xFF4F7DFF)
+private val TarvenUserGreen = Color(0xFF16A779)
+private val TarvenContextOrange = Color(0xFFF28C38)
+
+/**
+ * Attachment button with a Tarven status ring. One active rule type renders a
+ * static solid ring; multiple types render a continuously rotating sweep
+ * gradient in the same blue/green/orange palette as the rule warehouse.
+ */
+@Composable
+internal fun TarvenAttachButton(
+    activeRuleTypes: Set<String>,
+    onClick: () -> Unit,
+) {
+    val colors = buildList {
+        if (com.openminis.app.data.db.TarvenRuleType.SYSTEM_SUFFIX in activeRuleTypes) add(TarvenSystemBlue)
+        if (com.openminis.app.data.db.TarvenRuleType.USER_SUFFIX in activeRuleTypes) add(TarvenUserGreen)
+        if (com.openminis.app.data.db.TarvenRuleType.CONTEXT_INJECT in activeRuleTypes) add(TarvenContextOrange)
+    }
+    val rotation = if (colors.size > 1) {
+        val transition = rememberInfiniteTransition(label = "tarven-ring")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Restart),
+            label = "tarven-ring-rotation",
+        ).value
+    } else 0f
+    val ringBrush = when (colors.size) {
+        0 -> null
+        1 -> Brush.sweepGradient(listOf(colors[0], colors[0]))
+        else -> Brush.sweepGradient(colors + colors.first())
+    }
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (ringBrush != null) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .rotate(rotation)
+                    .background(ringBrush, CircleShape),
+            )
+            Box(
+                Modifier
+                    .size(33.dp)
+                    .background(ChatColors.inputIconBg, CircleShape),
+            )
+        } else {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .48f), CircleShape),
+            )
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .background(ChatColors.inputIconBg, CircleShape),
+            )
+        }
+        Icon(
+            Icons.Default.Add,
+            contentDescription = "Attach",
+            tint = if (colors.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else colors.first(),
+            modifier = Modifier.size(21.dp),
+        )
+    }
+}
+
+@Composable
+internal fun RingInputButton(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .48f), CircleShape),
+        )
+        Box(Modifier.size(36.dp).background(ChatColors.inputIconBg, CircleShape))
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { content() }
+    }
+}
+
 // MicButton removed with the voice-input feature (had no callers left).
 
 

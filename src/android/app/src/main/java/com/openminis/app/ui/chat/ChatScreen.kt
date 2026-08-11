@@ -479,9 +479,10 @@ fun ChatScreen(
     val activeAgentId by viewModel.activeAgentId.collectAsState()
     val tarvenRepository = remember { (context.applicationContext as com.openminis.app.MinisApp).tarvenRuleRepository }
     val allTarvenRules by tarvenRepository.observeAll().collectAsState(initial = emptyList())
-    val hasActiveTarvenRules = allTarvenRules.any {
-        it.isEnabled != 0 && (it.scope == com.openminis.app.data.db.TarvenScope.GLOBAL || it.agentId == activeAgentId)
-    }
+    val activeTarvenRuleTypes = allTarvenRules.asSequence()
+        .filter { it.isEnabled != 0 && (it.scope == com.openminis.app.data.db.TarvenScope.GLOBAL || it.agentId == activeAgentId) }
+        .map { it.ruleType }
+        .toSet()
     val availableGroups by viewModel.availableGroups.collectAsState()
     val selectedGroupId by viewModel.selectedGroupId.collectAsState()
     val showBrowserSheet by viewModel.showBrowserSheet.collectAsState()
@@ -5159,12 +5160,12 @@ fun ChatScreen(
                         // resolved-status dot live in the nav-bar subtitle;
                         // this is just a compact trigger that can't be
                         // mistaken for the text field (no long text label).
-                        InputCircleButton(onClick = { showModelPicker = true }) {
+                        RingInputButton(onClick = { showModelPicker = true }) {
                             Icon(
                                 Icons.Default.KeyboardArrowUp,
                                 contentDescription = stringResource(R.string.model_picker_default_badge),
                                 tint = ChatColors.secondaryText,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(19.dp),
                             )
                         }
 
@@ -5207,27 +5208,10 @@ fun ChatScreen(
                         // "compose -> attach -> send" gesture inside one
                         // thumb arc instead of spanning the full width.
                         Box {
-                            InputCircleButton(
+                            TarvenAttachButton(
+                                activeRuleTypes = activeTarvenRuleTypes,
                                 onClick = { showAttachMenu = true },
-                            ) {
-                                Box {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = "Attach",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    if (hasActiveTarvenRules) {
-                                        Box(
-                                            Modifier
-                                                .align(Alignment.TopEnd)
-                                                .offset(x = 5.dp, y = (-4).dp)
-                                                .size(7.dp)
-                                                .background(MaterialTheme.colorScheme.primary, CircleShape),
-                                        )
-                                    }
-                                }
-                            }
+                            )
                             MinisMenu(
                                 expanded = showAttachMenu,
                                 onDismissRequest = { showAttachMenu = false },
