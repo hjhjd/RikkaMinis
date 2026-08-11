@@ -2852,7 +2852,7 @@ class ChatViewModel(
                             return@collect
                         }
                     }
-                    val effectiveGroupId = initialGroupId ?: providerRepository.defaultPrimaryGroupId
+                    val effectiveGroupId = initialGroupId ?: agentDefaultGroupId() ?: providerRepository.defaultPrimaryGroupId
                     var resolved = false
                     if (effectiveGroupId != null) {
                         resolved = resolveProviderFromGroup(effectiveGroupId)
@@ -3116,7 +3116,7 @@ class ChatViewModel(
                 // Draft session: just set up provider using default group or first entry
                 _sessionTitle.value = "New Chat"
                 _sessionCategory.value = null
-                val effectiveGroupId = initialGroupId ?: providerRepository.defaultPrimaryGroupId
+                val effectiveGroupId = initialGroupId ?: agentDefaultGroupId() ?: providerRepository.defaultPrimaryGroupId
                 var resolved = false
                 if (effectiveGroupId != null) {
                     resolved = resolveProviderFromGroup(effectiveGroupId)
@@ -3684,6 +3684,13 @@ class ChatViewModel(
             uiBoundarySortOrder = null,
             version = 2,
         )
+    }
+
+    private fun agentDefaultGroupId(): String? {
+        val binding = _activeAgent.value?.defaultModelBinding ?: return null
+        return runCatching { JSONObject(binding).optString("groupId") }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() && providerRepository.group(it) != null }
     }
 
     /** Restore provider state from a JSON binding string. Returns true if successfully resolved. */

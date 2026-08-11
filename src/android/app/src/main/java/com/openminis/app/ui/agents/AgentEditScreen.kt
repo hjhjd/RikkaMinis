@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, onBack: () -> Unit, onSaved: (String) -> Unit, onSkills: (String) -> Unit, onMemory: (String) -> Unit) {
+fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, providerRepository: com.openminis.app.data.repository.ProviderRepository, onBack: () -> Unit, onSaved: (String) -> Unit, onSkills: (String) -> Unit, onMemory: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val avatarStore = remember { AgentAvatarStore(context.applicationContext) }
@@ -36,6 +36,8 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, onBack: 
     var name by remember { mutableStateOf("") }
     var instructions by remember { mutableStateOf("") }
     var language by remember { mutableStateOf("auto") }
+    var defaultModelBinding by remember { mutableStateOf<String?>(null) }
+    val modelGroups by providerRepository.config.collectAsState()
     var avatarPath by remember { mutableStateOf<String?>(null) }
     var pendingAvatar by remember { mutableStateOf<Uri?>(null) }
     var loading by remember { mutableStateOf(agentId != null) }
@@ -48,6 +50,7 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, onBack: 
             if (agent == null) error = "Agent 不存在" else {
                 loadedAgent = agent; name = agent.name; instructions = agent.instructions
                 language = agent.preferredLanguage ?: "auto"; avatarPath = agent.avatarPath
+                defaultModelBinding = agent.defaultModelBinding
             }
         }
         loading = false
@@ -60,8 +63,8 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, onBack: 
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val base = loadedAgent ?: agentRepository.create(name, instructions, language)
-                    val updated = base.copy(name = name.trim(), instructions = instructions.trim(), preferredLanguage = language, avatarPath = pendingAvatar?.let { avatarStore.import(base.id, it) } ?: avatarPath)
+                    val base = loadedAgent ?: agentRepository.create(name, instructions, language, defaultModelBinding)
+                    val updated = base.copy(name = name.trim(), instructions = instructions.trim(), preferredLanguage = language, defaultModelBinding = defaultModelBinding, avatarPath = pendingAvatar?.let { avatarStore.import(base.id, it) } ?: avatarPath)
                     agentRepository.save(updated)
                     if (updated.id == AgentIds.DEFAULT) {
                         val old = SoulStore.load(context)
@@ -93,6 +96,17 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, onBack: 
                     listOf("auto" to "自动", "zh" to "中文", "en" to "English").forEach { (value, label) ->
                         if (language == value) Button({ language = value }) { Text(label) } else OutlinedButton({ language = value }) { Text(label) }
                     }
+                }
+            }
+        }
+        SettingsSection(header = "默认模型组", footer = "仅影响该 Agent 新建的话题；已有话题保持自己的模型绑定。") {
+            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (defaultModelBinding == null) Button({ defaultModelBinding = null }, Modifier.fillMaxWidth()) { Text("使用全局默认") }
+                else OutlinedButton({ defaultModelBinding = null }, Modifier.fillMaxWidth()) { Text("使用全局默认") }
+                modelGroups.modelGroups.forEach { group ->
+                    val binding = "{\"type\":\"group\",\"groupId\":\"${group.id}\"}"
+                    if (defaultModelBinding == binding) Button({ defaultModelBinding = binding }, Modifier.fillMaxWidth()) { Text(group.name) }
+                    else OutlinedButton({ defaultModelBinding = binding }, Modifier.fillMaxWidth()) { Text(group.name) }
                 }
             }
         }

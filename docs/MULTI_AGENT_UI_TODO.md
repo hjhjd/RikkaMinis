@@ -170,7 +170,7 @@ UI 合并，但底层仍需区分信任边界：
 - [ ] 按“平台模板 → Agent 指令 → 技能/MCP → Agent 记忆 → runtime”固定装配顺序。
 - [x] 技能 fragment 改用 agent + session 两层解析。
 - [x] memory tools、GLOBAL.md、daily logs、会话记忆 UI、shell 与 session-aware 文件工具均使用 Agent memory repository。
-- [ ] Agent 默认模型只用于新话题；已有 session 的模型不随 Agent 配置修改而强制改变。
+- [x] Agent 默认模型只用于新话题；已有 session 的模型不随 Agent 配置修改而强制改变。
 - [ ] 聊天气泡头部和通知展示 Agent 名称/头像；缺失 Agent 时回退默认 Agent并记录告警。
 - [ ] 检查 `ChatViewModelStore` 缓存键：session 已唯一，可保留，但重载 Agent 配置后需使 prompt 缓存失效。
 
@@ -208,7 +208,7 @@ UI 合并，但底层仍需区分信任边界：
 - [ ] 复用现有 session Flow、消息数可见性、置顶、删除、草稿和日期分组逻辑。
 - [x] 话题卡片增加 Agent 头像/名称标识。
 - [x] 搜索同时匹配标题、最后消息及 Agent 名称。
-- [ ] “新建话题”绑定当前 Agent。
+- [x] “新建话题”绑定当前 Agent。
 - [x] 保留长按删除、置顶和当前话题高亮。
 - [ ] 页签和搜索状态用 `rememberSaveable`，旋转屏幕不丢失。
 
@@ -228,9 +228,9 @@ UI 合并，但底层仍需区分信任边界：
   - `agents/{agentId}/skills`
   - `agents/{agentId}/memory`
   - `agents/{agentId}/memory/{file}`
-- [x] Agent 配置页头部支持可点击头像与 Agent 名称；默认模型选择待补。
+- [x] Agent 配置页头部支持可点击头像、Agent 名称和默认模型组选择。
 - [x] “人格与提示词”使用单一多行编辑器并明确平台安全规则不受覆盖。
-- [ ] 模型参数区首版复用现有模型/模型组选择；温度等高级参数只有底层真正支持且能持久化时才展示。
+- [x] 模型参数区首版复用现有模型组；未引入底层尚未支持的温度等高级参数。
 - [x] 技能区复用 `SkillRowItem`，读写 Agent binding。
 - [x] 记忆区复用 `MemoryManagementScreen` 和文件编辑页，仓库绑定 agentId。
 - [ ] 支持创建时“从某 Agent 复制配置”，默认只复制提示词、模型和技能，不复制记忆；复制记忆必须二次确认。

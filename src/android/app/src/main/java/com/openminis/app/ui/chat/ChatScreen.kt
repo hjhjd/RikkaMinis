@@ -408,7 +408,7 @@ fun ChatScreen(
     /** [T-new-chat-menu-entry] "New Chat" from the chat "..." menu: caller
      *  navigates to a fresh draft chat (same funnel as the session list's
      *  new-chat button), replacing this chat on the back stack. */
-    onNewChat: () -> Unit = {},
+    onNewChat: (String) -> Unit = {},
     onOpenTerminal: () -> Unit = {},
     /** Open the in-app terminal with [command] pre-filled at the prompt
      *  (no trailing newline — the user reviews and presses Enter manually).
@@ -1927,7 +1927,7 @@ fun ChatScreen(
                         try {
                             historyDrawerState.close()
                         } catch (_: kotlinx.coroutines.CancellationException) {}
-                        onNewChat()
+                        onNewChat(viewModel.activeAgentId.value)
                     }
                 },
                 // [bottom-toolbar-customizable] Footer: resolved action list +
@@ -2249,7 +2249,7 @@ fun ChatScreen(
                     // inconsistent and factually wrong.
                     IconButton(onClick = {
                         viewModel.promoteDraftIfNeeded()
-                        onNewChat()
+                        onNewChat(viewModel.activeAgentId.value)
                     }) {
                         Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.chat_menu_new_chat))
                     }

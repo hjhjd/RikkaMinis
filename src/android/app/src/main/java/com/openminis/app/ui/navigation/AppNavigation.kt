@@ -557,8 +557,8 @@ fun AppNavigation(
                 // removes the current chat from the stack (back → the stack
                 // root) and a double-fire just replaces one unpersisted
                 // draft with another instead of stacking two chats.
-                onNewChat = {
-                    navController.safeNavigate(Routes.chat(com.openminis.app.data.ComposerDraftStore.nextDraftId(context))) {
+                onNewChat = { agentId ->
+                    navController.safeNavigate(Routes.chat(com.openminis.app.data.ComposerDraftStore.nextDraftId(context), agentId = agentId)) {
                         popUpTo(navController.graph.startDestinationId) { inclusive = true }
                         launchSingleTop = true
                     }
@@ -1157,6 +1157,7 @@ fun AppNavigation(
             com.openminis.app.ui.agents.AgentEditScreen(
                 agentId = null,
                 agentRepository = agentRepository,
+                providerRepository = providerRepository,
                 onBack = { navController.safePopBackStack() },
                 onSaved = { id -> navController.safeNavigate(Routes.agentEdit(id)) { popUpTo(Routes.AGENT_NEW) { inclusive = true } } },
                 onSkills = { navController.safeNavigate(Routes.agentSkills(it)) },
@@ -1169,6 +1170,7 @@ fun AppNavigation(
             com.openminis.app.ui.agents.AgentEditScreen(
                 agentId = id,
                 agentRepository = agentRepository,
+                providerRepository = providerRepository,
                 onBack = { navController.safePopBackStack() },
                 onSaved = { navController.safePopBackStack() },
                 onSkills = { navController.safeNavigate(Routes.agentSkills(it)) },
