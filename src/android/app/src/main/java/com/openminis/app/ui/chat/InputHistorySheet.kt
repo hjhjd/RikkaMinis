@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,10 +37,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import com.openminis.app.agent.AgentAvatarStore
+import com.openminis.app.data.db.AgentEntity
 import com.openminis.app.ui.components.MinisTextButton
 
 /**
@@ -53,11 +59,16 @@ import com.openminis.app.ui.components.MinisTextButton
 @Composable
 fun InputHistorySheet(
     messages: List<ChatMessage>,
+    agent: AgentEntity?,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var searchQuery by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val agentAvatar = remember(agent?.avatarPath) {
+        AgentAvatarStore(context.applicationContext).resolve(agent?.avatarPath)
+    }
 
     val filtered = remember(messages, searchQuery) {
         if (searchQuery.isBlank()) messages
@@ -160,10 +171,35 @@ fun InputHistorySheet(
                 ) { msg ->
                     val isUser = msg.role == "user"
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        if (!isUser) {
+                            if (agentAvatar != null) {
+                                AsyncImage(
+                                    model = agentAvatar,
+                                    contentDescription = agent?.name,
+                                    modifier = Modifier.size(28.dp).clip(CircleShape),
+                                )
+                            } else {
+                                Surface(
+                                    modifier = Modifier.size(28.dp),
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            Icons.Outlined.Person,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(17.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.size(8.dp))
+                        }
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = if (isUser) {
@@ -172,7 +208,7 @@ fun InputHistorySheet(
                                 MaterialTheme.colorScheme.secondaryContainer
                             },
                             modifier = Modifier
-                                .fillMaxWidth(if (isUser) 0.85f else 0.9f)
+                                .fillMaxWidth(if (isUser) 0.85f else 0.82f)
                                 .clickable { onSelect(msg.id) },
                         ) {
                             Row(

@@ -5464,6 +5464,7 @@ fun ChatScreen(
     if (showInputHistorySheet) {
         InputHistorySheet(
             messages = messages,
+            agent = viewModel.activeAgent.value,
             onSelect = { messageId ->
                 showInputHistorySheet = false
                 pendingFocusId = messageId
