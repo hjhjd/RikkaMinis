@@ -27,8 +27,7 @@ import com.openminis.app.agent.SystemPromptPreferences
 @Composable
 fun SystemPromptSettingsScreen(onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var identity by remember { mutableStateOf(SystemPromptPreferences.identityOverride(context)) }
-    var main by remember { mutableStateOf(SystemPromptPreferences.mainOverride(context)) }
+    var toolPrompt by remember { mutableStateOf(SystemPromptPreferences.toolOverride(context)) }
     var saved by remember { mutableStateOf(false) }
 
     SettingsScaffold(
@@ -36,28 +35,13 @@ fun SystemPromptSettingsScreen(onBack: () -> Unit) {
         onBack = { onBack() },
     ) {
         SettingsSection(
-            header = stringResource(R.string.system_prompt_identity_title),
-            footer = stringResource(R.string.system_prompt_identity_footer),
-        ) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                OutlinedTextField(
-                    value = identity,
-                    onValueChange = { identity = it; saved = false },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    placeholder = { Text(stringResource(R.string.system_prompt_default_placeholder)) },
-                )
-            }
-        }
-
-        SettingsSection(
             header = stringResource(R.string.system_prompt_main_title),
             footer = stringResource(R.string.system_prompt_main_footer),
         ) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 OutlinedTextField(
-                    value = main,
-                    onValueChange = { main = it; saved = false },
+                    value = toolPrompt,
+                    onValueChange = { toolPrompt = it; saved = false },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp),
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     placeholder = { Text(stringResource(R.string.system_prompt_default_placeholder)) },
@@ -72,8 +56,7 @@ fun SystemPromptSettingsScreen(onBack: () -> Unit) {
             ) {
                 OutlinedButton(
                     onClick = {
-                        identity = ""
-                        main = ""
+                        toolPrompt = ""
                         SystemPromptPreferences.clear(context)
                         saved = true
                     },
@@ -81,7 +64,7 @@ fun SystemPromptSettingsScreen(onBack: () -> Unit) {
                 ) { Text(stringResource(R.string.system_prompt_use_default)) }
                 Button(
                     onClick = {
-                        SystemPromptPreferences.save(context, identity, main)
+                        SystemPromptPreferences.save(context, toolPrompt)
                         saved = true
                     },
                     modifier = Modifier.weight(1f),

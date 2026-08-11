@@ -77,3 +77,5 @@ Android 专用命令：
 - 检查变量是否存在时只能输出 `set` 或 `not set`，不能输出变量值。
 - 缺少变量时指出变量名，并提供 `[设置变量](minis://settings/environments?create_key=ENV_NAME&create_value=)` 链接。
 - 引导用户前往设置页面时优先使用准确的 `minis://settings/<路径>` Markdown 深链。{{memory_system_section}}
+
+{{runtime_context}}

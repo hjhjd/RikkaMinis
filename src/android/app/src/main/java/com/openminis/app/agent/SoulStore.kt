@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
  *   - [SoulMDParser]  – lossless-ish parse / serialize
  *   - [SoulStore]     – file I/O, default content, fallback identity,
  *                       cachedMetadata + onChanged listener
- *   - [SystemPromptBuilder] – injection-scrubbed identitySection() for the
+ *   - [SystemPromptBuilder] – injection-scrubbed personalitySection() for the
  *                             agent system prompt
  */
 
@@ -370,22 +370,9 @@ lang: "auto"
 }
 
 /**
- * Composes the Layer-1 identity section of the agent system prompt.
- * Mirrors iOS `SystemPromptBuilder.identitySection()` (commit 74c0daf):
- * a fixed identity-sentence template owned by the app + an optional,
- * clearly-labeled Personality block from SOUL.md's body.
- *
- * Why template-based (not "let the user write the whole prompt"):
- *  - Users never see "You are <name>, a capable AI assistant ..." in the
- *    Personality editor — that internal scaffolding stays out of view
- *    so users can't accidentally delete or duplicate it.
- *  - The original carefully-tuned identity sentence is preserved
- *    byte-for-byte. Substituting only `{name}` keeps the surrounding
- *    model expectations (Android device, Linux sandbox via PRoot,
- *    aarch64) intact.
- *  - When the user hasn't authored a personality body, the full
- *    assembled prompt is byte-identical to the pre-SOUL prompt
- *    (modulo `{name}`) — no behavior regression for default users.
+ * Composes the user-controlled SOUL personality section of the agent system
+ * prompt. The app no longer prepends a built-in identity sentence; `name`
+ * remains UI metadata while body, style and language drive model behavior.
  */
 object SystemPromptBuilder {
 
@@ -413,39 +400,9 @@ object SystemPromptBuilder {
     fun containsInjectionPattern(s: String): Boolean =
         INJECTION_PATTERNS.any { it.containsMatchIn(s) }
 
-    /** 身份模板由 [SystemPromptPreferences] 统一提供；内置默认值位于 assets/prompts。 */
-
-    /**
-     * Render the identity sentence (template + name) and optionally
-     * append the user-authored personality body from SOUL.md.
-     *
-     * Two distinct trailing-whitespace contracts so the next concatenated
-     * sentence in [com.openminis.app.ui.chat.ChatViewModel.buildSystemPrompt]
-     * glues correctly:
-     *   - No personality body → identity sentence with its original
-     *     single trailing space (byte-identical to the pre-SOUL prompt).
-     *   - With personality body → identity sentence + blank line +
-     *     "Personality:" block + blank line, so the runtime-guidance
-     *     sentence starts a fresh paragraph.
-     *
-     * Returned format (when SOUL body is present):
-     *
-     *     You are <name>, a capable AI assistant running on an Android device …
-     *
-     *     Personality (from SOUL.md — your character and voice; defer to
-     *     the user's latest message when it conflicts with anything here):
-     *     <body>
-     *
-     * We never substitute a default body into the prompt — the identity
-     * sentence alone is the safe fallback when SOUL.md is missing or
-     * empty, matching pre-SOUL behavior.
-     */
-    fun identitySection(context: Context): String {
+    /** Render SOUL.md body, style and language with system-owned labels. */
+    fun personalitySection(context: Context): String {
         val file = SoulStore.load(context)
-        val name = (file?.metadata?.name ?: SoulMetadata.DEFAULT.name)
-            .trim()
-            .ifEmpty { SoulMetadata.DEFAULT.name }
-
         val style = (file?.metadata?.style ?: "").trim()
         // [T-soul-lang-wire] The `lang` frontmatter field (auto / zh / en) is
         // now actually injected into the system prompt. Previously it was only
@@ -461,10 +418,6 @@ object SystemPromptBuilder {
             "en" -> "\n\n无论用户使用何种语言输入，都使用英文回复；只有用户明确要求其他语言时才切换。"
             else -> "" // “自动”或未知值：跟随用户输入语言
         }
-
-        val identity = SystemPromptPreferences.identityTemplate(context)
-            .replace(SystemPromptPreferences.NAME_PLACEHOLDER, name)
-        val identityTrimmed = identity.trimEnd()
 
         // [T-soul-hint] Fixed hint telling the model how SOUL fields can be
         // changed. Always appended (with or without a personality body) so
@@ -496,7 +449,8 @@ object SystemPromptBuilder {
         val body = file?.body
         val trimmed = body?.trim().orEmpty()
         if (trimmed.isEmpty()) {
-            return identityTrimmed + styleBlock(style) + langDirective + "\n\n" + soulEditHint + "\n\n"
+            val rendered = styleBlock(style).trimStart() + langDirective + "\n\n" + soulEditHint
+            return rendered.trimStart() + "\n\n"
         }
 
         // Reject (NOT truncate) bodies that exceed the language-aware
@@ -509,16 +463,14 @@ object SystemPromptBuilder {
         // this rule existed (or via shell / another device).
         val check = SoulStore.isOverLimit(trimmed)
         if (check.isOverLimit) {
-            AppLogger.warning(TAG, "personality body is over the language-aware limit ($check) — falling back to identity-only system prompt.")
-            return identityTrimmed + styleBlock(style) + langDirective + "\n\n" + soulEditHint + "\n\n"
+            AppLogger.warning(TAG, "personality body is over the language-aware limit ($check) — omitting it from the system prompt.")
+            val rendered = styleBlock(style).trimStart() + langDirective + "\n\n" + soulEditHint
+            return rendered.trimStart() + "\n\n"
         }
 
         val personality = scrubInjections(trimmed)
 
-        // Strip the trailing space we'd otherwise leave hanging at the
-        // end of the first paragraph when a personality block follows.
-        return identityTrimmed +
-            "\n\n人格（来自 SOUL.md，定义你的性格与表达方式；若与用户最新消息冲突，以用户最新消息为准）：\n" +
+        return "人格（来自 SOUL.md，定义你的性格与表达方式；若与用户最新消息冲突，以用户最新消息为准）：\n" +
             personality +
             styleBlock(style) +
             langDirective +

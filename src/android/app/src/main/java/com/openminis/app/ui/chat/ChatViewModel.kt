@@ -9064,20 +9064,30 @@ class ChatViewModel(
         // (exposed as a shell command via the native_offload handler).
         val modelUseCount = try { providerRepository.resolvedAgentLoopEntries().size } catch (_: Exception) { 0 }
 
-        // [T-soul-md] Layer 1 is rendered by SystemPromptBuilder, which
-        // owns the "You are <name>, a capable AI assistant running on an
-        // Android device ..." identity sentence (parametric on SOUL.md's
-        // `name` field) and optionally appends a clearly-labeled
-        // Personality section from SOUL.md's body. The original wording
-        // is preserved inside SystemPromptBuilder.IDENTITY_TEMPLATE so we
-        // don't regress model behavior that depended on it. When SOUL.md
-        // has no personality body, identitySection() returns the identity
-        // sentence with its original single trailing space — the full
-        // assembled prompt then matches the pre-SOUL prompt byte-for-byte.
-        val identitySection = com.openminis.app.agent.AgentPromptRenderer.render(
+        val runtimeContextBlock = buildString {
+            append("运行时上下文：\n")
+            append("- 当前日期：").append(dateStr).append(" (").append(tzId).append(")\n")
+            append("- 设备语言：").append(lang).append("\n")
+            append("- minis-model-use 可用模型数：").append(modelUseCount)
+        }
+
+        // Render the user-controlled Agent/SOUL personality layer. There is no
+        // app-owned identity template; the default Agent uses SOUL.md body,
+        // style and language, while custom Agents use AgentEntity instructions.
+        val rawAgentSection = com.openminis.app.agent.AgentPromptRenderer.render(
             context,
             _activeAgent.value,
         )
+        val sandboxRuntimeBlock = "沙箱运行上下文：\n${sandboxRuntimeSnapshot().promptSection}"
+        var sandboxContextInjected = false
+        fun injectSandboxContext(template: String): String {
+            val placeholder = com.openminis.app.agent.SystemPromptPreferences.SANDBOX_RUNTIME_CONTEXT
+            if (!template.contains(placeholder)) return template
+            val replacement = if (sandboxContextInjected) "" else sandboxRuntimeBlock
+            sandboxContextInjected = true
+            return template.replace(placeholder, replacement)
+        }
+        val agentSection = injectSandboxContext(rawAgentSection)
         // [T-memory-toggle-gates-injection-and-tools-android] Mirror the iOS
         // gate: when memory is disabled for this session, replace the
         // "memory_write / memory_get" tool bullets and the "Memory system:"
@@ -9116,12 +9126,26 @@ class ChatViewModel(
 - 如果用户询问为何看不到旧记忆或要求保存记忆，说明当前记忆已关闭，并引导其使用 `/memory` 或前往 `[设置 → 记忆](minis://settings/memory)` 重新启用。
 - SOUL.md（人格与身份）不受此开关影响。"""
         }
-        val base = identitySection +
-            com.openminis.app.agent.SystemPromptPreferences.renderMainTemplate(
-                context = context,
+        val activeAgent = _activeAgent.value
+        val toolSection = if (activeAgent?.toolPromptEnabled == 0) {
+            ""
+        } else {
+            val template = if (activeAgent?.customToolPromptEnabled == 1) {
+                activeAgent.customToolPrompt.orEmpty()
+            } else {
+                com.openminis.app.agent.SystemPromptPreferences.defaultToolTemplate(context)
+            }
+            com.openminis.app.agent.SystemPromptPreferences.renderToolTemplate(
+                template = injectSandboxContext(template),
                 memoryToolBullets = toolListMemoryBullets,
                 memorySystemSection = memorySystemSection,
+                runtimeContext = runtimeContextBlock,
             )
+        }
+        val base = buildString {
+            append(agentSection)
+            append(toolSection)
+        }
 
         // Match iOS order exactly: skills → global memory → recent daily memory.
         // See ios/Agent/Chat/AIChatViewModel.swift:4375-4387. Each fragment is
@@ -9179,15 +9203,10 @@ class ChatViewModel(
                 append("\n\n")
                 append(dailyMemoryFragment)
             }
-            // Runtime context goes last so the prefix above stays byte-stable
-            // across requests within the same day. Keep ordering deterministic
-            // (date → tz → lang → model count) — any reorder defeats the cache.
-            append("\n\n运行时上下文：\n")
-            append("- 当前日期：").append(dateStr).append(" (").append(tzId).append(")\n")
-            append("- 设备语言：").append(lang).append("\n")
-            append("- minis-model-use 可用模型数：").append(modelUseCount).append("\n")
-            append("\n沙箱运行上下文：\n")
-            append(sandboxRuntimeSnapshot().promptSection)
+            if (!sandboxContextInjected) {
+                append("\n\n")
+                append(sandboxRuntimeBlock)
+            }
         }
     }
 

@@ -36,7 +36,9 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
     var loadedAgent by remember { mutableStateOf<AgentEntity?>(null) }
     var name by remember { mutableStateOf("") }
     var instructions by remember { mutableStateOf("") }
-    var language by remember { mutableStateOf("auto") }
+    var toolPromptEnabled by remember { mutableStateOf(true) }
+    var customToolPromptEnabled by remember { mutableStateOf(false) }
+    var customToolPrompt by remember { mutableStateOf("") }
     var defaultModelBinding by remember { mutableStateOf<String?>(null) }
     val modelGroups by providerRepository.config.collectAsState()
     var avatarPath by remember { mutableStateOf<String?>(null) }
@@ -53,12 +55,21 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
             val agent = withContext(Dispatchers.IO) { agentRepository.get(it) }
             if (agent == null) error = "Agent 不存在" else {
                 loadedAgent = agent; name = agent.name; instructions = agent.instructions
-                language = agent.preferredLanguage ?: "auto"; avatarPath = agent.avatarPath
+                toolPromptEnabled = agent.toolPromptEnabled != 0
+                customToolPromptEnabled = agent.customToolPromptEnabled != 0
+                customToolPrompt = agent.customToolPrompt ?: SystemPromptPreferences.defaultToolTemplate(context)
+                avatarPath = agent.avatarPath
                 defaultModelBinding = agent.defaultModelBinding
             }
         }
         loading = false
     }
+    LaunchedEffect(Unit) {
+        if (agentId == null && customToolPrompt.isEmpty()) {
+            customToolPrompt = SystemPromptPreferences.defaultToolTemplate(context)
+        }
+    }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) { pendingAvatar = uri; avatarZoom = 1f; showAvatarCrop = true }
     }
@@ -69,12 +80,21 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val base = loadedAgent ?: agentRepository.create(name, instructions, language, defaultModelBinding)
-                    val updated = base.copy(name = name.trim(), instructions = instructions.trim(), preferredLanguage = language, defaultModelBinding = defaultModelBinding, avatarPath = pendingAvatar?.let { avatarStore.import(base.id, it, avatarZoom) } ?: avatarPath)
+                    val base = loadedAgent ?: agentRepository.create(name, instructions, defaultModelBinding = defaultModelBinding)
+                    val updated = base.copy(
+                        name = name.trim(),
+                        instructions = instructions.trim(),
+                        preferredLanguage = null,
+                        defaultModelBinding = defaultModelBinding,
+                        toolPromptEnabled = if (toolPromptEnabled) 1 else 0,
+                        customToolPromptEnabled = if (customToolPromptEnabled) 1 else 0,
+                        customToolPrompt = customToolPrompt.takeIf { customToolPromptEnabled },
+                        avatarPath = pendingAvatar?.let { avatarStore.import(base.id, it, avatarZoom) } ?: avatarPath,
+                    )
                     agentRepository.save(updated)
                     if (updated.id == AgentIds.DEFAULT) {
                         val old = SoulStore.load(context)
-                        SoulStore.save(context, SoulFile(SoulMetadata(updated.name, old?.metadata?.emoji.orEmpty(), old?.metadata?.style.orEmpty(), language), updated.instructions))
+                        SoulStore.save(context, SoulFile(SoulMetadata(updated.name, old?.metadata?.emoji.orEmpty(), old?.metadata?.style.orEmpty(), old?.metadata?.lang ?: "auto"), updated.instructions))
                     }
                     updated.id
                 }
@@ -97,12 +117,6 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
         SettingsSection(header = "基本信息") {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 OutlinedTextField(name, { name = it.take(80) }, label = { Text("Agent 名称") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Text("回复语言", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 16.dp, bottom = 6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("auto" to "自动", "zh" to "中文", "en" to "English").forEach { (value, label) ->
-                        if (language == value) Button({ language = value }) { Text(label) } else OutlinedButton({ language = value }) { Text(label) }
-                    }
-                }
             }
         }
         SettingsSection(header = "默认模型组", footer = "仅影响该 Agent 新建的话题；已有话题保持自己的模型绑定。") {
@@ -116,8 +130,57 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
                 }
             }
         }
-        SettingsSection(header = "人格与提示词", footer = "只配置该 Agent 的身份、语气和行为偏好。应用安全规则与工具协议不会被覆盖。") {
+        SettingsSection(header = "人格与提示词", footer = "使用 {{sandbox_runtime_context}} 可在此处注入沙箱运行上下文；未使用时默认追加到系统提示词末尾。") {
             OutlinedTextField(instructions, { instructions = it }, placeholder = { Text("描述人格、职责、表达方式和工作偏好…") }, textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth().padding(12.dp).heightIn(min = 240.dp))
+        }
+        SettingsSection(
+            header = "工具提示词",
+            footer = "默认模板来自 default_tool_zh.md；支持 {{memory_tool_bullets}}、{{memory_system_section}}、{{runtime_context}} 和 {{sandbox_runtime_context}} 占位符。",
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                ListItem(
+                    headlineContent = { Text("工具提示词模版") },
+                    supportingContent = { Text("向该 Agent 注入工具、文件、Android 与环境安全规则") },
+                    trailingContent = {
+                        Switch(
+                            checked = toolPromptEnabled,
+                            onCheckedChange = { toolPromptEnabled = it },
+                        )
+                    },
+                    modifier = Modifier.clickable { toolPromptEnabled = !toolPromptEnabled },
+                )
+                ListItem(
+                    headlineContent = { Text("自定义工具提示词") },
+                    supportingContent = { Text("基于默认模板为该 Agent 单独修改") },
+                    trailingContent = {
+                        Switch(
+                            checked = customToolPromptEnabled,
+                            onCheckedChange = { enabled ->
+                                customToolPromptEnabled = enabled
+                                if (enabled && customToolPrompt.isEmpty()) {
+                                    customToolPrompt = SystemPromptPreferences.defaultToolTemplate(context)
+                                }
+                            },
+                            enabled = toolPromptEnabled,
+                        )
+                    },
+                    modifier = Modifier.clickable(enabled = toolPromptEnabled) {
+                        customToolPromptEnabled = !customToolPromptEnabled
+                        if (customToolPromptEnabled && customToolPrompt.isEmpty()) {
+                            customToolPrompt = SystemPromptPreferences.defaultToolTemplate(context)
+                        }
+                    },
+                )
+                if (toolPromptEnabled && customToolPromptEnabled) {
+                    OutlinedTextField(
+                        value = customToolPrompt,
+                        onValueChange = { customToolPrompt = it },
+                        placeholder = { Text("工具提示词模板") },
+                        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        modifier = Modifier.fillMaxWidth().padding(12.dp).heightIn(min = 320.dp),
+                    )
+                }
+            }
         }
         loadedAgent?.let { agent ->
             SettingsSection(header = "能力与数据") {

@@ -10,41 +10,46 @@ import android.content.Context
  */
 object SystemPromptPreferences {
     private const val PREFS = "system_prompt_preferences"
-    private const val KEY_IDENTITY = "identity_template"
-    private const val KEY_MAIN = "main_template"
+    // Keep the existing preference key so users' saved overrides survive the
+    // main-prompt → tool-prompt terminology change.
+    private const val KEY_TOOL = "main_template"
+    private const val LEGACY_KEY_IDENTITY = "identity_template"
 
-    const val NAME_PLACEHOLDER = "{name}"
     const val MEMORY_TOOL_BULLETS = "{{memory_tool_bullets}}"
     const val MEMORY_SYSTEM_SECTION = "{{memory_system_section}}"
+    const val RUNTIME_CONTEXT = "{{runtime_context}}"
+    const val SANDBOX_RUNTIME_CONTEXT = "{{sandbox_runtime_context}}"
 
-    private const val IDENTITY_ASSET = "prompts/default_identity_zh.md"
-    private const val MAIN_ASSET = "prompts/default_system_zh.md"
+    private const val TOOL_ASSET = "prompts/default_tool_zh.md"
 
-    fun identityOverride(context: Context): String = prefs(context).getString(KEY_IDENTITY, "").orEmpty()
-    fun mainOverride(context: Context): String = prefs(context).getString(KEY_MAIN, "").orEmpty()
+    fun toolOverride(context: Context): String = prefs(context).getString(KEY_TOOL, "").orEmpty()
 
-    fun identityTemplate(context: Context): String =
-        identityOverride(context).takeIf { it.isNotBlank() } ?: readAsset(context, IDENTITY_ASSET)
+    fun defaultToolTemplate(context: Context): String = readAsset(context, TOOL_ASSET)
 
-    fun mainTemplate(context: Context): String =
-        mainOverride(context).takeIf { it.isNotBlank() } ?: readAsset(context, MAIN_ASSET)
+    fun toolTemplate(context: Context): String =
+        toolOverride(context).takeIf { it.isNotBlank() } ?: defaultToolTemplate(context)
 
-    fun save(context: Context, identityTemplate: String, mainTemplate: String) {
+    fun save(context: Context, toolTemplate: String) {
         prefs(context).edit()
-            .putString(KEY_IDENTITY, identityTemplate.trim())
-            .putString(KEY_MAIN, mainTemplate.trim())
+            .remove(LEGACY_KEY_IDENTITY)
+            .putString(KEY_TOOL, toolTemplate.trim())
             .apply()
     }
 
     fun clear(context: Context) {
-        prefs(context).edit().remove(KEY_IDENTITY).remove(KEY_MAIN).apply()
+        prefs(context).edit().remove(LEGACY_KEY_IDENTITY).remove(KEY_TOOL).apply()
     }
 
-    fun renderMainTemplate(context: Context, memoryToolBullets: String, memorySystemSection: String): String =
-        mainTemplate(context)
-            .replace(MEMORY_TOOL_BULLETS, memoryToolBullets)
-            .replace(MEMORY_SYSTEM_SECTION, memorySystemSection)
-            .trimEnd()
+    fun renderToolTemplate(
+        template: String,
+        memoryToolBullets: String,
+        memorySystemSection: String,
+        runtimeContext: String,
+    ): String = template
+        .replace(MEMORY_TOOL_BULLETS, memoryToolBullets)
+        .replace(MEMORY_SYSTEM_SECTION, memorySystemSection)
+        .replace(RUNTIME_CONTEXT, runtimeContext)
+        .trimEnd()
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

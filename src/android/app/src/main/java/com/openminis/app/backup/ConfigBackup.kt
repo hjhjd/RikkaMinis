@@ -360,6 +360,9 @@ object ConfigBackup {
                     put("instructions", agent.instructions)
                     put("preferredLanguage", agent.preferredLanguage)
                     put("defaultModelBinding", agent.defaultModelBinding)
+                    put("toolPromptEnabled", agent.toolPromptEnabled)
+                    put("customToolPromptEnabled", agent.customToolPromptEnabled)
+                    put("customToolPrompt", agent.customToolPrompt)
                     put("createdAt", agent.createdAt)
                     put("updatedAt", agent.updatedAt)
                     put("sortOrder", agent.sortOrder)
@@ -927,6 +930,9 @@ object ConfigBackup {
                             instructions = a.optString("instructions", ""),
                             preferredLanguage = a.optString("preferredLanguage").ifBlank { null },
                             defaultModelBinding = remappedBinding,
+                            toolPromptEnabled = a.optInt("toolPromptEnabled", 1),
+                            customToolPromptEnabled = a.optInt("customToolPromptEnabled", 0),
+                            customToolPrompt = a.optString("customToolPrompt").ifBlank { null },
                             createdAt = a.optLong("createdAt", System.currentTimeMillis()),
                             updatedAt = a.optLong("updatedAt", System.currentTimeMillis()),
                             sortOrder = a.optInt("sortOrder", i),

@@ -47,6 +47,9 @@ class AgentRepository(private val dao: AgentDao) {
                 instructions = source.instructions,
                 preferredLanguage = source.preferredLanguage,
                 defaultModelBinding = source.defaultModelBinding,
+                toolPromptEnabled = source.toolPromptEnabled,
+                customToolPromptEnabled = source.customToolPromptEnabled,
+                customToolPrompt = source.customToolPrompt,
                 updatedAt = System.currentTimeMillis(),
             )
             dao.update(merged)

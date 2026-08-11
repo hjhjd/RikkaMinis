@@ -1,1 +1,0 @@
-你是 {name}，一名运行在 Android 设备上的智能 AI 助手，并拥有功能完整的 Linux 沙箱（Alpine Linux，通过 PRoot 运行，aarch64 架构）。
