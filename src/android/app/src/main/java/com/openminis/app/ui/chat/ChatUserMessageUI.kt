@@ -288,8 +288,11 @@ internal fun UserMessageBubble(
     onRetry: (() -> Unit)? = {},
     onEdit: (() -> Unit)? = null,
     onWithdraw: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
     onPreviewFile: (Uri, String) -> Unit = { _, _ -> },
 ) {
+    // Legacy anchored menu remains composed for source compatibility but is no
+    // longer opened; all message types now route long-press to MessageActionSheet.
     var showMenu by remember { mutableStateOf(false) }
     val isQueued = message.isQueued
 
@@ -322,16 +325,7 @@ internal fun UserMessageBubble(
                 // is exactly what DropdownMenu's `offset` parameter expects.
                 .pointerInput(message.id) {
                     detectTapGestures(
-                        onLongPress = {
-                            // Anchor the menu to the bubble — DropdownMenu
-                            // already places itself just below the anchor and
-                            // auto-flips above when there's no room. Using
-                            // the press y as offset (previous behavior) made
-                            // the menu jump halfway down a tall bubble away
-                            // from the user's finger, which on multi-line
-                            // user messages landed in screen center.
-                            showMenu = true
-                        }
+                        onLongPress = { onLongPress?.invoke() }
                     )
                 }
         ) {

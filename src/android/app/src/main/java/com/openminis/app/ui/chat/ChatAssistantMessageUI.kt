@@ -442,15 +442,28 @@ internal fun BoundsTrackedBlock(
     messageId: String,
     slotKey: String,
     markdown: String,
+    onLongPress: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val registry = LocalMessageBoundsRegistry.current
     Box(
-        modifier = Modifier.onGloballyPositioned { coords ->
-            registry?.put(messageId, slotKey, coords.boundsInWindow(), markdown)
-        },
+        modifier = Modifier
+            .onGloballyPositioned { coords ->
+                registry?.put(messageId, slotKey, coords.boundsInWindow(), markdown)
+            }
+            .then(
+                if (onLongPress != null) Modifier.combinedClickable(
+                    onClick = {},
+                    onLongClick = onLongPress,
+                ) else Modifier,
+            ),
     ) {
-        content()
+        // Message actions are now whole-message operations. Exclude assistant
+        // text from SelectionContainer so long-press has one deterministic
+        // result instead of racing the legacy text-selection toolbar.
+        androidx.compose.foundation.text.selection.DisableSelection {
+            content()
+        }
     }
     androidx.compose.runtime.DisposableEffect(messageId, slotKey) {
         onDispose { registry?.remove(messageId, slotKey) }

@@ -701,6 +701,8 @@ fun ChatScreen(
         mutableStateOf(focusMessageId?.takeIf { it.isNotBlank() })
     }
     var highlightedMessageId by remember(sessionId) { mutableStateOf<String?>(null) }
+    var actionMessage by remember(sessionId) { mutableStateOf<ChatMessage?>(null) }
+    var editMessageText by remember(sessionId) { mutableStateOf<String?>(null) }
     var showSkillsSheet by remember { mutableStateOf(false) }
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     var showMcpsSheet by remember { mutableStateOf(false) }
@@ -3592,6 +3594,7 @@ fun ChatScreen(
                                 onWithdraw = if (item.message.isQueued) {
                                     { safeMutate { viewModel.withdrawQueuedMessage(item.message.id) } }
                                 } else null,
+                                onLongPress = { actionMessage = item.message },
                                 onPreviewFile = { uri, name ->
                                     // T150: turn the persisted file:// URI back
                                     // into a FileItem and hand off to the host
@@ -3619,6 +3622,7 @@ fun ChatScreen(
                                 messageId = item.messageId,
                                 slotKey = "text:${item.block.id}",
                                 markdown = item.messageMarkdown,
+                                onLongPress = { messages.firstOrNull { it.id == item.messageId }?.let { actionMessage = it } },
                             ) {
                                 // T-android-gc-storm-issue17: collapse oversized frozen
                                 // assistant text before feeding the markdown parser, which
@@ -3645,6 +3649,7 @@ fun ChatScreen(
                                 messageId = item.messageId,
                                 slotKey = "mdblock:${item.parentBlockId}:${item.blockIndex}",
                                 markdown = item.messageMarkdown,
+                                onLongPress = { messages.firstOrNull { it.id == item.messageId }?.let { actionMessage = it } },
                             ) {
                                 LargeContentGuard(
                                     content = item.rawText,
@@ -3759,6 +3764,7 @@ fun ChatScreen(
                                 messageId = item.messageId,
                                 slotKey = "legacy",
                                 markdown = item.messageMarkdown,
+                                onLongPress = { messages.firstOrNull { it.id == item.messageId }?.let { actionMessage = it } },
                             ) {
                                 LargeContentGuard(
                                     content = item.content,
@@ -5476,6 +5482,46 @@ fun ChatScreen(
                 pendingFocusId = messageId
             },
             onDismiss = { showInputHistorySheet = false },
+        )
+    }
+
+    actionMessage?.let { target ->
+        val targetIndex = messages.indexOfFirst { it.id == target.id }
+        val retryUser = if (target.role == "user") target else {
+            messages.take(targetIndex.coerceAtLeast(0)).lastOrNull { it.role == "user" }
+        }
+        MessageActionSheet(
+            message = target,
+            canRetry = !isStreaming && retryUser != null,
+            onCopy = {
+                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("message", target.content))
+            },
+            onRetry = {
+                retryUser?.let {
+                    stickToBottom = true
+                    viewModel.retryFromMessage(it.id)
+                }
+            },
+            onEdit = if (target.role == "user" && !isStreaming && !target.isQueued) ({
+                viewModel.editMessage(target.id)?.let { editMessageText = it }
+            }) else null,
+            onDismiss = { actionMessage = null },
+        )
+    }
+
+    editMessageText?.let { initialText ->
+        MessageEditScreen(
+            initialText = initialText,
+            onCancel = {
+                viewModel.cancelEdit()
+                editMessageText = null
+            },
+            onSave = { edited ->
+                editMessageText = null
+                stickToBottom = true
+                viewModel.sendMessage(edited)
+            },
         )
     }
 
