@@ -42,6 +42,7 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
     var pendingAvatar by remember { mutableStateOf<Uri?>(null) }
     var loading by remember { mutableStateOf(agentId != null) }
     var saving by remember { mutableStateOf(false) }
+    var archiveCount by remember { mutableStateOf<Int?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(agentId) {
@@ -121,8 +122,37 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
                 }
             }
         }
+        loadedAgent?.takeIf { it.id != AgentIds.DEFAULT }?.let { agent ->
+            SettingsSection(header = "危险操作", footer = "归档后，该 Agent 的历史话题会迁移到默认 Agent；头像和记忆文件暂时保留。") {
+                OutlinedButton(
+                    onClick = { scope.launch { archiveCount = withContext(Dispatchers.IO) { agentRepository.sessionCount(agent.id) } } },
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("归档 Agent") }
+            }
+        }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp, 8.dp)) }
         Button(::save, Modifier.fillMaxWidth().padding(16.dp), enabled = name.isNotBlank() && !saving) { Text(if (saving) "正在保存…" else "保存") }
         Spacer(Modifier.padding(bottom = 24.dp))
+    }
+
+    archiveCount?.let { count ->
+        AlertDialog(
+            onDismissRequest = { archiveCount = null },
+            title = { Text("归档这个 Agent？") },
+            text = { Text("该 Agent 的 $count 个话题将迁移到默认 Agent。头像和记忆文件不会立即删除。") },
+            dismissButton = { TextButton({ archiveCount = null }) { Text("取消") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    val id = loadedAgent?.id ?: return@TextButton
+                    archiveCount = null
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) { agentRepository.archiveAndReassignToDefault(id) } }
+                            .onSuccess { onBack() }
+                            .onFailure { error = it.message ?: "归档失败" }
+                    }
+                }) { Text("归档", color = MaterialTheme.colorScheme.error) }
+            },
+        )
     }
 }

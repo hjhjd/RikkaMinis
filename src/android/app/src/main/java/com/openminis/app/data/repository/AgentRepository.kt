@@ -53,5 +53,13 @@ class AgentRepository(private val dao: AgentDao) {
         dao.setArchived(id, 1, System.currentTimeMillis())
     }
 
+    suspend fun archiveAndReassignToDefault(id: String) {
+        val fallback = defaultAgent()
+        require(id != fallback.id) { "The default Agent cannot be archived" }
+        requireNotNull(dao.get(id)) { "Agent not found: $id" }
+        dao.reassignSessions(id, fallback.id)
+        dao.setArchived(id, 1, System.currentTimeMillis())
+    }
+
     suspend fun sessionCount(id: String): Int = dao.sessionCount(id)
 }

@@ -42,6 +42,9 @@ interface AgentDao {
     @Query("SELECT COUNT(*) FROM sessions WHERE agent_id = :agentId")
     suspend fun sessionCount(agentId: String): Int
 
+    @Query("UPDATE sessions SET agent_id = :toAgentId WHERE agent_id = :fromAgentId")
+    suspend fun reassignSessions(fromAgentId: String, toAgentId: String)
+
     @Query("DELETE FROM agents WHERE id = :id")
     suspend fun delete(id: String)
 }
