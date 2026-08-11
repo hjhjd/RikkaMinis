@@ -12,13 +12,15 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -190,6 +192,25 @@ private const val EDGE_AUTO_SCROLL_ZONE_PX = 80f
 
 /** Max nudge per pointer event when finger is at the very edge. */
 private const val EDGE_AUTO_SCROLL_MAX_PX = 14f
+
+/** Observe an unconsumed tap without stealing clicks/scrolls from chat rows. */
+fun Modifier.clearTextSelectionOnOutsideTap(controller: SelectionController): Modifier =
+    pointerInput(controller) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            val start = down.position
+            var tapped = true
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if ((change.position - start).getDistance() >= viewConfiguration.touchSlop) tapped = false
+                if (!change.pressed) {
+                    if (tapped && controller.selection.value != null) controller.clearSelection()
+                    break
+                }
+            }
+        }
+    }
 
 private fun edgeAutoScrollNudge(
     localY: Float,
@@ -729,11 +750,11 @@ fun MinisSelectionToolbarHost(
     val context = androidx.compose.ui.platform.LocalContext.current
     Popup(
         popupPositionProvider = positionProvider,
-        onDismissRequest = { /* let user tap-clear via gesture */ },
+        onDismissRequest = { controller.clearSelection() },
         properties = PopupProperties(
             focusable = false,
             dismissOnBackPress = true,
-            dismissOnClickOutside = false,
+            dismissOnClickOutside = true,
         ),
     ) {
         // [T-android-text-toolbar-dark-visibility] Elevated container colour +
@@ -741,6 +762,7 @@ fun MinisSelectionToolbarHost(
         // in dark mode (bare `surface` was nearly invisible there).
         val barColor = MaterialTheme.colorScheme.surfaceContainerHigh
         Surface(
+            modifier = Modifier.widthIn(max = 360.dp),
             shape = RoundedCornerShape(10.dp),
             color = barColor,
             tonalElevation = 3.dp,
@@ -750,20 +772,15 @@ fun MinisSelectionToolbarHost(
                 MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
             ),
         ) {
-            // Make the action row horizontally scrollable so it survives
-            // narrow viewports + many actions ("Copy" + "Add to input box" +
-            // "Copy Markdown" + "Copy Rich Text" can easily exceed 360 px
-            // on small phones). Wrapping the Row in a horizontalScroll
-            // keeps the popup width clamped to the toolbar's measured
-            // width while letting the user swipe to reach hidden buttons.
-            val toolbarScroll = androidx.compose.foundation.rememberScrollState()
-            Row(
+            // Show every available operation immediately. The previous
+            // single horizontal row overflowed the popup, so only its first
+            // actions were visible unless the user discovered a hidden swipe.
+            // A compact vertical list is deterministic on every screen width.
+            Column(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
                     .background(barColor)
-                    .height(40.dp)
-                    .horizontalScroll(toolbarScroll),
-                verticalAlignment = Alignment.CenterVertically,
+                    .widthIn(min = 190.dp, max = 300.dp),
             ) {
                 fun toast(msg: String) {
                     android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
@@ -838,9 +855,9 @@ fun MinisSelectionToolbarHost(
 private fun MinisToolbarDivider() {
     Box(
         modifier = Modifier
-            .padding(vertical = 8.dp)
-            .width(0.5.dp)
-            .fillMaxHeight()
+            .padding(horizontal = 12.dp)
+            .height(0.5.dp)
+            .fillMaxWidth()
             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
     )
 }
@@ -855,7 +872,8 @@ private fun MinisToolbarButton(label: String, onClick: () -> Unit) {
         softWrap = false,
         modifier = Modifier
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .widthIn(min = 190.dp)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
     )
 }
 

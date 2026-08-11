@@ -3344,6 +3344,7 @@ fun ChatScreen(
                             // selection is entered explicitly via 快速复制.
                             enabled = false,
                         )
+                        .clearTextSelectionOnOutsideTap(selectionController)
                         // T29 dismiss-on-tap spy. Only active while the slash
                         // popup is showing. awaitFirstDown(requireUnconsumed=false,
                         // pass=Initial) lets us see the tap *before* any child
@@ -5443,6 +5444,9 @@ fun ChatScreen(
     val doubleBackToast = stringResource(R.string.back_to_exit_press_again)
     androidx.activity.compose.BackHandler(enabled = true) {
         when {
+            selectionController.selection.value != null -> {
+                selectionController.clearSelection()
+            }
             historyDrawerState.isOpen -> {
                 historyDrawerScope.launch { historyDrawerState.close() }
             }
