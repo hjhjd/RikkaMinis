@@ -5297,13 +5297,10 @@ fun ChatScreen(
                         val hasContent = hasText || attachments.isNotEmpty()
                         val showStop = isStreaming && !hasContent
                         if (showStop) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(Color(0xFFFF3B30), CircleShape)
-                                    .clip(CircleShape)
-                                    .clickable { viewModel.cancelStream() },
-                                contentAlignment = Alignment.Center,
+                            RingActionButton(
+                                onClick = { viewModel.cancelStream() },
+                                enabled = true,
+                                innerColor = Color(0xFFFF3B30),
                             ) {
                                 Icon(
                                     Icons.Default.Stop,
@@ -5316,29 +5313,22 @@ fun ChatScreen(
                             // Streaming with content → Send-into-queue; Idle with content → Send.
                             // Idle without text or attachments → disabled.
                             val canActivate = hasContent
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(
-                                        if (canActivate) ChatColors.sendButton
-                                        else ChatColors.sendButtonDisabled,
-                                        CircleShape,
-                                    )
-                                    .clip(CircleShape)
-                                    .clickable(enabled = canActivate) {
-                                        // T-drag-send-queue: route through the
-                                        // shared send-or-enqueue handler. Same
-                                        // semantics as before: slash short-
-                                        // circuit, snapshot text, clear input
-                                        // + focus, then sendMessage (which
-                                        // routes to enqueuePrompt when
-                                        // _isStreaming is true), then re-pin
-                                        // the list to index 0 with a 100ms
-                                        // re-pin to catch the late-mounting
-                                        // "thinking" indicator.
-                                        performSendOrEnqueue(inputText)
-                                    },
-                                contentAlignment = Alignment.Center,
+                            RingActionButton(
+                                onClick = {
+                                    // T-drag-send-queue: route through the
+                                    // shared send-or-enqueue handler. Same
+                                    // semantics as before: slash short-
+                                    // circuit, snapshot text, clear input
+                                    // + focus, then sendMessage (which
+                                    // routes to enqueuePrompt when
+                                    // _isStreaming is true), then re-pin
+                                    // the list to index 0 with a 100ms
+                                    // re-pin to catch the late-mounting
+                                    // "thinking" indicator.
+                                    performSendOrEnqueue(inputText)
+                                },
+                                enabled = canActivate,
+                                innerColor = if (canActivate) ChatColors.sendButton else ChatColors.sendButtonDisabled,
                             ) {
                                 Icon(
                                     Icons.Default.ArrowUpward,

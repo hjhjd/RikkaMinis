@@ -482,6 +482,30 @@ internal fun RingInputButton(
     }
 }
 
+@Composable
+internal fun RingActionButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    innerColor: Color,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .48f), CircleShape),
+        )
+        Box(Modifier.size(36.dp).background(innerColor, CircleShape))
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { content() }
+    }
+}
+
 // MicButton removed with the voice-input feature (had no callers left).
 
 
