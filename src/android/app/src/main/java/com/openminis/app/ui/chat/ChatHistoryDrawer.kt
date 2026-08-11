@@ -162,7 +162,9 @@ fun ChatHistoryDrawer(
     var deleteTarget by remember { mutableStateOf<ChatSessionEntity?>(null) }
 
     ModalDrawerSheet(
-        modifier = Modifier.width(320.dp),
+        // Keep enough of the chat visible to preserve spatial context when the
+        // drawer opens, and scale consistently across phone screen widths.
+        modifier = Modifier.fillMaxWidth(0.7f),
         drawerContainerColor = MaterialTheme.colorScheme.background,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
