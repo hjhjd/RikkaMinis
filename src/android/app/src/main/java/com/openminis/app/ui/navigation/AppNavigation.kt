@@ -650,6 +650,8 @@ fun AppNavigation(
                 memoryRepository = memoryRepository,
                 mcpRepository = mcpRepository,
                 chatRepository = chatRepository,
+                agentRepository = agentRepository,
+                agentMemoryFactory = (context.applicationContext as com.openminis.app.MinisApp).agentMemoryRepositoryFactory,
                 onBack = { navController.safePopBackStack() },
             )
         }

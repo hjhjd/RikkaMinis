@@ -38,6 +38,25 @@ class AgentRepository(private val dao: AgentDao) {
         ).also { dao.insert(it) }
     }
 
+    suspend fun importAgent(source: AgentEntity): AgentEntity {
+        val existing = dao.get(source.id)
+        if (source.id == AgentIds.DEFAULT && existing != null) {
+            val merged = existing.copy(
+                name = source.name,
+                instructions = source.instructions,
+                preferredLanguage = source.preferredLanguage,
+                defaultModelBinding = source.defaultModelBinding,
+                updatedAt = System.currentTimeMillis(),
+            )
+            dao.update(merged)
+            return merged
+        }
+        val target = if (existing == null) source else source.copy(id = UUID.randomUUID().toString())
+        val imported = target.copy(isDefault = 0, isArchived = 0, updatedAt = System.currentTimeMillis())
+        dao.upsert(imported)
+        return imported
+    }
+
     suspend fun save(agent: AgentEntity) {
         require(agent.name.isNotBlank()) { "Agent name must not be blank" }
         dao.update(agent.copy(name = agent.name.trim(), updatedAt = System.currentTimeMillis()))

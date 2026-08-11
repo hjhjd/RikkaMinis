@@ -87,6 +87,8 @@ fun BackupSettingsScreen(
     memoryRepository: MemoryRepository? = null,
     mcpRepository: MCPRepository? = null,
     chatRepository: com.openminis.app.data.repository.ChatRepository? = null,
+    agentRepository: com.openminis.app.data.repository.AgentRepository? = null,
+    agentMemoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory? = null,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -184,6 +186,8 @@ fun BackupSettingsScreen(
                         memoryRepo = memoryRepository,
                         mcpRepo = mcpRepository,
                         chatRepo = chatRepository,
+                        agentRepo = agentRepository,
+                        agentMemoryFactory = agentMemoryFactory,
                         chatWindowDays = chatWindowDays,
                     )
                 }
@@ -220,6 +224,8 @@ fun BackupSettingsScreen(
                         memoryRepo = memoryRepository,
                         mcpRepo = mcpRepository,
                         chatRepo = chatRepository,
+                        agentRepo = agentRepository,
+                        agentMemoryFactory = agentMemoryFactory,
                     )
                 }
                 withContext(Dispatchers.Main) {

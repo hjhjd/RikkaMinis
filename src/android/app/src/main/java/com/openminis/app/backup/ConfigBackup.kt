@@ -115,6 +115,8 @@ object ConfigBackup {
         memoryRepo: MemoryRepository? = null,
         mcpRepo: MCPRepository? = null,
         chatRepo: ChatRepository? = null,
+        agentRepo: com.openminis.app.data.repository.AgentRepository? = null,
+        agentMemoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory? = null,
         chatWindowDays: Int = 90,
     ): String {
         val registry = ConfigRegistry.get()
@@ -347,6 +349,44 @@ object ConfigBackup {
             }
         }
 
+        // Agent-owned metadata and resources. Optional field keeps format-v1
+        // readers/writers compatible; old backups simply omit it.
+        val agents = JSONArray()
+        if (agentRepo != null && agentMemoryFactory != null) {
+            for (agent in agentRepo.listAll().filter { it.isArchived == 0 }) {
+                val item = JSONObject().apply {
+                    put("id", agent.id)
+                    put("name", agent.name)
+                    put("instructions", agent.instructions)
+                    put("preferredLanguage", agent.preferredLanguage)
+                    put("defaultModelBinding", agent.defaultModelBinding)
+                    put("createdAt", agent.createdAt)
+                    put("updatedAt", agent.updatedAt)
+                    put("sortOrder", agent.sortOrder)
+                    put("isDefault", agent.isDefault)
+                }
+                val avatar = agentMemoryFactory.resolvePrivatePath(agent.avatarPath)
+                if (avatar?.isFile == true && avatar.length() <= MAX_AGENT_AVATAR_BYTES) {
+                    item.put("avatar", android.util.Base64.encodeToString(avatar.readBytes(), android.util.Base64.NO_WRAP))
+                }
+                val memory = JSONArray()
+                val repo = agentMemoryFactory.forAgent(agent.id)
+                for (file in repo.listAllFiles()) {
+                    val content = repo.readFile(file.name)
+                    if (content.toByteArray().size <= MAX_AGENT_MEMORY_FILE_BYTES) {
+                        memory.put(JSONObject().put("name", file.name).put("content", content))
+                    }
+                }
+                item.put("memoryFiles", memory)
+                if (skillRepo != null) {
+                    val bindings = JSONObject()
+                    for (skill in skillRepo.skills.value) bindings.put(skill.id, skillRepo.isEnabledForAgent(skill.id, agent.id))
+                    item.put("skillBindings", bindings)
+                }
+                agents.put(item)
+            }
+        }
+
         return JSONObject().apply {
             put("format", "openminis.config.backup")
             put("version", FORMAT_VERSION)
@@ -359,6 +399,7 @@ object ConfigBackup {
             put("skills", skills)
             put("memoryFiles", memoryFiles)
             put("mcpServers", mcpServers)
+            put("agents", agents)
             put("chatSessions", chatSessions)
             put("chatMessages", chatMessages)
             if (readFailures > 0) put("readFailures", readFailures)
@@ -418,6 +459,8 @@ object ConfigBackup {
         memoryRepo: MemoryRepository? = null,
         mcpRepo: MCPRepository? = null,
         chatRepo: ChatRepository? = null,
+        agentRepo: com.openminis.app.data.repository.AgentRepository? = null,
+        agentMemoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory? = null,
     ): ImportResult {
         // [fix-audit-p1-2] Reject oversized documents BEFORE any parsing /
         // decoding: a backup with embedded skill archives or chat history is
@@ -476,6 +519,7 @@ object ConfigBackup {
         // did not exist yet and was always rejected.
         val entryIdMap = HashMap<String, String>()   // source entry uuid → restored uuid
         val groupIdMap = HashMap<String, String>()    // source group id  → restored id
+        val agentIdMap = HashMap<String, String>()    // source Agent id → restored id
 
         // -- Stage 1: providers (also builds the entry-id map) --
         val providers = root.optJSONArray("providers")
@@ -860,6 +904,52 @@ object ConfigBackup {
             skipped.add("${mcpArr.length()} MCP server(s): not restorable here")
         }
 
+        // -- Stage 7.5: Agents (optional in legacy format-v1 backups) --
+        val agentsArr = root.optJSONArray("agents")
+        if (agentsArr != null && agentRepo != null && agentMemoryFactory != null) {
+            for (i in 0 until agentsArr.length()) {
+                val a = agentsArr.optJSONObject(i) ?: continue
+                val sourceId = a.optString("id").ifBlank { java.util.UUID.randomUUID().toString() }
+                try {
+                    val imported = agentRepo.importAgent(
+                        com.openminis.app.data.db.AgentEntity(
+                            id = sourceId,
+                            name = a.optString("name", "Agent"),
+                            instructions = a.optString("instructions", ""),
+                            preferredLanguage = a.optString("preferredLanguage").ifBlank { null },
+                            defaultModelBinding = a.optString("defaultModelBinding").ifBlank { null },
+                            createdAt = a.optLong("createdAt", System.currentTimeMillis()),
+                            updatedAt = a.optLong("updatedAt", System.currentTimeMillis()),
+                            sortOrder = a.optInt("sortOrder", i),
+                            isDefault = 0,
+                        ),
+                    )
+                    agentIdMap[sourceId] = imported.id
+                    val repo = agentMemoryFactory.forAgent(imported.id)
+                    a.optJSONArray("memoryFiles")?.let { files ->
+                        for (j in 0 until files.length()) {
+                            val file = files.optJSONObject(j) ?: continue
+                            val name = file.optString("name")
+                            if (name.matches(Regex("(?:GLOBAL|\\d{4}-\\d{2}-\\d{2})\\.md"))) repo.saveFile(name, file.optString("content"))
+                        }
+                    }
+                    a.optJSONObject("skillBindings")?.let { bindings ->
+                        if (skillRepo != null) for (key in bindings.keys()) skillRepo.setAgentBinding(imported.id, key, bindings.optBoolean(key))
+                    }
+                    a.optString("avatar").takeIf { it.isNotBlank() }?.let { encoded ->
+                        val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+                        if (bytes.size <= MAX_AGENT_AVATAR_BYTES) {
+                            val target = java.io.File(agentMemoryFactory.directory(imported.id).parentFile, "avatar.webp")
+                            target.parentFile?.mkdirs(); target.writeBytes(bytes)
+                            agentRepo.save(imported.copy(avatarPath = target.relativeTo(target.parentFile!!.parentFile!!.parentFile!!).path))
+                        }
+                    }
+                } catch (t: Throwable) {
+                    skipped.add("Agent ${a.optString("name", sourceId)}: ${t.message ?: "import failed"}")
+                }
+            }
+        }
+
         // -- Stage 8: chat history (session metadata + text-only parts) --
         // Sessions go in first — messages reference them via FK. REPLACE
         // conflict strategy makes re-imports idempotent. Message ids are
@@ -880,7 +970,8 @@ object ConfigBackup {
                         category = s.optString("category").ifEmpty { null },
                         lastMessage = s.optString("lastMessage").ifEmpty { null },
                         modelBinding = s.optString("modelBinding").ifEmpty { null },
-                        agentId = s.optString("agentId").ifEmpty { com.openminis.app.data.db.AgentIds.DEFAULT },
+                        agentId = agentIdMap[s.optString("agentId")]
+                            ?: s.optString("agentId").ifEmpty { com.openminis.app.data.db.AgentIds.DEFAULT },
                         source = s.optString("source").ifEmpty { null },
                         memoryEnabled = s.optInt("memoryEnabled", 1),
                         pinnedAt = if (s.has("pinnedAt")) s.optLong("pinnedAt") else null,
@@ -1002,6 +1093,8 @@ object ConfigBackup {
      *  payload rather than ballooning the backup into an OOM risk (the whole
      *  payload is Base64-encoded in memory on export and decoded on import). */
     const val MAX_SKILL_ARCHIVE_BYTES = 8 * 1024 * 1024
+    const val MAX_AGENT_AVATAR_BYTES = 2 * 1024 * 1024
+    const val MAX_AGENT_MEMORY_FILE_BYTES = 2 * 1024 * 1024
 
     /** [fix-audit-p1-2] Hard cap on the serialized backup payload itself.
      *  Export refuses to build beyond this; import rejects the document

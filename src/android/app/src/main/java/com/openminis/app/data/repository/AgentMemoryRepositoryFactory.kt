@@ -23,6 +23,13 @@ class AgentMemoryRepositoryFactory(private val context: Context) {
     fun directory(agentId: String): File =
         File(root, "${requireSafeId(agentId)}/memory")
 
+    fun resolvePrivatePath(relativePath: String?): File? {
+        val relative = relativePath?.takeIf { it.isNotBlank() } ?: return null
+        val candidate = File(context.filesDir, relative).canonicalFile
+        val base = context.filesDir.canonicalFile
+        return candidate.takeIf { it.path.startsWith(base.path + File.separator) }
+    }
+
     @Synchronized
     private fun migrateLegacyDefaultIfNeeded() {
         if (prefs.getBoolean(KEY_DEFAULT_MEMORY_V1, false)) return

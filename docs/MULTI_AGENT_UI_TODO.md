@@ -264,9 +264,9 @@ UI 合并，但底层仍需区分信任边界：
 
 ### 阶段 6：备份、同步、CLI 与配置协议
 
-- [ ] `ConfigBackup` 增加 agents、agent-skill bindings、agent memory、avatar 元数据、session.agent_id。
-- [ ] 头像可选择写入备份（base64/zip），设置单文件和总大小上限；超限时回退默认头像并给出 skipped 原因。
-- [ ] 导入时 remap Agent UUID，并同步 remap session.agent_id 和技能绑定。
+- [x] `ConfigBackup` 增加 agents、Agent 技能绑定、Agent memory 文件、头像元数据/载荷和 session.agent_id。
+- [x] 头像与记忆文件设置单文件大小上限；超限跳过并记录 skipped 原因。
+- [x] 导入时 remap Agent UUID，并同步 remap session.agent_id 和技能绑定。
 - [ ] WebDAV 使用同一备份格式完成 round-trip。
 - [ ] `minis-config` 增加 Agent scope，例如 `agents list/get/create/update`；写操作继续走确认门。
 - [ ] `minis-sessions-cli send` 支持可选 agent id/name；不提供时使用默认 Agent。
