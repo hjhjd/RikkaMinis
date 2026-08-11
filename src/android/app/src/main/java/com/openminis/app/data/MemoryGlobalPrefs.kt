@@ -30,9 +30,22 @@ object MemoryGlobalPrefs {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun isGlobalEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_GLOBAL_ENABLED, true)
+        isEnabledForAgent(context, com.openminis.app.data.db.AgentIds.DEFAULT)
+
+    fun isEnabledForAgent(context: Context, agentId: String): Boolean {
+        val scopedKey = "$KEY_GLOBAL_ENABLED.$agentId"
+        val p = prefs(context)
+        return if (p.contains(scopedKey)) p.getBoolean(scopedKey, true)
+        else p.getBoolean(KEY_GLOBAL_ENABLED, true)
+    }
 
     fun setGlobalEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_GLOBAL_ENABLED, enabled).apply()
+        setEnabledForAgent(context, com.openminis.app.data.db.AgentIds.DEFAULT, enabled)
+    }
+
+    fun setEnabledForAgent(context: Context, agentId: String, enabled: Boolean) {
+        prefs(context).edit()
+            .putBoolean("$KEY_GLOBAL_ENABLED.$agentId", enabled)
+            .apply()
     }
 }

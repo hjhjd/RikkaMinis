@@ -45,6 +45,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -124,8 +125,8 @@ fun ChatHistoryDrawer(
     val sessions by chatRepository.observeSessions()
         .collectAsState(initial = emptyList())
     val agents by agentRepository.observeActive().collectAsState(initial = emptyList())
-    var drawerTab by remember { mutableStateOf(0) }
-    var searchQuery by remember { mutableStateOf("") }
+    var drawerTab by rememberSaveable { mutableStateOf(0) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     var revealedAgentId by remember { mutableStateOf<String?>(null) }
     val filteredAgents = remember(agents, searchQuery) {
         val q = searchQuery.trim()

@@ -693,6 +693,9 @@ class ChatViewModel(
         val resolved = agentRepository.get(id) ?: agentRepository.defaultAgent()
         _activeAgentId.value = resolved.id
         _activeAgent.value = resolved
+        if (sessionId.startsWith("__new__")) {
+            _memoryEnabled.value = com.openminis.app.data.MemoryGlobalPrefs.isEnabledForAgent(context, resolved.id)
+        }
         agentMemoryRepositoryFactory?.let { factory ->
             val dir = factory.directory(resolved.id)
             dir.mkdirs()
@@ -1005,7 +1008,7 @@ class ChatViewModel(
     // overwrites this with the per-session DB value, which takes
     // precedence — the global pref only applies to drafts.
     internal val _memoryEnabled =
-        MutableStateFlow(com.openminis.app.data.MemoryGlobalPrefs.isGlobalEnabled(context))
+        MutableStateFlow(com.openminis.app.data.MemoryGlobalPrefs.isEnabledForAgent(context, _activeAgentId.value))
     val memoryEnabled: StateFlow<Boolean> = _memoryEnabled.asStateFlow()
 
     internal val _thinkingLevel = MutableStateFlow(ThinkingLevel.OFF)

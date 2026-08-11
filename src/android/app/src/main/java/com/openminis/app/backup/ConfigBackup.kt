@@ -911,13 +911,22 @@ object ConfigBackup {
                 val a = agentsArr.optJSONObject(i) ?: continue
                 val sourceId = a.optString("id").ifBlank { java.util.UUID.randomUUID().toString() }
                 try {
+                    val rawBinding = a.optString("defaultModelBinding").ifBlank { null }
+                    val remappedBinding = rawBinding?.let { binding ->
+                        runCatching {
+                            val obj = JSONObject(binding)
+                            val oldGroupId = obj.optString("groupId")
+                            groupIdMap[oldGroupId]?.let { obj.put("groupId", it) }
+                            obj.toString()
+                        }.getOrDefault(binding)
+                    }
                     val imported = agentRepo.importAgent(
                         com.openminis.app.data.db.AgentEntity(
                             id = sourceId,
                             name = a.optString("name", "Agent"),
                             instructions = a.optString("instructions", ""),
                             preferredLanguage = a.optString("preferredLanguage").ifBlank { null },
-                            defaultModelBinding = a.optString("defaultModelBinding").ifBlank { null },
+                            defaultModelBinding = remappedBinding,
                             createdAt = a.optLong("createdAt", System.currentTimeMillis()),
                             updatedAt = a.optLong("updatedAt", System.currentTimeMillis()),
                             sortOrder = a.optInt("sortOrder", i),

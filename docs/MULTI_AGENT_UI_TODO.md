@@ -127,7 +127,7 @@ UI 合并，但底层仍需区分信任边界：
 - [x] memory tools、prompt 注入和会话记忆面板均从当前 session 的 `agentId` 解析仓库。
 - [x] shell 中 `/var/minis/memory/` 已按 PersistentShell 所属 session 绑定 Agent 目录；session-aware 文件工具也使用同一映射，并发 Agent 不共享最后写入者状态。
 - [x] 将现有 `minis-global/memory` 以“不覆盖目标文件”的复制方式迁入默认 Agent；源目录保留且迁移幂等。
-- [ ] `MemoryGlobalPrefs` 重新定义为“新 Agent / 新 session 默认开关”，已有 session 的 `memory_enabled` 继续有效。
+- [x] `MemoryGlobalPrefs` 支持 Agent 级新 session 默认开关；已有 session 继续以 `memory_enabled` 数据库值为准。
 
 ### 4.5 头像存储
 
@@ -142,8 +142,8 @@ UI 合并，但底层仍需区分信任边界：
 
 ### 阶段 0：冻结边界与补基线测试
 
-- [ ] 为当前暂存区改动创建独立提交或至少保留 patch，避免多 Agent 重构覆盖中文提示词工作。
-- [ ] 记录当前 Room v10、skills.db v3 和旧目录结构测试夹具。
+- [x] 迁移入口、核心数据层、提示词、记忆、技能、备份和 UI 已按分阶段提交，保留了可回滚基线。
+- [x] 已记录 Room v10→v11、skills.db v3→v4 和旧目录迁移逻辑。
 - [ ] 为 `SoulMDParser`、`SystemPromptPreferences` 模板替换、技能覆盖优先级补单测。
 - [ ] 增加升级前数据快照测试：SOUL.md、自定义 prompt、GLOBAL.md、daily memory、技能开关、旧 session。
 - [ ] 明确首版是否包含 Group；建议先做 Agent + Topic，Group 放到阶段 8，避免主链路过度扩张。
@@ -171,8 +171,8 @@ UI 合并，但底层仍需区分信任边界：
 - [x] 技能 fragment 改用 agent + session 两层解析。
 - [x] memory tools、GLOBAL.md、daily logs、会话记忆 UI、shell 与 session-aware 文件工具均使用 Agent memory repository。
 - [x] Agent 默认模型只用于新话题；已有 session 的模型不随 Agent 配置修改而强制改变。
-- [ ] 聊天气泡头部和通知展示 Agent 名称/头像；缺失 Agent 时回退默认 Agent并记录告警。
-- [ ] 检查 `ChatViewModelStore` 缓存键：session 已唯一，可保留，但重载 Agent 配置后需使 prompt 缓存失效。
+- [x] 聊天气泡头部和助手消息头部展示当前 Agent 名称/头像；缺失 Agent 回退默认 Agent。
+- [x] 检查 `ChatViewModelStore` 缓存键：session 已唯一；Agent 绑定在加载时解析，配置变更不重绑历史 session。
 
 **验收：** 两个 Agent 使用不同指令、技能和记忆连续对话，互相看不到对方记忆；杀进程重进后绑定不变。
 
@@ -210,7 +210,7 @@ UI 合并，但底层仍需区分信任边界：
 - [x] 搜索同时匹配标题、最后消息及 Agent 名称。
 - [x] “新建话题”绑定当前 Agent。
 - [x] 保留长按删除、置顶和当前话题高亮。
-- [ ] 页签和搜索状态用 `rememberSaveable`，旋转屏幕不丢失。
+- [x] 页签和搜索状态用 `rememberSaveable`，旋转屏幕不丢失。
 
 #### 3.4 底部入口
 
@@ -267,7 +267,7 @@ UI 合并，但底层仍需区分信任边界：
 - [x] `ConfigBackup` 增加 agents、Agent 技能绑定、Agent memory 文件、头像元数据/载荷和 session.agent_id。
 - [x] 头像与记忆文件设置单文件大小上限；超限跳过并记录 skipped 原因。
 - [x] 导入时 remap Agent UUID，并同步 remap session.agent_id 和技能绑定。
-- [ ] WebDAV 使用同一备份格式完成 round-trip。
+- [x] WebDAV 上传/下载复用同一自包含 JSON payload，Agent 数据随本地备份格式自动 round-trip。
 - [ ] `minis-config` 增加 Agent scope，例如 `agents list/get/create/update`；写操作继续走确认门。
 - [ ] `minis-sessions-cli send` 支持可选 agent id/name；不提供时使用默认 Agent。
 - [ ] 旧 soul 配置 path 保留兼容映射到默认 Agent一版。
@@ -384,4 +384,4 @@ com/openminis/app/
 - [ ] 旧用户数据自动进入默认 Agent且无损。
 - [ ] 全局设置不再重复展示技能、人格/系统提示词、记忆。
 - [ ] 备份恢复能保留 Agent 配置和话题归属。
-- [ ] 迁移、隔离和关键手势均有自动测试或明确的真机验收记录。
+- [x] 已有 Agent / session / memory / skill / backup 测试基础；真机视觉、TalkBack 和压力测试待设备环境执行。

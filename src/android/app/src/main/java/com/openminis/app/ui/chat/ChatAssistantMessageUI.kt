@@ -276,16 +276,14 @@ import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
 
 @Composable
-internal fun AssistantHeader() {
-    // [T-soul-md] Identity header = locked ✨ sparkle gradient icon +
-    // SOUL.md-driven `name`. The emoji-customization field was removed,
-    // so we no longer branch on `SoulMetadata.emoji`; the icon stays the
-    // canonical sparkle (iOS: sparkles SF Symbol + gradient). Only the
-    // `name` field is user-customizable — defaults to the app name
-    // ("RikkaMinis", see SoulMetadata.DEFAULT.name) when
-    // SOUL.md is missing the field or set to the default value.
+internal fun AssistantHeader(agent: com.openminis.app.data.db.AgentEntity? = null) {
     val soulMeta by com.openminis.app.agent.SoulStore.cachedMetadata.collectAsState()
-    val displayName = soulMeta.name.ifBlank { com.openminis.app.agent.SoulMetadata.DEFAULT.name }
+    val displayName = agent?.name?.ifBlank { null }
+        ?: soulMeta.name.ifBlank { com.openminis.app.agent.SoulMetadata.DEFAULT.name }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val avatar = remember(agent?.avatarPath) {
+        com.openminis.app.agent.AgentAvatarStore(context.applicationContext).resolve(agent?.avatarPath)
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -295,21 +293,29 @@ internal fun AssistantHeader() {
             // inside the turn is unaffected (that's this row's bottom=2).
             .padding(top = 10.dp, bottom = 2.dp),
     ) {
-        val sparkleGradient = Brush.linearGradient(
-            colors = listOf(SparkleColor1, SparkleColor2),
-        )
-        Icon(
-            imageVector = Icons.Filled.AutoAwesome,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier
-                .size(18.dp)
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                .drawWithContent {
-                    drawContent()
-                    drawRect(brush = sparkleGradient, blendMode = BlendMode.SrcIn)
-                },
-        )
+        if (avatar != null) {
+            AsyncImage(
+                model = avatar,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp).clip(CircleShape),
+            )
+        } else {
+            val sparkleGradient = Brush.linearGradient(
+                colors = listOf(SparkleColor1, SparkleColor2),
+            )
+            Icon(
+                imageVector = Icons.Filled.AutoAwesome,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier
+                    .size(18.dp)
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(brush = sparkleGradient, blendMode = BlendMode.SrcIn)
+                    },
+            )
+        }
         Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = displayName,
