@@ -77,6 +77,10 @@ internal fun ChatEventDrawer(
             val width = LocalConfiguration.current.screenWidthDp.dp * 0.8f
             Surface(
                 modifier = Modifier.requiredWidth(width).fillMaxHeight(),
+                // Mirror Material 3 ModalDrawerSheet's 16dp outer corners:
+                // the right edge stays flush with the window while the two
+                // center-facing (start) corners are rounded.
+                shape = RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp),
                 color = MaterialTheme.colorScheme.background,
                 shadowElevation = 16.dp,
             ) {
