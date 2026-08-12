@@ -118,6 +118,7 @@ object ConfigBackup {
         agentRepo: com.openminis.app.data.repository.AgentRepository? = null,
         agentMemoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory? = null,
         tarvenRepo: com.openminis.app.data.repository.TarvenRuleRepository? = null,
+        execPlaneSettings: com.openminis.app.execplane.ExecPlaneSettingsRepository? = null,
         chatWindowDays: Int = 90,
     ): String {
         val registry = ConfigRegistry.get()
@@ -416,6 +417,7 @@ object ConfigBackup {
             put("mcpServers", mcpServers)
             put("agents", agents)
             put("tarvenRules", tarvenRules)
+            execPlaneSettings?.let { put("sandboxSettings", it.exportBackup(includeSecrets)) }
             put("chatSessions", chatSessions)
             put("chatMessages", chatMessages)
             if (readFailures > 0) put("readFailures", readFailures)
@@ -478,6 +480,7 @@ object ConfigBackup {
         agentRepo: com.openminis.app.data.repository.AgentRepository? = null,
         agentMemoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory? = null,
         tarvenRepo: com.openminis.app.data.repository.TarvenRuleRepository? = null,
+        execPlaneSettings: com.openminis.app.execplane.ExecPlaneSettingsRepository? = null,
     ): ImportResult {
         // [fix-audit-p1-2] Reject oversized documents BEFORE any parsing /
         // decoding: a backup with embedded skill archives or chat history is
@@ -924,6 +927,7 @@ object ConfigBackup {
         // -- Stage 7.5: Agents (optional in legacy format-v1 backups) --
         val agentsArr = root.optJSONArray("agents")
         if (agentsArr != null && agentRepo != null && agentMemoryFactory != null) {
+            var importedDefaultAgentId: String? = null
             for (i in 0 until agentsArr.length()) {
                 val a = agentsArr.optJSONObject(i) ?: continue
                 val sourceId = a.optString("id").ifBlank { java.util.UUID.randomUUID().toString() }
@@ -954,6 +958,7 @@ object ConfigBackup {
                         ),
                     )
                     agentIdMap[sourceId] = imported.id
+                    if (a.optInt("isDefault", 0) != 0) importedDefaultAgentId = imported.id
                     val repo = agentMemoryFactory.forAgent(imported.id)
                     a.optJSONArray("memoryFiles")?.let { files ->
                         for (j in 0 until files.length()) {
@@ -976,6 +981,10 @@ object ConfigBackup {
                 } catch (t: Throwable) {
                     skipped.add("Agent ${a.optString("name", sourceId)}: ${t.message ?: "import failed"}")
                 }
+            }
+            importedDefaultAgentId?.let { defaultId ->
+                runCatching { agentRepo.setDefault(defaultId) }
+                    .onFailure { skipped.add("default Agent: ${it.message ?: "restore failed"}") }
             }
         }
 
@@ -1035,6 +1044,14 @@ object ConfigBackup {
             }
         } else if (chatSessionsArr != null && chatSessionsArr.length() > 0 && chatRepo == null) {
             skipped.add("${chatSessionsArr.length()} chat session(s): not restorable here")
+        }
+
+        root.optJSONObject("sandboxSettings")?.let { settings ->
+            if (execPlaneSettings == null) {
+                skipped.add("sandbox settings: not restorable here")
+            } else runCatching {
+                execPlaneSettings.importBackup(settings, root.optBoolean("includesSecrets", false))
+            }.onFailure { skipped.add("sandbox settings: ${it.message ?: "import failed"}") }
         }
 
         root.optJSONArray("tarvenRules")?.let { rules ->

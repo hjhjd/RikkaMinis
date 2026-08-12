@@ -83,6 +83,13 @@ class ExecPlaneBridge(
         }
     }
 
+    fun reloadSettings() {
+        apply()
+        forwardConnections.values.forEach { it.close(1000, "Settings restored") }
+        forwardConnections.clear()
+        settings.forwardServers.value.filter { it.enabled && it.token.isNotBlank() }.forEach(::connect)
+    }
+
     fun disconnect(name: String): Boolean = connections.disconnectByUser(name)
 
     fun delete(name: String): Boolean {

@@ -3,6 +3,7 @@ package com.openminis.app.execplane
 import android.content.Context
 import com.openminis.app.execplane.protocol.ExecPlaneJson
 import com.openminis.app.util.EncryptedPrefsFactory
+import org.json.JSONObject
 import java.security.SecureRandom
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -111,6 +112,55 @@ class ExecPlaneSettingsRepository(context: Context) {
             if (replacement == null) setSandboxMode(MODE_PROOT)
         }
         return true
+    }
+
+    fun exportBackup(includeSecrets: Boolean): JSONObject = JSONObject().apply {
+        put("enabled", _enabled.value)
+        put("port", _port.value)
+        put("sandboxMode", _sandboxMode.value)
+        put("defaultWsSandbox", _defaultWsId.value)
+        put("forwardServers", ExecPlaneJson.codec.encodeToString(
+            _forwardServers.value.map { if (includeSecrets) it else it.copy(token = "") },
+        ))
+        if (includeSecrets) put("listenerToken", token())
+    }
+
+    fun importBackup(value: JSONObject, includesSecrets: Boolean): Int {
+        var applied = 0
+        if (value.has("port") && setPort(value.optInt("port", DEFAULT_PORT))) applied++
+        if (value.has("enabled")) {
+            setEnabled(value.optBoolean("enabled", false))
+            applied++
+        }
+        value.optString("sandboxMode").takeIf { it == MODE_PROOT || it == MODE_WS }?.let {
+            setSandboxMode(it)
+            applied++
+        }
+        val importedServers = runCatching {
+            ExecPlaneJson.codec.decodeFromString<List<ForwardServerConfig>>(
+                value.optString("forwardServers", "[]"),
+            )
+        }.getOrDefault(emptyList()).filter { server ->
+            server.name.isNotBlank() && isAllowedUrl(server.url)
+        }.map { server ->
+            if (includesSecrets) server else {
+                val existingToken = _forwardServers.value.firstOrNull { it.id == server.id }?.token.orEmpty()
+                server.copy(token = existingToken, enabled = server.enabled && existingToken.isNotBlank())
+            }
+        }
+        if (value.has("forwardServers")) {
+            persistForwardServers(importedServers)
+            applied += importedServers.size
+        }
+        value.optString("defaultWsSandbox").takeIf { id -> importedServers.any { it.id == id } }?.let {
+            setDefaultWsSandbox(it)
+            applied++
+        }
+        if (includesSecrets) value.optString("listenerToken").takeIf { it.length >= 32 }?.let {
+            prefs.edit().putString(KEY_TOKEN, it).commit()
+            applied++
+        }
+        return applied
     }
 
     private fun loadForwardServers(): List<ForwardServerConfig> = runCatching {

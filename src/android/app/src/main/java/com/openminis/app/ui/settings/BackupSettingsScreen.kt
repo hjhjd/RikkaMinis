@@ -89,6 +89,7 @@ fun BackupSettingsScreen(
     chatRepository: com.openminis.app.data.repository.ChatRepository? = null,
     agentRepository: com.openminis.app.data.repository.AgentRepository? = null,
     agentMemoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory? = null,
+    execPlaneSettings: com.openminis.app.execplane.ExecPlaneSettingsRepository? = null,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -190,6 +191,7 @@ fun BackupSettingsScreen(
                         agentRepo = agentRepository,
                         agentMemoryFactory = agentMemoryFactory,
                         tarvenRepo = tarvenRepository,
+                        execPlaneSettings = execPlaneSettings,
                         chatWindowDays = chatWindowDays,
                     )
                 }
@@ -229,8 +231,10 @@ fun BackupSettingsScreen(
                         agentRepo = agentRepository,
                         agentMemoryFactory = agentMemoryFactory,
                         tarvenRepo = tarvenRepository,
+                        execPlaneSettings = execPlaneSettings,
                     )
                 }
+                application.execPlaneBridge.reloadSettings()
                 withContext(Dispatchers.Main) {
                     importReport = report
                     restoredMsg = context.getString(
@@ -435,7 +439,10 @@ fun BackupSettingsScreen(
                             memoryRepo = memoryRepository,
                             mcpRepo = mcpRepository,
                             chatRepo = chatRepository,
+                            agentRepo = agentRepository,
+                            agentMemoryFactory = agentMemoryFactory,
                             tarvenRepo = tarvenRepository,
+                            execPlaneSettings = execPlaneSettings,
                             chatWindowDays = chatWindowDays,
                         )
                     }
