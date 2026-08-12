@@ -226,7 +226,6 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.PlatformTextStyle
@@ -703,7 +702,6 @@ fun ChatScreen(
     // (opened by tapping the navbar thinking badge) is presented. Mirrors iOS
     // AIChatView.showThinkingLevelSheet.
     var showThinkingLevelSheet by remember { mutableStateOf(false) }
-    var showAttachMenu by remember { mutableStateOf(false) }
     var showTarvenSelector by remember { mutableStateOf(false) }
     var showChatMenu by remember { mutableStateOf(false) }
     // [T-input-history] "Input History" sheet visibility, mirrors rikkahub's
@@ -2349,467 +2347,8 @@ fun ChatScreen(
                         viewModel.promoteDraftIfNeeded()
                         onNewChat(viewModel.activeAgentId.value)
                     }) {
-                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.chat_menu_new_chat))
+                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.chat_menu_new_chat))
                     }
-                    // [T-input-history] Always-visible history button (pinned
-                    // like New Chat) — shows a searchable list of all messages
-                    // in the current session so the user can jump back to any
-                    // earlier input in one tap. Intentionally NOT inside the
-                    // hasAnyMenuItems gate: both high-frequency actions (New
-                    // Chat and Input History) are immune to the "hide empty
-                    // menu" collapse that governs "...". However the user CAN
-                    // opt-out via Settings → Appearance → Chat Menu.
-                    if (chatActions.topBarInputHistoryVisible) {
-                        IconButton(onClick = { showInputHistorySheet = true }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.FormatListBulleted,
-                                contentDescription = stringResource(R.string.input_history_title),
-                            )
-                        }
-                    }
-                    // [T-chat-menu-empty] The "..." button is only worth
-                    // rendering when it has at least one entry to show. If
-                    // every customizable entry is off AND no model-conditional
-                    // toggle (Enhanced Cache / Fast Mode) applies AND this
-                    // isn't a DEBUG build, the menu would open empty — a dead
-                    // control — so nothing renders and the New Chat pencil
-                    // becomes the last action on the bar.
-                    // [T-chat-menu-solo] When EXACTLY ONE entry would render,
-                    // the overflow is pointless: promote it to a direct
-                    // top-bar IconButton (one tap instead of two) and drop the
-                    // "..." entirely. Two+ entries keep the overflow. The
-                    // DEBUG crash trigger is counted but never promoted — a
-                    // stray tap on a lone top-bar button would crash the app —
-                    // so a menu that would contain only it keeps the "...".
-                    // The gates below mirror the ones applied while rendering
-                    // the items, so button visibility and menu content can
-                    // never disagree.
-                    val visibleCustomEntries = chatActions.menuOrder.filter { key ->
-                        chatActions.isVisible(key) && isChatActionAvailable(
-                            key,
-                            skillsAvailable = skillRepository != null,
-                            mcpsAvailable = mcpRepository != null,
-                            memoryAvailable = memoryRepository != null && menuMemoryEnabled,
-                        )
-                    }
-                    val showEnhancedCache by viewModel.showEnhancedCacheToggle.collectAsState()
-                    val enhancedCacheOn by viewModel.enhancedCacheEnabled.collectAsState()
-                    val showFastMode by viewModel.showFastModeToggle.collectAsState()
-                    val fastModeOn by viewModel.fastModeEnabled.collectAsState()
-                    val visibleMenuCount =
-                        visibleCustomEntries.size +
-                            (if (showEnhancedCache) 1 else 0) +
-                            (if (showFastMode) 1 else 0) +
-                            (if (BuildConfig.DEBUG) 1 else 0)
-                    // Lone customizable entry (Terminal / Browser / Export / …)
-                    // → direct button. Icon + label come from the same
-                    // ChatActionCatalog the settings screen uses, so the
-                    // promoted button always matches the entry it replaces.
-                    val soloCustomKey =
-                        if (visibleMenuCount == 1 && visibleCustomEntries.size == 1) visibleCustomEntries.first() else null
-                    // Lone model-invocation toggle → direct button whose tint
-                    // carries the on/off state (the trailing Switch would have
-                    // nowhere to live).
-                    val soloCacheToggle = visibleMenuCount == 1 && visibleCustomEntries.isEmpty() && showEnhancedCache
-                    val soloFastToggle = visibleMenuCount == 1 && visibleCustomEntries.isEmpty() && showFastMode
-                    val hasAnyMenuItems =
-                        visibleMenuCount >= 1 && soloCustomKey == null && !soloCacheToggle && !soloFastToggle
-                    // iOS: "..." circle button → dropdown menu
-                    if (soloCustomKey != null) {
-                        val spec = ChatActionCatalog.spec(soloCustomKey)
-                        IconButton(onClick = { dispatchChatAction(soloCustomKey) }) {
-                            Icon(
-                                spec?.icon ?: Icons.Default.MoreVert,
-                                contentDescription = spec?.let { stringResource(it.titleRes) } ?: "More",
-                            )
-                        }
-                    } else if (soloCacheToggle) {
-                        // Enhanced Cache as a lone top-bar toggle — same
-                        // first-enable confirmation flow as the menu entry.
-                        IconButton(
-                            onClick = {
-                                if (enhancedCacheOn) {
-                                    viewModel.setEnhancedCacheEnabled(false)
-                                } else if (viewModel.isEnhancedCacheConfirmed()) {
-                                    viewModel.setEnhancedCacheEnabled(true)
-                                } else {
-                                    showEnhancedCacheDialog = true
-                                }
-                            },
-                        ) {
-                            Icon(
-                                Icons.Default.Bolt,
-                                contentDescription = stringResource(R.string.chat_menu_enhanced_cache),
-                                tint = if (enhancedCacheOn) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
-                        }
-                    } else if (soloFastToggle) {
-                        IconButton(onClick = { viewModel.setFastModeEnabled(!fastModeOn) }) {
-                            Icon(
-                                Icons.Default.Bolt,
-                                contentDescription = stringResource(R.string.chat_menu_fast_mode),
-                                tint = if (fastModeOn) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
-                        }
-                    } else if (hasAnyMenuItems) {
-                        Box {
-                            IconButton(onClick = { showChatMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More")
-                            }
-                            MinisMenu(
-                                expanded = showChatMenu,
-                                onDismissRequest = { showChatMenu = false },
-                            ) {
-                            // [T-android-memory-enabled-minisconfig] Gate the
-                            // "Memories in Session" item below on the session's
-                            // live memoryEnabled — when memory is off the entry
-                            // disappears, consistent with the per-session gating
-                            // of the memory_get / memory_write tools and the
-                            // system-prompt injection. (menuMemoryEnabled is
-                            // collected at the top of ChatScreen, next to
-                            // chatActions, so the menu and the drawer footer
-                            // stay in sync.)
-                            // [T-customizable-chat-menu] The eight action /
-                            // session entries below are driven by
-                            // ChatMenuPrefs (Settings → Appearance → Chat
-                            // Menu): the user can hide entries and reorder
-                            // them. Rendering follows chatActions.menuOrder
-                            // (missing keys appended in default order, unknown
-                            // keys dropped) and skips entries whose visibility
-                            // switch is OFF. Conditional entries (Skills /
-                            // MCPs / Memory) additionally keep their runtime
-                            // gate: an entry only shows when BOTH the user
-                            // toggle AND the runtime condition are true, so
-                            // hiding it never resurrects a dead repository.
-                            // Model-invocation toggles (Enhanced Cache, Fast
-                            // Mode) and the DEBUG crash trigger are NOT part
-                            // of this list — they stay pinned at the bottom.
-                            // Taps funnel through dispatchChatAction() (hoisted
-                            // near the top of ChatScreen) so the "..." menu and
-                            // the history-drawer footer share one implementation
-                            // per action. EXPORT opens ExportFormatSheet instead
-                            // of the old inline JSON/Plain submenu.
-                            for (entryKey in chatActions.menuOrder) {
-                                if (!chatActions.isVisible(entryKey)) continue
-                                key(entryKey) {
-                                    when (entryKey) {
-                                        ChatMenuPrefs.TERMINAL -> {
-                                            // Open Terminal (iOS parity) — session-bound, starts in /var/minis
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.chat_menu_open_terminal)) },
-                                                onClick = {
-                                                    showChatMenu = false
-                                                    dispatchChatAction(ChatMenuPrefs.TERMINAL)
-                                                },
-                                                leadingIcon = {
-                                                    Icon(Icons.Default.Terminal, contentDescription = null)
-                                                },
-                                            )
-                                        }
-                                        ChatMenuPrefs.BROWSER -> {
-                                            // Open Browser (iOS parity)
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.chat_menu_open_browser)) },
-                                                onClick = {
-                                                    showChatMenu = false
-                                                    dispatchChatAction(ChatMenuPrefs.BROWSER)
-                                                },
-                                                leadingIcon = {
-                                                    Icon(Icons.Default.Language, contentDescription = null)
-                                                },
-                                            )
-                                        }
-                                        ChatMenuPrefs.CHAT_FILES -> {
-                                            // Browse Chat Files (iOS parity) — opens file browser at /var/minis
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.chat_menu_browse_chat_files)) },
-                                                onClick = {
-                                                    showChatMenu = false
-                                                    dispatchChatAction(ChatMenuPrefs.CHAT_FILES)
-                                                },
-                                                leadingIcon = {
-                                                    Icon(Icons.Default.Description, contentDescription = null)
-                                                },
-                                            )
-                                        }
-                                        ChatMenuPrefs.COMPACT -> {
-                                            // Compress conversation history into a summary.
-                                            // [bottom-toolbar-customizable] Moved out of the slash
-                                            // picker into the customizable chat-action pool — it is
-                                            // a frequent session-level operation, not an input aid.
-                                            // Shows a live "compressing…" hint while a compaction
-                                            // is in progress.
-                                            val compacting = viewModel.isCompacting.collectAsState()
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Column {
-                                                        Text(stringResource(R.string.chat_menu_compact))
-                                                        if (compacting.value) {
-                                                            Text(
-                                                                stringResource(R.string.menu_compacting_in_progress),
-                                                                fontSize = 12.sp,
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            )
-                                                        }
-                                                    }
-                                                },
-                                                onClick = {
-                                                    showChatMenu = false
-                                                    dispatchChatAction(ChatMenuPrefs.COMPACT)
-                                                },
-                                                enabled = !compacting.value,
-                                                leadingIcon = {
-                                                    Icon(Icons.Default.Compress, contentDescription = null)
-                                                },
-                                            )
-                                        }
-                                        ChatMenuPrefs.THINKING -> {
-                                            // Thinking level (off/low/med/high). Displays the
-                                            // current level as a subtitle so the user sees state
-                                            // before deciding to toggle. Tap toggles OFF<->MEDIUM;
-                                            // the level picker sheet is reachable from the current
-                                            // level badge elsewhere. Unsupported models grey out
-                                            // the row. [bottom-toolbar-customizable] Moved out of
-                                            // the slash picker for the same reason as compact.
-                                            val lev = viewModel.thinkingLevel.collectAsState().value
-                                            val supported = viewModel.currentModelSupportsReasoning
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Column {
-                                                        Text(stringResource(R.string.chat_menu_thinking))
-                                                        Text(
-                                                            if (supported) lev.localizedName(context)
-                                                            else context.getString(R.string.slash_thinking_unsupported),
-                                                            fontSize = 12.sp,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        )
-                                                    }
-                                                },
-                                                onClick = {
-                                                    showChatMenu = false
-                                                    dispatchChatAction(ChatMenuPrefs.THINKING)
-                                                },
-                                                enabled = supported,
-                                                leadingIcon = {
-                                                    Icon(Icons.Default.Lightbulb, contentDescription = null)
-                                                },
-                                            )
-                                        }
-                                        ChatMenuPrefs.SLASH_COMMANDS -> {
-                                            // Slash commands. Moved here from the dedicated "/"
-                                            // circle button that used to sit next to "+" in the
-                                            // composer: the button occupied permanent space in
-                                            // the input row for an action most users invoke by
-                                            // simply typing "/", and the row is the most
-                                            // contended horizontal space on the screen. The
-                                            // menu keeps it discoverable for people who don't
-                                            // know the typed shortcut. Placed directly above
-                                            // Token Usage per the requested ordering.
-                                            //
-                                            // Behaviour is unchanged from the old button: it
-                                            // toggles, so opening the menu while the slash
-                                            // sheet is already up dismisses it. (Toggle logic
-                                            // lives in dispatchChatAction so the footer entry
-                                            // behaves identically.)
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.chat_menu_slash_commands)) },
-                                                onClick = {
-                                                    showChatMenu = false
-                                                    dispatchChatAction(ChatMenuPrefs.SLASH_COMMANDS)
-                                                },
-                                                leadingIcon = {
-                                                    // Match the old button's italic-bold "/"
-                                                    // glyph rather than substituting a generic
-                                                    // icon, so the entry reads as the same
-                                                    // affordance that moved.
-                                                    Text(
-                                                        "/",
-                                                        fontSize = 20.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        fontStyle = FontStyle.Italic,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    )
-                                                },
-                                            )
-                                        }
-                                        ChatMenuPrefs.EXPORT -> {
-                                            // Export conversation (JSON / Plain Text) — the
-                                            // session list's long-press Export, surfaced from
-                                            // inside the chat. Same streaming ChatExporter, so
-                                            // long chats stay bounded-memory. Placed between
-                                            // Slash Commands and Token Usage per the requested
-                                            // ordering.
-                                            //
-                                            // [bottom-toolbar-customizable] The old inline
-                                            // JSON/Plain submenu is gone: both the "..." menu
-                                            // and the history-drawer footer now open the same
-                                            // shared ExportFormatSheet, so the format choice
-                                            // lives in exactly one implementation.
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.sessionlist_export)) },
-                                                onClick = {
-                                                    showChatMenu = false
-                                                    showExportFormatSheet = true
-                                                },
-                                                leadingIcon = {
-                                                    Icon(Icons.Default.Share, contentDescription = null)
-                                                },
-                                            )
-                                        }
-                                        ChatMenuPrefs.SESSION_SKILLS -> {
-                                            // Session Skills (iOS parity)
-                                            if (skillRepository != null) {
-                                                DropdownMenuItem(
-                                                    text = { Text(stringResource(R.string.session_skills_title)) },
-                                                    onClick = {
-                                                        showChatMenu = false
-                                                        dispatchChatAction(ChatMenuPrefs.SESSION_SKILLS)
-                                                    },
-                                                    leadingIcon = {
-                                                        Icon(Icons.Default.Build, contentDescription = null)
-                                                    },
-                                                )
-                                            }
-                                        }
-                                        ChatMenuPrefs.SESSION_MCPS -> {
-                                            // [T-mcp-integration-android] MCPs in Session, next to Skills.
-                                            if (mcpRepository != null) {
-                                                DropdownMenuItem(
-                                                    text = { Text(stringResource(R.string.session_mcps_title)) },
-                                                    onClick = {
-                                                        showChatMenu = false
-                                                        dispatchChatAction(ChatMenuPrefs.SESSION_MCPS)
-                                                    },
-                                                    leadingIcon = {
-                                                        Icon(Icons.Default.Extension, contentDescription = null)
-                                                    },
-                                                )
-                                            }
-                                        }
-                                        ChatMenuPrefs.SESSION_MEMORY -> {
-                                            // Session Memory (iOS parity)
-                                            if (memoryRepository != null && menuMemoryEnabled) {
-                                                DropdownMenuItem(
-                                                    text = { Text(stringResource(R.string.session_memory_title)) },
-                                                    onClick = {
-                                                        showChatMenu = false
-                                                        dispatchChatAction(ChatMenuPrefs.SESSION_MEMORY)
-                                                    },
-                                                    leadingIcon = {
-                                                        Icon(Icons.Default.Psychology, contentDescription = null)
-                                                    },
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            // Enhanced Cache (iOS parity, commit 57aaf122):
-                            // 1-hour Anthropic cache TTL. Only shown for the
-                            // official Anthropic API (not relays / other
-                            // providers) — showEnhancedCacheToggle recomputes on
-                            // model/provider switch. First enable prompts a
-                            // one-time extra-billing confirmation. (These
-                            // flags are collected above, next to the "..."
-                            // visibility check.)
-                            if (showEnhancedCache) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.chat_menu_enhanced_cache)) },
-                                    onClick = {
-                                        if (enhancedCacheOn) {
-                                            viewModel.setEnhancedCacheEnabled(false)
-                                        } else if (viewModel.isEnhancedCacheConfirmed()) {
-                                            viewModel.setEnhancedCacheEnabled(true)
-                                        } else {
-                                            showChatMenu = false
-                                            showEnhancedCacheDialog = true
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.Default.Bolt, contentDescription = null)
-                                    },
-                                    trailingIcon = {
-                                        Switch(
-                                            checked = enhancedCacheOn,
-                                            onCheckedChange = {
-                                                if (enhancedCacheOn) {
-                                                    viewModel.setEnhancedCacheEnabled(false)
-                                                } else if (viewModel.isEnhancedCacheConfirmed()) {
-                                                    viewModel.setEnhancedCacheEnabled(true)
-                                                } else {
-                                                    showChatMenu = false
-                                                    showEnhancedCacheDialog = true
-                                                }
-                                            },
-                                        )
-                                    },
-                                )
-                            }
-                            // [T-codex-fast-mode] Fast Mode (iOS parity,
-                            // fb671083 + 838ba929): shown when the active model
-                            // is a gpt-family model served through the
-                            // Responses path (useResponsesAPI instance or Codex
-                            // OAuth). App-level persisted toggle; while on, the
-                            // Responses body carries service_tier="priority"
-                            // (≈1.5x faster at 2x credit burn on the ChatGPT
-                            // subscription) and the nav model row shows a ⚡
-                            // badge. Sits next to Enhanced Cache — both are
-                            // model-invocation controls (iOS 09944220 grouping).
-                            if (showFastMode) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.chat_menu_fast_mode)) },
-                                    onClick = { viewModel.setFastModeEnabled(!fastModeOn) },
-                                    leadingIcon = {
-                                        Icon(Icons.Default.Bolt, contentDescription = null)
-                                    },
-                                    trailingIcon = {
-                                        Switch(
-                                            checked = fastModeOn,
-                                            onCheckedChange = { viewModel.setFastModeEnabled(it) },
-                                        )
-                                    },
-                                )
-                            }
-                            // T287: debug-only crash trigger so the user can verify
-                            // ACRA/native crash log generation (T283). Throws a
-                            // RuntimeException from the click handler — the
-                            // uncaught-exception handler catches it and writes
-                            // a crash-<stamp>.log under filesDir/logs/.
-                            if (BuildConfig.DEBUG) {
-                                MinisMenuDivider()
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            stringResource(R.string.debug_trigger_crash_menu),
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
-                                    },
-                                    onClick = {
-                                        showChatMenu = false
-                                        throw RuntimeException(
-                                            "Debug crash triggered by user (T287)",
-                                        )
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.BugReport,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.error,
-                                        )
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    } // [T-chat-menu-solo] end else-if chain: solo buttons / "..." overflow
                 },
                 windowInsets = WindowInsets.statusBars,
                 colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
@@ -5291,79 +4830,361 @@ fun ChatScreen(
 
                         Spacer(modifier = Modifier.weight(1f))
 
-                        // Attach (+): moved from the left edge to sit
-                        // directly beside mic/send. The three actions
-                        // here (photos, file, camera) all produce
-                        // something that gets SENT, so grouping them
-                        // with the send affordance keeps the
-                        // "compose -> attach -> send" gesture inside one
-                        // thumb arc instead of spanning the full width.
+                        // Chat actions: replaces the removed top-bar overflow.
+                        // The former attachment/Tarven menu binding is intentionally removed.
+                        val showEnhancedCache by viewModel.showEnhancedCacheToggle.collectAsState()
+                        val enhancedCacheOn by viewModel.enhancedCacheEnabled.collectAsState()
+                        val showFastMode by viewModel.showFastModeToggle.collectAsState()
+                        val fastModeOn by viewModel.fastModeEnabled.collectAsState()
                         Box {
                             TarvenAttachButton(
                                 activeRuleTypes = activeTarvenRuleTypes,
-                                onClick = { showAttachMenu = true },
+                                onClick = { showChatMenu = true },
                             )
                             MinisMenu(
-                                expanded = showAttachMenu,
-                                onDismissRequest = { showAttachMenu = false },
+                                expanded = showChatMenu,
+                                onDismissRequest = { showChatMenu = false },
                             ) {
+                            // [T-android-memory-enabled-minisconfig] Gate the
+                            // "Memories in Session" item below on the session's
+                            // live memoryEnabled — when memory is off the entry
+                            // disappears, consistent with the per-session gating
+                            // of the memory_get / memory_write tools and the
+                            // system-prompt injection. (menuMemoryEnabled is
+                            // collected at the top of ChatScreen, next to
+                            // chatActions, so the menu and the drawer footer
+                            // stay in sync.)
+                            // [T-customizable-chat-menu] The eight action /
+                            // session entries below are driven by
+                            // ChatMenuPrefs (Settings → Appearance → Chat
+                            // Menu): the user can hide entries and reorder
+                            // them. Rendering follows chatActions.menuOrder
+                            // (missing keys appended in default order, unknown
+                            // keys dropped) and skips entries whose visibility
+                            // switch is OFF. Conditional entries (Skills /
+                            // MCPs / Memory) additionally keep their runtime
+                            // gate: an entry only shows when BOTH the user
+                            // toggle AND the runtime condition are true, so
+                            // hiding it never resurrects a dead repository.
+                            // Model-invocation toggles (Enhanced Cache, Fast
+                            // Mode) and the DEBUG crash trigger are NOT part
+                            // of this list — they stay pinned at the bottom.
+                            // Taps funnel through dispatchChatAction() (hoisted
+                            // near the top of ChatScreen) so the "..." menu and
+                            // the history-drawer footer share one implementation
+                            // per action. EXPORT opens ExportFormatSheet instead
+                            // of the old inline JSON/Plain submenu.
+                            for (entryKey in chatActions.menuOrder) {
+                                if (!chatActions.isVisible(entryKey)) continue
+                                key(entryKey) {
+                                    when (entryKey) {
+                                        ChatMenuPrefs.TERMINAL -> {
+                                            // Open Terminal (iOS parity) — session-bound, starts in /var/minis
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.chat_menu_open_terminal)) },
+                                                onClick = {
+                                                    showChatMenu = false
+                                                    dispatchChatAction(ChatMenuPrefs.TERMINAL)
+                                                },
+                                                leadingIcon = {
+                                                    Icon(Icons.Default.Terminal, contentDescription = null)
+                                                },
+                                            )
+                                        }
+                                        ChatMenuPrefs.BROWSER -> {
+                                            // Open Browser (iOS parity)
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.chat_menu_open_browser)) },
+                                                onClick = {
+                                                    showChatMenu = false
+                                                    dispatchChatAction(ChatMenuPrefs.BROWSER)
+                                                },
+                                                leadingIcon = {
+                                                    Icon(Icons.Default.Language, contentDescription = null)
+                                                },
+                                            )
+                                        }
+                                        ChatMenuPrefs.CHAT_FILES -> {
+                                            // Browse Chat Files (iOS parity) — opens file browser at /var/minis
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.chat_menu_browse_chat_files)) },
+                                                onClick = {
+                                                    showChatMenu = false
+                                                    dispatchChatAction(ChatMenuPrefs.CHAT_FILES)
+                                                },
+                                                leadingIcon = {
+                                                    Icon(Icons.Default.Description, contentDescription = null)
+                                                },
+                                            )
+                                        }
+                                        ChatMenuPrefs.COMPACT -> {
+                                            // Compress conversation history into a summary.
+                                            // [bottom-toolbar-customizable] Moved out of the slash
+                                            // picker into the customizable chat-action pool — it is
+                                            // a frequent session-level operation, not an input aid.
+                                            // Shows a live "compressing…" hint while a compaction
+                                            // is in progress.
+                                            val compacting = viewModel.isCompacting.collectAsState()
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Column {
+                                                        Text(stringResource(R.string.chat_menu_compact))
+                                                        if (compacting.value) {
+                                                            Text(
+                                                                stringResource(R.string.menu_compacting_in_progress),
+                                                                fontSize = 12.sp,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            )
+                                                        }
+                                                    }
+                                                },
+                                                onClick = {
+                                                    showChatMenu = false
+                                                    dispatchChatAction(ChatMenuPrefs.COMPACT)
+                                                },
+                                                enabled = !compacting.value,
+                                                leadingIcon = {
+                                                    Icon(Icons.Default.Compress, contentDescription = null)
+                                                },
+                                            )
+                                        }
+                                        ChatMenuPrefs.THINKING -> {
+                                            // Thinking level (off/low/med/high). Displays the
+                                            // current level as a subtitle so the user sees state
+                                            // before deciding to toggle. Tap toggles OFF<->MEDIUM;
+                                            // the level picker sheet is reachable from the current
+                                            // level badge elsewhere. Unsupported models grey out
+                                            // the row. [bottom-toolbar-customizable] Moved out of
+                                            // the slash picker for the same reason as compact.
+                                            val lev = viewModel.thinkingLevel.collectAsState().value
+                                            val supported = viewModel.currentModelSupportsReasoning
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Column {
+                                                        Text(stringResource(R.string.chat_menu_thinking))
+                                                        Text(
+                                                            if (supported) lev.localizedName(context)
+                                                            else context.getString(R.string.slash_thinking_unsupported),
+                                                            fontSize = 12.sp,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        )
+                                                    }
+                                                },
+                                                onClick = {
+                                                    showChatMenu = false
+                                                    dispatchChatAction(ChatMenuPrefs.THINKING)
+                                                },
+                                                enabled = supported,
+                                                leadingIcon = {
+                                                    Icon(Icons.Default.Lightbulb, contentDescription = null)
+                                                },
+                                            )
+                                        }
+                                        ChatMenuPrefs.SLASH_COMMANDS -> {
+                                            // Slash commands. Moved here from the dedicated "/"
+                                            // circle button that used to sit next to "+" in the
+                                            // composer: the button occupied permanent space in
+                                            // the input row for an action most users invoke by
+                                            // simply typing "/", and the row is the most
+                                            // contended horizontal space on the screen. The
+                                            // menu keeps it discoverable for people who don't
+                                            // know the typed shortcut. Placed directly above
+                                            // Token Usage per the requested ordering.
+                                            //
+                                            // Behaviour is unchanged from the old button: it
+                                            // toggles, so opening the menu while the slash
+                                            // sheet is already up dismisses it. (Toggle logic
+                                            // lives in dispatchChatAction so the footer entry
+                                            // behaves identically.)
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.chat_menu_slash_commands)) },
+                                                onClick = {
+                                                    showChatMenu = false
+                                                    dispatchChatAction(ChatMenuPrefs.SLASH_COMMANDS)
+                                                },
+                                                leadingIcon = {
+                                                    // Match the old button's italic-bold "/"
+                                                    // glyph rather than substituting a generic
+                                                    // icon, so the entry reads as the same
+                                                    // affordance that moved.
+                                                    Text(
+                                                        "/",
+                                                        fontSize = 20.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontStyle = FontStyle.Italic,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                },
+                                            )
+                                        }
+                                        ChatMenuPrefs.EXPORT -> {
+                                            // Export conversation (JSON / Plain Text) — the
+                                            // session list's long-press Export, surfaced from
+                                            // inside the chat. Same streaming ChatExporter, so
+                                            // long chats stay bounded-memory. Placed between
+                                            // Slash Commands and Token Usage per the requested
+                                            // ordering.
+                                            //
+                                            // [bottom-toolbar-customizable] The old inline
+                                            // JSON/Plain submenu is gone: both the "..." menu
+                                            // and the history-drawer footer now open the same
+                                            // shared ExportFormatSheet, so the format choice
+                                            // lives in exactly one implementation.
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.sessionlist_export)) },
+                                                onClick = {
+                                                    showChatMenu = false
+                                                    showExportFormatSheet = true
+                                                },
+                                                leadingIcon = {
+                                                    Icon(Icons.Default.Share, contentDescription = null)
+                                                },
+                                            )
+                                        }
+                                        ChatMenuPrefs.SESSION_SKILLS -> {
+                                            // Session Skills (iOS parity)
+                                            if (skillRepository != null) {
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.session_skills_title)) },
+                                                    onClick = {
+                                                        showChatMenu = false
+                                                        dispatchChatAction(ChatMenuPrefs.SESSION_SKILLS)
+                                                    },
+                                                    leadingIcon = {
+                                                        Icon(Icons.Default.Build, contentDescription = null)
+                                                    },
+                                                )
+                                            }
+                                        }
+                                        ChatMenuPrefs.SESSION_MCPS -> {
+                                            // [T-mcp-integration-android] MCPs in Session, next to Skills.
+                                            if (mcpRepository != null) {
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.session_mcps_title)) },
+                                                    onClick = {
+                                                        showChatMenu = false
+                                                        dispatchChatAction(ChatMenuPrefs.SESSION_MCPS)
+                                                    },
+                                                    leadingIcon = {
+                                                        Icon(Icons.Default.Extension, contentDescription = null)
+                                                    },
+                                                )
+                                            }
+                                        }
+                                        ChatMenuPrefs.SESSION_MEMORY -> {
+                                            // Session Memory (iOS parity)
+                                            if (memoryRepository != null && menuMemoryEnabled) {
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.session_memory_title)) },
+                                                    onClick = {
+                                                        showChatMenu = false
+                                                        dispatchChatAction(ChatMenuPrefs.SESSION_MEMORY)
+                                                    },
+                                                    leadingIcon = {
+                                                        Icon(Icons.Default.Psychology, contentDescription = null)
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // Enhanced Cache (iOS parity, commit 57aaf122):
+                            // 1-hour Anthropic cache TTL. Only shown for the
+                            // official Anthropic API (not relays / other
+                            // providers) — showEnhancedCacheToggle recomputes on
+                            // model/provider switch. First enable prompts a
+                            // one-time extra-billing confirmation. (These
+                            // flags are collected above, next to the "..."
+                            // visibility check.)
+                            if (showEnhancedCache) {
                                 DropdownMenuItem(
-                                    text = { Text("规则仓") },
-                                    leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null) },
+                                    text = { Text(stringResource(R.string.chat_menu_enhanced_cache)) },
                                     onClick = {
-                                        showAttachMenu = false
-                                        showTarvenSelector = true
+                                        if (enhancedCacheOn) {
+                                            viewModel.setEnhancedCacheEnabled(false)
+                                        } else if (viewModel.isEnhancedCacheConfirmed()) {
+                                            viewModel.setEnhancedCacheEnabled(true)
+                                        } else {
+                                            showChatMenu = false
+                                            showEnhancedCacheDialog = true
+                                        }
                                     },
-                                )
-                                // Order: Choose Photos & Videos / Add File / Take
-                                // Photo. Diverges from the iOS ordering on
-                                // purpose — picking existing media is by far the
-                                // most frequent attach action, so it takes the
-                                // first slot (closest to the thumb, and the
-                                // default highlighted row), while Take Photo is
-                                // the rarest and also the only destructive-ish
-                                // one (it opens the camera and can lose the
-                                // draft on some OEM camera apps), so it sits
-                                // last where it can't be hit by accident.
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.chat_attach_choose_photos_videos)) },
-                                    leadingIcon = { Icon(Icons.Default.PhotoLibrary, contentDescription = null) },
-                                    onClick = {
-                                        showAttachMenu = false
-                                        mediaPickerLauncher.launch(
-                                            androidx.activity.result.PickVisualMediaRequest(
-                                                ActivityResultContracts.PickVisualMedia.ImageAndVideo,
-                                            ),
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Bolt, contentDescription = null)
+                                    },
+                                    trailingIcon = {
+                                        Switch(
+                                            checked = enhancedCacheOn,
+                                            onCheckedChange = {
+                                                if (enhancedCacheOn) {
+                                                    viewModel.setEnhancedCacheEnabled(false)
+                                                } else if (viewModel.isEnhancedCacheConfirmed()) {
+                                                    viewModel.setEnhancedCacheEnabled(true)
+                                                } else {
+                                                    showChatMenu = false
+                                                    showEnhancedCacheDialog = true
+                                                }
+                                            },
                                         )
                                     },
                                 )
+                            }
+                            // [T-codex-fast-mode] Fast Mode (iOS parity,
+                            // fb671083 + 838ba929): shown when the active model
+                            // is a gpt-family model served through the
+                            // Responses path (useResponsesAPI instance or Codex
+                            // OAuth). App-level persisted toggle; while on, the
+                            // Responses body carries service_tier="priority"
+                            // (≈1.5x faster at 2x credit burn on the ChatGPT
+                            // subscription) and the nav model row shows a ⚡
+                            // badge. Sits next to Enhanced Cache — both are
+                            // model-invocation controls (iOS 09944220 grouping).
+                            if (showFastMode) {
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.chat_attach_add_file)) },
-                                    leadingIcon = { Icon(Icons.Default.Description, contentDescription = null) },
-                                    onClick = {
-                                        showAttachMenu = false
-                                        // OpenMultipleDocuments takes a mime-
-                                        // type array; "*/*" stays the wildcard.
-                                        filePickerLauncher.launch(arrayOf("*/*"))
+                                    text = { Text(stringResource(R.string.chat_menu_fast_mode)) },
+                                    onClick = { viewModel.setFastModeEnabled(!fastModeOn) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Bolt, contentDescription = null)
                                     },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.chat_attach_take_photo)) },
-                                    leadingIcon = { Icon(Icons.Default.CameraAlt, contentDescription = null) },
-                                    onClick = {
-                                        showAttachMenu = false
-                                        val granted = ContextCompat.checkSelfPermission(
-                                            context,
-                                            android.Manifest.permission.CAMERA,
-                                        ) == PackageManager.PERMISSION_GRANTED
-                                        if (granted) {
-                                            launchCamera()
-                                        } else {
-                                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                                        }
+                                    trailingIcon = {
+                                        Switch(
+                                            checked = fastModeOn,
+                                            onCheckedChange = { viewModel.setFastModeEnabled(it) },
+                                        )
                                     },
                                 )
                             }
+                            // T287: debug-only crash trigger so the user can verify
+                            // ACRA/native crash log generation (T283). Throws a
+                            // RuntimeException from the click handler — the
+                            // uncaught-exception handler catches it and writes
+                            // a crash-<stamp>.log under filesDir/logs/.
+                            if (BuildConfig.DEBUG) {
+                                MinisMenuDivider()
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            stringResource(R.string.debug_trigger_crash_menu),
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    },
+                                    onClick = {
+                                        showChatMenu = false
+                                        throw RuntimeException(
+                                            "Debug crash triggered by user (T287)",
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.BugReport,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                        )
+                                    },
+                                )
+                            }
+                        }
                         }
 
                         Spacer(modifier = Modifier.width(8.dp))
