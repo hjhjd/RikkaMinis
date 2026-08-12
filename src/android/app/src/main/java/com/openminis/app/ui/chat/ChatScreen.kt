@@ -131,6 +131,7 @@ import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
@@ -1830,6 +1831,7 @@ fun ChatScreen(
     // works anywhere the chat body would otherwise not consume a horizontal
     // drag.
     val historyDrawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    var eventDrawerVisible by rememberSaveable { mutableStateOf(false) }
     // Reuse the screen's existing coroutineScope (declared above) to drive
     // open/close animations.
     val historyDrawerScope = coroutineScope
@@ -1885,7 +1887,7 @@ fun ChatScreen(
     // focus restore runs only after the drawer fully closed.
     ModalNavigationDrawer(
         drawerState = historyDrawerState,
-        gesturesEnabled = true,
+        gesturesEnabled = !eventDrawerVisible,
         drawerContent = {
             // [composer-draft-v1] Live snapshot of the persisted draft slot,
             // surfaced as a "Draft" row at the top of the history drawer.
@@ -2304,6 +2306,7 @@ fun ChatScreen(
                     // SESSION_LIST). [P0-1-back-exit][P0-2-session-list-out]
                     IconButton(onClick = {
                         historyDrawerScope.launch {
+                            eventDrawerVisible = false
                             if (historyDrawerState.isOpen) historyDrawerState.close()
                             else historyDrawerState.open()
                         }
@@ -2315,6 +2318,19 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        historyDrawerScope.launch {
+                            if (historyDrawerState.isOpen) historyDrawerState.close()
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            eventDrawerVisible = true
+                        }
+                    }) {
+                        Icon(
+                            Icons.Outlined.NotificationsNone,
+                            contentDescription = stringResource(R.string.chat_event_drawer_open),
+                        )
+                    }
                     // New Chat — promoted from the "..." menu to a persistent
                     // top-bar button beside "..." (iOS parity: square.and.pencil
                     // sits next to the overflow, one tap instead of two).
@@ -5503,6 +5519,10 @@ fun ChatScreen(
         )
         }
     }
+    ChatEventDrawer(
+        visible = eventDrawerVisible,
+        onDismiss = { eventDrawerVisible = false },
+    )
     }
     // [P0-0-drawer-fix] Always enabled BackHandler (registered AFTER
     // ModalNavigationDrawer so it outranks the drawer's predictive-back
@@ -5520,6 +5540,9 @@ fun ChatScreen(
         when {
             selectionController.selection.value != null -> {
                 selectionController.clearSelection()
+            }
+            eventDrawerVisible -> {
+                eventDrawerVisible = false
             }
             historyDrawerState.isOpen -> {
                 historyDrawerScope.launch { historyDrawerState.close() }

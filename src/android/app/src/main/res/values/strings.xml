@@ -1645,4 +1645,10 @@
     <string name="chat_drawer_open">Open conversation drawer</string>
     <string name="chat_drawer_delete_agent_title">Delete %1$s?</string>
     <string name="chat_drawer_delete_agent_message">This Agent and its %1$d topics, messages, attachments, workspace, avatar, memory, skill bindings, and private rules will be permanently deleted. This cannot be undone.</string>
+    <string name="chat_event_drawer_title">Event Center</string>
+    <string name="chat_event_drawer_open">Open event center</string>
+    <string name="chat_event_drawer_vcpinfo">VCPInfo</string>
+    <string name="chat_event_drawer_vcplog">VCPLog</string>
+    <string name="chat_event_drawer_vcpinfo_placeholder">VCPInfo will be connected later</string>
+    <string name="chat_event_drawer_vcplog_placeholder">Waiting for VCPLog support</string>
 </resources>

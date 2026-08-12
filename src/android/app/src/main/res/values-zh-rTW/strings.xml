@@ -909,4 +909,10 @@
     <string name="chat_drawer_open">開啟對話側欄</string>
     <string name="chat_drawer_delete_agent_title">刪除 %1$s？</string>
     <string name="chat_drawer_delete_agent_message">該 Agent 及其 %1$d 個話題、訊息、附件、工作區、頭像、記憶、技能綁定和專屬規則將永久刪除，此操作無法復原。</string>
+    <string name="chat_event_drawer_title">事件中心</string>
+    <string name="chat_event_drawer_open">開啟事件中心</string>
+    <string name="chat_event_drawer_vcpinfo">VCPInfo</string>
+    <string name="chat_event_drawer_vcplog">VCPLog</string>
+    <string name="chat_event_drawer_vcpinfo_placeholder">VCPInfo 將於後續接入</string>
+    <string name="chat_event_drawer_vcplog_placeholder">等待 VCPLog 功能接入</string>
 </resources>
