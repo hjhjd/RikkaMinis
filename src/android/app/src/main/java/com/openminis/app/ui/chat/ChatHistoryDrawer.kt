@@ -36,8 +36,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -121,11 +123,26 @@ fun ChatHistoryDrawer(
     var drawerTab by rememberSaveable { mutableStateOf(0) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var actionAgentId by remember { mutableStateOf<String?>(null) }
+    var draggingAgentId by remember { mutableStateOf<String?>(null) }
     var deleteAgentTarget by remember { mutableStateOf<AgentEntity?>(null) }
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
-    val filteredAgents = remember(agents, searchQuery) {
+    val localAgentIds = remember { mutableStateListOf<String>() }
+    // Room emissions must not overwrite the list while the reorder library is
+    // actively moving items. Doing so makes both layouts try to displace the
+    // same rows and produces the visible up/down oscillation.
+    LaunchedEffect(agents, draggingAgentId) {
+        if (draggingAgentId == null) {
+            localAgentIds.clear()
+            localAgentIds.addAll(agents.map { it.id })
+        }
+    }
+    val localAgents = remember(agents, localAgentIds.toList()) {
+        val byId = agents.associateBy { it.id }
+        localAgentIds.mapNotNull(byId::get)
+    }
+    val filteredAgents = remember(localAgents, searchQuery) {
         val q = searchQuery.trim()
-        if (q.isEmpty()) agents else agents.filter { it.name.contains(q, ignoreCase = true) }
+        if (q.isEmpty()) localAgents else localAgents.filter { it.name.contains(q, ignoreCase = true) }
     }
 
     // [P0-1-drawer-title-visibility] Visibility must not depend on the
@@ -156,15 +173,12 @@ fun ChatHistoryDrawer(
             ?: return@rememberReorderableLazyListState
         val toId = (to.key as? String)?.removePrefix("agent:")
             ?: return@rememberReorderableLazyListState
-        val fromIndex = agents.indexOfFirst { it.id == fromId }
-        val toIndex = agents.indexOfFirst { it.id == toId }
+        val fromIndex = localAgentIds.indexOf(fromId)
+        val toIndex = localAgentIds.indexOf(toId)
         if (fromIndex < 0 || toIndex < 0 || fromIndex == toIndex) {
             return@rememberReorderableLazyListState
         }
-        val reorderedIds = agents.map { it.id }.toMutableList().apply {
-            add(toIndex, removeAt(fromIndex))
-        }
-        coroutineScope.launch { agentRepository.reorder(reorderedIds) }
+        localAgentIds.add(toIndex, localAgentIds.removeAt(fromIndex))
     }
 
     var deleteTarget by remember { mutableStateOf<ChatSessionEntity?>(null) }
@@ -365,7 +379,10 @@ fun ChatHistoryDrawer(
                             DrawerAgentRow(
                                 agent = agent,
                                 selected = agent.id == currentAgentId,
-                                actionMode = actionAgentId == agent.id,
+                                // Keep every row at its compact height during a
+                                // drag. Expanding the action panel mid-drag changes
+                                // item bounds and makes neighbouring rows oscillate.
+                                actionMode = actionAgentId == agent.id && draggingAgentId == null,
                                 dragging = isDragging,
                                 canDelete = agents.size > 1,
                                 onClick = {
@@ -378,8 +395,23 @@ fun ChatHistoryDrawer(
                                 onDelete = { deleteAgentTarget = agent },
                                 dragModifier = with(this) {
                                     Modifier.longPressDraggableHandle(
-                                        onDragStarted = { actionAgentId = agent.id },
-                                        onDragStopped = { },
+                                        onDragStarted = {
+                                            draggingAgentId = agent.id
+                                            actionAgentId = agent.id
+                                        },
+                                        onDragStopped = {
+                                            val finalOrder = localAgentIds.toList()
+                                            coroutineScope.launch {
+                                                // Keep Room emissions frozen until the transaction
+                                                // commits; otherwise the old DB order flashes back
+                                                // for one frame before the new order arrives.
+                                                try {
+                                                    agentRepository.reorder(finalOrder)
+                                                } finally {
+                                                    draggingAgentId = null
+                                                }
+                                            }
+                                        },
                                     )
                                 },
                             )
