@@ -2,7 +2,6 @@ package com.openminis.app.ui.chat
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,14 +19,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.OutlinedButton
@@ -48,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -58,15 +51,9 @@ import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 import com.openminis.app.config.ChatActionSpec
 import com.openminis.app.data.db.ChatSessionEntity
-import com.openminis.app.data.db.AgentEntity
 import com.openminis.app.data.repository.AgentRepository
-import com.openminis.app.agent.AgentAvatarStore
-import coil.compose.AsyncImage
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.ui.components.MinisAlertDialog
-import com.openminis.app.ui.sessions.DatePeriod
-import com.openminis.app.ui.sessions.categoryStyle
 import com.openminis.app.ui.sessions.groupSessionsByDate
 
 /**
@@ -408,211 +395,5 @@ fun ChatHistoryDrawer(
                 if (id == currentSessionId) onNewChat()
             },
         )
-    }
-}
-
-@Composable
-private fun DrawerSectionHeader(period: DatePeriod) {
-    val title = when (period) {
-        DatePeriod.PINNED -> stringResource(R.string.sessionlist_section_pinned)
-        DatePeriod.TODAY -> stringResource(R.string.sessionlist_section_today)
-        DatePeriod.YESTERDAY -> stringResource(R.string.sessionlist_section_yesterday)
-        DatePeriod.THIS_WEEK -> stringResource(R.string.sessionlist_section_this_week)
-        DatePeriod.THIS_MONTH -> stringResource(R.string.sessionlist_section_this_month)
-        DatePeriod.EARLIER -> stringResource(R.string.sessionlist_section_earlier)
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .padding(top = 4.dp),
-    ) {
-        if (period == DatePeriod.PINNED) {
-            Icon(
-                imageVector = Icons.Default.PushPin,
-                contentDescription = null,
-                // [T-dark-pin-visibility] onSurfaceVariant at 13dp reads as
-                // near-invisible on the near-black ModalDrawerSheet surface
-                // (#0E1514 dark background vs #BEC9C6 variant grey). Use the
-                // theme primary (teal in both palettes) so the pinned-section
-                // indicator keeps clear contrast in dark mode while staying
-                // legible in light mode.
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(13.dp),
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-        }
-        Text(
-            text = title,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun DrawerSessionRow(
-    session: ChatSessionEntity,
-    agent: AgentEntity?,
-    selected: Boolean,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    isPinned: Boolean,
-    onTogglePin: () -> Unit,
-) {
-    val style = remember(session.category) { categoryStyle(session.category) }
-    val ctx = LocalContext.current
-    val avatarStore = remember { AgentAvatarStore(ctx.applicationContext) }
-    val agentAvatar = remember(agent?.avatarPath) { avatarStore.resolve(agent?.avatarPath) }
-    val activeSessions by SessionActivityTracker.activeSessions.collectAsState()
-    val isActive = session.id in activeSessions
-
-    Row(
-        modifier = Modifier
-            // Outer padding comes before sizing so the visible card bounds are
-            // guaranteed to align with the search field at 16dp on both sides.
-            .padding(horizontal = 16.dp, vertical = 3.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.surfaceContainerHigh
-                else MaterialTheme.colorScheme.surface,
-            )
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .background(color = style.color.copy(alpha = 0.18f), shape = CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (agentAvatar != null) {
-                AsyncImage(agentAvatar, contentDescription = agent?.name, modifier = Modifier.size(34.dp).clip(CircleShape))
-            } else {
-            Icon(
-                imageVector = style.icon,
-                contentDescription = null,
-                tint = style.color,
-                modifier = Modifier.size(17.dp),
-            )
-            }
-            if (isActive) {
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .background(style.color, CircleShape)
-                        .align(Alignment.BottomEnd),
-                )
-            }
-        }
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = session.title ?: stringResource(R.string.chat_menu_new_chat),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            session.lastMessage?.takeIf { it.isNotBlank() }?.let { preview ->
-                Text(
-                    text = preview,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
-        // Pin toggle — inline icon, same style as the provider's favorite
-        // star. Placed at the right edge of the row, after the timestamp.
-        IconButton(
-            onClick = onTogglePin,
-            modifier = Modifier.size(28.dp),
-        ) {
-            Icon(
-                imageVector = if (isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                contentDescription = stringResource(
-                    if (isPinned) R.string.sessionlist_unpin else R.string.sessionlist_pin,
-                ),
-                tint = if (isPinned) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.outlineVariant,
-                modifier = Modifier.size(16.dp),
-            )
-        }
-    }
-}
-
-
-@Composable
-private fun DrawerAgentRow(
-    agent: AgentEntity,
-    selected: Boolean,
-    onClick: () -> Unit,
-    onSettings: () -> Unit,
-) {
-    val context = LocalContext.current
-    val avatar = remember(agent.avatarPath) { AgentAvatarStore(context).resolve(agent.avatarPath) }
-    Row(
-        modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.surfaceContainerHigh
-                else MaterialTheme.colorScheme.surface,
-            )
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (avatar != null) {
-                AsyncImage(avatar, contentDescription = agent.name, modifier = Modifier.size(48.dp))
-            } else {
-                Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(28.dp))
-            }
-        }
-        Column(Modifier.weight(1f)) {
-            Text(
-                agent.name,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                stringResource(
-                    if (agent.defaultModelBinding.isNullOrBlank()) R.string.chat_drawer_global_default_model
-                    else R.string.chat_drawer_custom_default_model,
-                ),
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        IconButton(onClick = onSettings) {
-            Icon(
-                Icons.Outlined.Settings,
-                contentDescription = stringResource(R.string.chat_drawer_agent_settings, agent.name),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
