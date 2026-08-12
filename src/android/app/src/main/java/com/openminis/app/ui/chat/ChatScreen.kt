@@ -209,6 +209,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
@@ -2360,19 +2361,28 @@ fun ChatScreen(
                                     color = newChatColor,
                                     shape = CircleShape,
                                 )
+                                .drawBehind {
+                                    val stroke = 2.dp.toPx()
+                                    val arm = 4.dp.toPx()
+                                    drawLine(
+                                        color = newChatColor,
+                                        start = Offset(center.x - arm, center.y),
+                                        end = Offset(center.x + arm, center.y),
+                                        strokeWidth = stroke,
+                                        cap = StrokeCap.Round,
+                                    )
+                                    drawLine(
+                                        color = newChatColor,
+                                        start = Offset(center.x, center.y - arm),
+                                        end = Offset(center.x, center.y + arm),
+                                        strokeWidth = stroke,
+                                        cap = StrokeCap.Round,
+                                    )
+                                }
                                 .clearAndSetSemantics {
                                     contentDescription = newChatDescription
                                 },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = "+",
-                                color = newChatColor,
-                                fontSize = 18.sp,
-                                lineHeight = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
+                        )
                     }
                 },
                 windowInsets = WindowInsets.statusBars,
