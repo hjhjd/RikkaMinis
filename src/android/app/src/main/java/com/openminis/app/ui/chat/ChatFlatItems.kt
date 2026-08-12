@@ -407,6 +407,20 @@ internal sealed class FlatChatItem {
     }
 
     @Immutable
+    data class AssistantVcpBlock(
+        val messageId: String,
+        val parentBlockId: String,
+        val blockIndex: Int,
+        val block: com.openminis.app.ui.chat.vcp.VcpContentBlock,
+        val messageIsStreaming: Boolean,
+    ) : FlatChatItem() {
+        // Deliberately exclude content/hash: a streaming tail grows every chunk,
+        // but its LazyColumn identity and expansion state must remain stable.
+        override val key = "vcp:$messageId:$parentBlockId:$blockIndex"
+        override val contentType = "vcp"
+    }
+
+    @Immutable
     data class AssistantThinking(
         val messageId: String,
         val block: AssistantBlock,
@@ -513,6 +527,7 @@ internal fun FlatChatItem.owningMessageId(): String = when (this) {
     is FlatChatItem.AssistantHeader -> messageId
     is FlatChatItem.AssistantText -> messageId
     is FlatChatItem.AssistantMarkdownBlock -> messageId
+    is FlatChatItem.AssistantVcpBlock -> messageId
     is FlatChatItem.AssistantThinking -> messageId
     is FlatChatItem.AssistantToolUse -> messageId
     is FlatChatItem.AssistantInfo -> messageId
@@ -589,6 +604,7 @@ internal fun buildFlatChatItems(
                 messageIsStreaming = item.messageIsStreaming,
                 messageMarkdown = item.messageMarkdown,
             )
+            is FlatChatItem.AssistantVcpBlock -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantThinking -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantToolUse -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantInfo -> item.copy(messageId = "${item.messageId}#$n")
@@ -670,6 +686,27 @@ internal fun buildFlatChatItems(
                 "text" -> {
                     if (block.content.isNotEmpty()) {
                         val isLastText = index == lastTextIdx
+                        // VCP textual protocol is compiled inside each native text block,
+                        // preserving its position relative to provider reasoning/tools.
+                        val vcpParsed = com.openminis.app.ui.chat.vcp.VcpContentParser.parse(
+                            block.content,
+                            streaming = message.isStreaming && isLastText,
+                        )
+                        val hasVcpSpecialBlock = vcpParsed.blocks.any {
+                            it !is com.openminis.app.ui.chat.vcp.VcpContentBlock.Markdown
+                        }
+                        if (hasVcpSpecialBlock) {
+                            vcpParsed.blocks.forEachIndexed { vcpIndex, vcpBlock ->
+                                out.add(dedupe(FlatChatItem.AssistantVcpBlock(
+                                    messageId = message.id,
+                                    parentBlockId = block.id,
+                                    blockIndex = vcpIndex,
+                                    block = vcpBlock,
+                                    messageIsStreaming = message.isStreaming && isLastText,
+                                )))
+                            }
+                            return@forEachIndexed
+                        }
                         // Pattern A: split this text block's content into
                         // independent markdown fragments so each becomes its
                         // own LazyColumn item. Frozen prefix fragments are
@@ -785,11 +822,30 @@ internal fun buildFlatChatItems(
         // Legacy fallback: pre-migration sessions stored all text in message.content
         // with no text-kind blocks. Render it after blocks in that case only.
         if (!hasAnyTextBlock && message.content.isNotEmpty()) {
-            out.add(dedupe(FlatChatItem.AssistantLegacyContent(
-                messageId = message.id,
-                content = message.content,
-                isStreaming = message.isStreaming,
-            )))
+            val parsed = com.openminis.app.ui.chat.vcp.VcpContentParser.parse(
+                message.content,
+                streaming = message.isStreaming,
+            )
+            val hasSpecial = parsed.blocks.any {
+                it !is com.openminis.app.ui.chat.vcp.VcpContentBlock.Markdown
+            }
+            if (hasSpecial) {
+                parsed.blocks.forEachIndexed { blockIndex, vcpBlock ->
+                    out.add(dedupe(FlatChatItem.AssistantVcpBlock(
+                        messageId = message.id,
+                        parentBlockId = "legacy",
+                        blockIndex = blockIndex,
+                        block = vcpBlock,
+                        messageIsStreaming = message.isStreaming,
+                    )))
+                }
+            } else {
+                out.add(dedupe(FlatChatItem.AssistantLegacyContent(
+                    messageId = message.id,
+                    content = message.content,
+                    isStreaming = message.isStreaming,
+                )))
+            }
         }
 
         // Inline error banner
