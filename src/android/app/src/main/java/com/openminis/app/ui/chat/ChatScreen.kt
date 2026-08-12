@@ -1815,6 +1815,9 @@ fun ChatScreen(
         LocalToolPreviewEnabled provides toolPreviewEnabled,
         LocalMarkdownUrlClickHandler provides urlClickHandler,
         LocalMarkdownImageTapHandler provides markdownImageTapHandler,
+        com.openminis.app.ui.chat.vcp.LocalVcpHtmlButtonHandler provides { text ->
+            if (text.isNotBlank()) performSendOrEnqueue(text)
+        },
         // Route markdown media resolution through this chat's session so
         // minis://attachments/* lookups don't rely on the global bindMounts
         // map (which is last-writer-wins across sessions).
@@ -3220,6 +3223,7 @@ fun ChatScreen(
                     is FlatChatItem.AssistantHeader -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantText -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantMarkdownBlock -> grayedMap[originalMessageId(messageId)] == true
+                    is FlatChatItem.AssistantVcpBlock -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantThinking -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantToolUse -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantInfo -> false  // system rows never grayed
@@ -3701,6 +3705,22 @@ fun ChatScreen(
                                         ),
                                     )
                                 }
+                            }
+                            is FlatChatItem.AssistantVcpBlock -> BoundsTrackedBlock(
+                                messageId = item.messageId,
+                                slotKey = "vcp:${item.parentBlockId}:${item.blockIndex}",
+                                markdown = item.block.raw,
+                                onLongPress = { point ->
+                                    actionPressPoint = point
+                                    messages.firstOrNull { it.id == item.messageId }?.let { actionMessage = it }
+                                },
+                            ) {
+                                com.openminis.app.ui.chat.vcp.VcpBlockView(
+                                    messageId = item.messageId,
+                                    block = item.block,
+                                    isStreaming = item.messageIsStreaming &&
+                                        item.block.completion == com.openminis.app.ui.chat.vcp.VcpBlockCompletion.STREAMING,
+                                )
                             }
                             is FlatChatItem.AssistantThinking -> {
                                 // T300: hide Deep Thinking block when the user
