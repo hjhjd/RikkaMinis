@@ -102,6 +102,10 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     lateinit var execPlaneSettingsRepository: com.openminis.app.execplane.ExecPlaneSettingsRepository
         private set
+    lateinit var distributedSettingsRepository: com.openminis.app.distributed.DistributedSettingsRepository
+        private set
+    lateinit var distributedConnectionManager: com.openminis.app.distributed.DistributedConnectionManager
+        private set
     lateinit var execPlaneBridge: com.openminis.app.execplane.ExecPlaneBridge
     lateinit var sandboxFileService: com.openminis.app.execplane.SandboxFileService
     lateinit var sandboxTransferService: com.openminis.app.execplane.SandboxTransferService
@@ -497,6 +501,13 @@ class MinisApp : Application(), ImageLoaderFactory {
         // posts a tap-to-open notification when the app is backgrounded.
         // Mirrors iOS BackgroundKeepAliveManager.postBackgroundTaskNotification.
         backgroundSettingsRepository = BackgroundSettingsRepository(this)
+        // VCPToolBox distributed connection is application-scoped, so it survives
+        // navigation and restores the user's enabled state after process restart.
+        distributedSettingsRepository = com.openminis.app.distributed.DistributedSettingsRepository(this)
+        distributedConnectionManager = com.openminis.app.distributed.DistributedConnectionManager(
+            distributedSettingsRepository,
+        )
+        distributedConnectionManager.reconcile()
         // ExecPlane reverse WS manager is application-scoped so connections
         // survive Settings navigation. It binds loopback only and currently
         // accepts register/ping/status; remote exec stays disabled.

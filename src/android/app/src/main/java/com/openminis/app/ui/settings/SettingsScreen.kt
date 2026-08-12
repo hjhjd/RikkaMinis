@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.CloudQueue
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -90,6 +91,7 @@ fun SettingsScreen(
     // don't need to be retrofitted.
     onBackgroundClick: () -> Unit = {},
     onSandboxClick: () -> Unit = {},
+    onDistributedClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
     Scaffold(
@@ -176,6 +178,13 @@ fun SettingsScreen(
                     title = stringResource(R.string.sandbox_settings_title),
                     subtitle = stringResource(R.string.settings_sandbox_subtitle),
                     onClick = onSandboxClick,
+                )
+                SettingsItem(
+                    icon = Icons.Outlined.CloudSync,
+                    iconColor = Color(0xFF5856D6),
+                    title = stringResource(R.string.distributed_title),
+                    subtitle = stringResource(R.string.distributed_settings_subtitle),
+                    onClick = onDistributedClick,
                     showDivider = false,
                 )
             }

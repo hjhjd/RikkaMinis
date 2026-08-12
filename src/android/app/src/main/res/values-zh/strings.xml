@@ -1547,4 +1547,24 @@
     <string name="provider_vcp_scope_all">所有 Agent</string>
     <string name="provider_vcp_scope_selected">指定 Agent</string>
     <string name="provider_vcp_scope_empty">尚未授权任何 Agent；会话将使用默认停止方式。</string>
+    <string name="distributed_title">分布式连接</string>
+    <string name="distributed_settings_subtitle">连接 VCPToolBox 分布式服务器</string>
+    <string name="distributed_section_connection">连接状态</string>
+    <string name="distributed_connection_footer">开启后应用会保持连接，并在断线后以 5–60 秒指数退避自动重连。</string>
+    <string name="distributed_enabled">启用分布式节点</string>
+    <string name="distributed_section_server">服务器配置</string>
+    <string name="distributed_ws_url">WebSocket 地址</string>
+    <string name="distributed_vcp_key">VCP Key</string>
+    <string name="distributed_device_name">节点名称</string>
+    <string name="distributed_invalid_config">请输入有效的 ws:// 或 wss:// 地址和 VCP Key。</string>
+    <string name="distributed_save">保存配置</string>
+    <string name="distributed_save_reconnect">保存并重新连接</string>
+    <string name="distributed_state_disconnected">未连接</string>
+    <string name="distributed_state_connecting">连接中，等待服务器确认</string>
+    <string name="distributed_state_reconnecting">连接中，%1$d 秒后重试</string>
+    <string name="distributed_state_connected">已连接 · %1$s</string>
+    <string name="distributed_state_disconnecting">断开中</string>
+    <string name="distributed_protocol_status">VCPToolBox 通信</string>
+    <string name="distributed_client_id">客户端 ID：%1$s</string>
+    <string name="distributed_phase_notice">当前阶段只建立和维护连接，不注册工具，也不会执行服务端工具请求。</string>
 </resources>

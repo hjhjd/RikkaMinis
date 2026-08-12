@@ -1614,4 +1614,24 @@
     <string name="provider_vcp_scope_all">All Agents</string>
     <string name="provider_vcp_scope_selected">Selected Agents</string>
     <string name="provider_vcp_scope_empty">No Agent is authorized; conversations will use the default stop behavior.</string>
+    <string name="distributed_title">Distributed Connection</string>
+    <string name="distributed_settings_subtitle">Connect to a VCPToolBox distributed server</string>
+    <string name="distributed_section_connection">Connection status</string>
+    <string name="distributed_connection_footer">When enabled, the app maintains the connection and retries with a 5–60 second exponential backoff.</string>
+    <string name="distributed_enabled">Enable distributed node</string>
+    <string name="distributed_section_server">Server configuration</string>
+    <string name="distributed_ws_url">WebSocket URL</string>
+    <string name="distributed_vcp_key">VCP Key</string>
+    <string name="distributed_device_name">Node name</string>
+    <string name="distributed_invalid_config">Enter a valid ws:// or wss:// URL and VCP Key.</string>
+    <string name="distributed_save">Save configuration</string>
+    <string name="distributed_save_reconnect">Save and reconnect</string>
+    <string name="distributed_state_disconnected">Disconnected</string>
+    <string name="distributed_state_connecting">Connecting, waiting for server acknowledgement</string>
+    <string name="distributed_state_reconnecting">Connecting, retrying in %1$d seconds</string>
+    <string name="distributed_state_connected">Connected · %1$s</string>
+    <string name="distributed_state_disconnecting">Disconnecting</string>
+    <string name="distributed_protocol_status">VCPToolBox communication</string>
+    <string name="distributed_client_id">Client ID: %1$s</string>
+    <string name="distributed_phase_notice">This phase only establishes and maintains the connection. It does not register tools or execute server tool requests.</string>
 </resources>
