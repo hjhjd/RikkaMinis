@@ -79,7 +79,10 @@ fun DistributedSettingsScreen(onBack: () -> Unit) {
                 iconColor = Color(0xFF5856D6),
                 onCheckedChange = { wanted ->
                     validationError = null
-                    if (repository.save(wsUrl, vcpKey, deviceName, wanted)) manager.reconcile()
+                    if (repository.save(wsUrl, vcpKey, deviceName, wanted)) {
+                        manager.reconcile()
+                        app.vcpInfoConnectionManager.reconcile()
+                    }
                     else validationError = app.getString(R.string.distributed_invalid_config)
                 },
                 showDivider = false,
@@ -124,7 +127,10 @@ fun DistributedSettingsScreen(onBack: () -> Unit) {
                     onClick = {
                         val valid = repository.save(wsUrl, vcpKey, deviceName, persisted.enabled)
                         validationError = if (valid) null else app.getString(R.string.distributed_invalid_config)
-                        if (valid && persisted.enabled) manager.reconnectNow()
+                        if (valid && persisted.enabled) {
+                            manager.reconnectNow()
+                            app.vcpInfoConnectionManager.reconnectNow()
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,6 +46,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,8 +95,12 @@ fun SettingsScreen(
     onBackgroundClick: () -> Unit = {},
     onSandboxClick: () -> Unit = {},
     onDistributedClick: () -> Unit = {},
+    onVcpInfoClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val app = context.applicationContext as com.openminis.app.MinisApp
+    val vcpInfoUnread by app.vcpInfoConnectionManager.store.unreadCount.collectAsState()
+    val vcpInfoStatus by app.vcpInfoConnectionManager.status.collectAsState()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -185,6 +192,17 @@ fun SettingsScreen(
                     title = stringResource(R.string.distributed_title),
                     subtitle = stringResource(R.string.distributed_settings_subtitle),
                     onClick = onDistributedClick,
+                )
+                SettingsItem(
+                    icon = Icons.Outlined.Visibility,
+                    iconColor = Color(0xFFAF52DE),
+                    title = "VCPInfo 消息中心",
+                    subtitle = when {
+                        vcpInfoUnread > 0 -> "$vcpInfoUnread 条未读认知广播"
+                        vcpInfoStatus.state == com.openminis.app.vcpinfo.VcpInfoConnectionState.CONNECTED -> "已连接 · 等待认知广播"
+                        else -> "观察 RAG、思考链、记忆与 Agent 梦境广播"
+                    },
+                    onClick = onVcpInfoClick,
                     showDivider = false,
                 )
             }
