@@ -702,6 +702,7 @@ fun ChatScreen(
     // (opened by tapping the navbar thinking badge) is presented. Mirrors iOS
     // AIChatView.showThinkingLevelSheet.
     var showThinkingLevelSheet by remember { mutableStateOf(false) }
+    var showAttachMenu by remember { mutableStateOf(false) }
     var showTarvenSelector by remember { mutableStateOf(false) }
     var showChatMenu by remember { mutableStateOf(false) }
     // [T-input-history] "Input History" sheet visibility, mirrors rikkahub's
@@ -4790,57 +4791,19 @@ fun ChatScreen(
                         // resolved-status dot live in the nav-bar subtitle;
                         // this is just a compact trigger that can't be
                         // mistaken for the text field (no long text label).
-                        RingInputButton(onClick = { showModelPicker = true }) {
-                            Icon(
-                                Icons.Default.KeyboardArrowUp,
-                                contentDescription = stringResource(R.string.model_picker_default_badge),
-                                tint = ChatColors.secondaryText,
-                                modifier = Modifier.size(19.dp),
-                            )
-                        }
-
-                        // The "/" slash-command circle button used to sit here.
-                        // Moved into the top-right chat menu (above Token Usage)
-                        // to reclaim composer width; typing "/" still opens the
-                        // same sheet, so no functionality was removed.
-
-                        // T187: Exit Edit Mode pill, only while editingMessageId
-                        // is non-null. Tap clears the edit flag + composer text
-                        // without truncating history. iOS parity:
-                        // AIChatView.swift L1586 editExitButton.
-                        val editingId by viewModel.editingMessageId.collectAsState()
-                        if (editingId != null) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = ChatColors.inputBg,
-                                modifier = Modifier.clickable {
-                                    viewModel.cancelEdit()
-                                    viewModel.setInputText("")
-                                },
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.chat_edit_exit_button),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = ChatColors.secondaryText,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        // Chat actions: replaces the removed top-bar overflow.
-                        // The former attachment/Tarven menu binding is intentionally removed.
                         val showEnhancedCache by viewModel.showEnhancedCacheToggle.collectAsState()
                         val enhancedCacheOn by viewModel.enhancedCacheEnabled.collectAsState()
                         val showFastMode by viewModel.showFastModeToggle.collectAsState()
                         val fastModeOn by viewModel.fastModeEnabled.collectAsState()
                         Box {
-                            TarvenAttachButton(
-                                activeRuleTypes = activeTarvenRuleTypes,
-                                onClick = { showChatMenu = true },
-                            )
+                            RingInputButton(onClick = { showChatMenu = true }) {
+                                Icon(
+                                    Icons.Default.KeyboardArrowUp,
+                                    contentDescription = stringResource(R.string.chat_menu_more_actions),
+                                    tint = ChatColors.secondaryText,
+                                    modifier = Modifier.size(19.dp),
+                                )
+                            }
                             MinisMenu(
                                 expanded = showChatMenu,
                                 onDismissRequest = { showChatMenu = false },
@@ -5185,6 +5148,112 @@ fun ChatScreen(
                                 )
                             }
                         }
+                        }
+
+                        // The "/" slash-command circle button used to sit here.
+                        // Moved into the top-right chat menu (above Token Usage)
+                        // to reclaim composer width; typing "/" still opens the
+                        // same sheet, so no functionality was removed.
+
+                        // T187: Exit Edit Mode pill, only while editingMessageId
+                        // is non-null. Tap clears the edit flag + composer text
+                        // without truncating history. iOS parity:
+                        // AIChatView.swift L1586 editExitButton.
+                        val editingId by viewModel.editingMessageId.collectAsState()
+                        if (editingId != null) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = ChatColors.inputBg,
+                                modifier = Modifier.clickable {
+                                    viewModel.cancelEdit()
+                                    viewModel.setInputText("")
+                                },
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.chat_edit_exit_button),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = ChatColors.secondaryText,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // Attach (+): moved from the left edge to sit
+                        // directly beside mic/send. The three actions
+                        // here (photos, file, camera) all produce
+                        // something that gets SENT, so grouping them
+                        // with the send affordance keeps the
+                        // "compose -> attach -> send" gesture inside one
+                        // thumb arc instead of spanning the full width.
+                        Box {
+                            TarvenAttachButton(
+                                activeRuleTypes = activeTarvenRuleTypes,
+                                onClick = { showAttachMenu = true },
+                            )
+                            MinisMenu(
+                                expanded = showAttachMenu,
+                                onDismissRequest = { showAttachMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("规则仓") },
+                                    leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null) },
+                                    onClick = {
+                                        showAttachMenu = false
+                                        showTarvenSelector = true
+                                    },
+                                )
+                                // Order: Choose Photos & Videos / Add File / Take
+                                // Photo. Diverges from the iOS ordering on
+                                // purpose — picking existing media is by far the
+                                // most frequent attach action, so it takes the
+                                // first slot (closest to the thumb, and the
+                                // default highlighted row), while Take Photo is
+                                // the rarest and also the only destructive-ish
+                                // one (it opens the camera and can lose the
+                                // draft on some OEM camera apps), so it sits
+                                // last where it can't be hit by accident.
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.chat_attach_choose_photos_videos)) },
+                                    leadingIcon = { Icon(Icons.Default.PhotoLibrary, contentDescription = null) },
+                                    onClick = {
+                                        showAttachMenu = false
+                                        mediaPickerLauncher.launch(
+                                            androidx.activity.result.PickVisualMediaRequest(
+                                                ActivityResultContracts.PickVisualMedia.ImageAndVideo,
+                                            ),
+                                        )
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.chat_attach_add_file)) },
+                                    leadingIcon = { Icon(Icons.Default.Description, contentDescription = null) },
+                                    onClick = {
+                                        showAttachMenu = false
+                                        // OpenMultipleDocuments takes a mime-
+                                        // type array; "*/*" stays the wildcard.
+                                        filePickerLauncher.launch(arrayOf("*/*"))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.chat_attach_take_photo)) },
+                                    leadingIcon = { Icon(Icons.Default.CameraAlt, contentDescription = null) },
+                                    onClick = {
+                                        showAttachMenu = false
+                                        val granted = ContextCompat.checkSelfPermission(
+                                            context,
+                                            android.Manifest.permission.CAMERA,
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                        if (granted) {
+                                            launchCamera()
+                                        } else {
+                                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                        }
+                                    },
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.width(8.dp))

@@ -868,6 +868,7 @@
     <string name="appearance_chat_menu_section_menu">右上角選單</string>
     <string name="appearance_chat_menu_section_footer">歷史抽屜底欄</string>
     <string name="chat_menu_pin_to_footer">置於底欄</string>
+    <string name="chat_menu_more_actions">更多聊天操作</string>
     <string name="chat_menu_settings_always_last">固定最右</string>
     <string name="back_to_exit_press_again">再按一次返回退出</string>
     <string name="backup_snapshot_section_title">本機快照</string>

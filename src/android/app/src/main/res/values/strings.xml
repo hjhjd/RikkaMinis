@@ -1599,6 +1599,7 @@
     <string name="input_history_empty">No messages yet</string>
     <string name="input_history_no_match">No matching messages</string>
     <string name="chat_menu_pin_to_footer">Pin to footer</string>
+    <string name="chat_menu_more_actions">More chat actions</string>
     <string name="chat_menu_settings_always_last">Always last</string>
     <string name="back_to_exit_press_again">Press back again to exit</string>
     <string name="backup_snapshot_section_title">Local snapshots</string>
