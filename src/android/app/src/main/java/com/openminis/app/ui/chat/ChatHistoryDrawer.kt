@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
@@ -50,11 +51,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 import com.openminis.app.config.ChatActionSpec
+import com.openminis.app.data.db.AgentEntity
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.repository.AgentRepository
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.ui.components.MinisAlertDialog
 import com.openminis.app.ui.sessions.groupSessionsByDate
+import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 /**
  * RikkaHub-style chat-history drawer that slides out from the left of the
@@ -98,6 +103,7 @@ fun ChatHistoryDrawer(
     currentAgentId: String,
     onAgentClick: (String) -> Unit = {},
     onAgentSettings: (String) -> Unit = {},
+    onDeleteAgent: (String) -> Unit = {},
     onCreateAgent: () -> Unit = {},
     draft: com.openminis.app.data.ComposerDraftStore.DraftSnapshot? = null,
     onOpenDraft: () -> Unit = {},
@@ -114,6 +120,9 @@ fun ChatHistoryDrawer(
     val agents by agentRepository.observeAll().collectAsState(initial = emptyList())
     var drawerTab by rememberSaveable { mutableStateOf(0) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
+    var actionAgentId by remember { mutableStateOf<String?>(null) }
+    var deleteAgentTarget by remember { mutableStateOf<AgentEntity?>(null) }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val filteredAgents = remember(agents, searchQuery) {
         val q = searchQuery.trim()
         if (q.isEmpty()) agents else agents.filter { it.name.contains(q, ignoreCase = true) }
@@ -141,6 +150,22 @@ fun ChatHistoryDrawer(
         }
     }
     val grouped = remember(visibleSessions) { groupSessionsByDate(visibleSessions) }
+    val agentListState = rememberLazyListState()
+    val agentReorderState = rememberReorderableLazyListState(agentListState) { from, to ->
+        val fromId = (from.key as? String)?.removePrefix("agent:")
+            ?: return@rememberReorderableLazyListState
+        val toId = (to.key as? String)?.removePrefix("agent:")
+            ?: return@rememberReorderableLazyListState
+        val fromIndex = agents.indexOfFirst { it.id == fromId }
+        val toIndex = agents.indexOfFirst { it.id == toId }
+        if (fromIndex < 0 || toIndex < 0 || fromIndex == toIndex) {
+            return@rememberReorderableLazyListState
+        }
+        val reorderedIds = agents.map { it.id }.toMutableList().apply {
+            add(toIndex, removeAt(fromIndex))
+        }
+        coroutineScope.launch { agentRepository.reorder(reorderedIds) }
+    }
 
     var deleteTarget by remember { mutableStateOf<ChatSessionEntity?>(null) }
     val drawerWidth = LocalConfiguration.current.screenWidthDp.dp * 0.8f
@@ -153,7 +178,14 @@ fun ChatHistoryDrawer(
         modifier = Modifier.requiredWidth(drawerWidth),
         drawerContainerColor = MaterialTheme.colorScheme.background,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null,
+                ) { actionAgentId = null },
+        ) {
             // Header: bare app title — all actions live at the bottom.
             Row(
                 modifier = Modifier
@@ -319,14 +351,39 @@ fun ChatHistoryDrawer(
                 }
             }
             } else {
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(filteredAgents, key = { it.id }) { agent ->
-                        DrawerAgentRow(
-                            agent = agent,
-                            selected = agent.id == currentAgentId,
-                            onClick = { onAgentClick(agent.id) },
-                            onSettings = { onAgentSettings(agent.id) },
-                        )
+                LazyColumn(
+                    state = agentListState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                        ) { actionAgentId = null },
+                ) {
+                    items(filteredAgents, key = { "agent:${it.id}" }) { agent ->
+                        ReorderableItem(agentReorderState, key = "agent:${agent.id}") { isDragging ->
+                            DrawerAgentRow(
+                                agent = agent,
+                                selected = agent.id == currentAgentId,
+                                actionMode = actionAgentId == agent.id,
+                                dragging = isDragging,
+                                canDelete = agents.size > 1,
+                                onClick = {
+                                    when {
+                                        actionAgentId != null -> actionAgentId = null
+                                        else -> onAgentClick(agent.id)
+                                    }
+                                },
+                                onSettings = { actionAgentId = null; onAgentSettings(agent.id) },
+                                onDelete = { deleteAgentTarget = agent },
+                                dragModifier = with(this) {
+                                    Modifier.longPressDraggableHandle(
+                                        onDragStarted = { actionAgentId = agent.id },
+                                        onDragStopped = { },
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
                 OutlinedButton(
@@ -375,6 +432,22 @@ fun ChatHistoryDrawer(
                 }
             }
         }
+    }
+
+    deleteAgentTarget?.let { target ->
+        val topicCount = sessions.count { it.agentId == target.id }
+        MinisAlertDialog(
+            onDismissRequest = { deleteAgentTarget = null },
+            title = stringResource(R.string.chat_drawer_delete_agent_title, target.name),
+            text = stringResource(R.string.chat_drawer_delete_agent_message, topicCount),
+            confirmText = stringResource(R.string.delete),
+            isDestructive = true,
+            onConfirm = {
+                deleteAgentTarget = null
+                actionAgentId = null
+                onDeleteAgent(target.id)
+            },
+        )
     }
 
     deleteTarget?.let { target ->

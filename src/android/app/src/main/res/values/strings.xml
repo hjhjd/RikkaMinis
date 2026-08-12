@@ -1643,4 +1643,6 @@
     <string name="chat_drawer_global_default_model">Using global default model</string>
     <string name="chat_drawer_custom_default_model">Default model configured</string>
     <string name="chat_drawer_open">Open conversation drawer</string>
+    <string name="chat_drawer_delete_agent_title">Delete %1$s?</string>
+    <string name="chat_drawer_delete_agent_message">This Agent and its %1$d topics, messages, attachments, workspace, avatar, memory, skill bindings, and private rules will be permanently deleted. This cannot be undone.</string>
 </resources>

@@ -907,4 +907,6 @@
     <string name="chat_drawer_global_default_model">使用全域預設模型</string>
     <string name="chat_drawer_custom_default_model">已設定預設模型</string>
     <string name="chat_drawer_open">開啟對話側欄</string>
+    <string name="chat_drawer_delete_agent_title">刪除 %1$s？</string>
+    <string name="chat_drawer_delete_agent_message">該 Agent 及其 %1$d 個話題、訊息、附件、工作區、頭像、記憶、技能綁定和專屬規則將永久刪除，此操作無法復原。</string>
 </resources>

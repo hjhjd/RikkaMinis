@@ -1576,4 +1576,6 @@
     <string name="chat_drawer_global_default_model">使用全局默认模型</string>
     <string name="chat_drawer_custom_default_model">已设置默认模型</string>
     <string name="chat_drawer_open">打开会话侧栏</string>
+    <string name="chat_drawer_delete_agent_title">删除 %1$s？</string>
+    <string name="chat_drawer_delete_agent_message">该 Agent 及其 %1$d 个话题、消息、附件、工作区、头像、记忆、技能绑定和专属规则将永久删除，此操作无法撤销。</string>
 </resources>

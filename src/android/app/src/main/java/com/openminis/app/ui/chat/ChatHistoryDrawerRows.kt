@@ -14,15 +14,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.graphicsLayer
 import coil.compose.AsyncImage
 import com.openminis.app.R
 import com.openminis.app.agent.AgentAvatarStore
@@ -183,62 +187,120 @@ internal fun DrawerSessionRow(
 internal fun DrawerAgentRow(
     agent: AgentEntity,
     selected: Boolean,
+    actionMode: Boolean,
+    dragging: Boolean,
+    canDelete: Boolean,
     onClick: () -> Unit,
     onSettings: () -> Unit,
+    onDelete: () -> Unit,
+    dragModifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val avatar = remember(agent.avatarPath) { AgentAvatarStore(context).resolve(agent.avatarPath) }
-    Row(
+    Column(
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.surfaceContainerHigh
-                else MaterialTheme.colorScheme.surface,
-            )
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .graphicsLayer {
+                scaleX = if (dragging) 1.02f else 1f
+                scaleY = if (dragging) 1.02f else 1f
+                shadowElevation = if (actionMode || dragging) 18.dp.toPx() else 0f
+            },
     ) {
-        Box(
-            Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
+        Row(
+            modifier = dragModifier
+                .fillMaxWidth()
+                .clip(
+                    if (actionMode) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                    else RoundedCornerShape(16.dp),
+                )
+                .background(
+                    if (selected || actionMode) MaterialTheme.colorScheme.surfaceContainerHigh
+                    else MaterialTheme.colorScheme.surface,
+                )
+                .border(
+                    1.dp,
+                    if (actionMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                    else MaterialTheme.colorScheme.outlineVariant,
+                    if (actionMode) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                    else RoundedCornerShape(16.dp),
+                )
+                .clickable(onClick = onClick)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (avatar != null) {
-                AsyncImage(avatar, contentDescription = agent.name, modifier = Modifier.size(48.dp))
-            } else {
-                Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(28.dp))
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (avatar != null) {
+                    AsyncImage(avatar, contentDescription = agent.name, modifier = Modifier.size(48.dp))
+                } else {
+                    Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(28.dp))
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    agent.name,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    stringResource(
+                        if (agent.defaultModelBinding.isNullOrBlank()) R.string.chat_drawer_global_default_model
+                        else R.string.chat_drawer_custom_default_model,
+                    ),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
-        Column(Modifier.weight(1f)) {
-            Text(
-                agent.name,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                stringResource(
-                    if (agent.defaultModelBinding.isNullOrBlank()) R.string.chat_drawer_global_default_model
-                    else R.string.chat_drawer_custom_default_model,
-                ),
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        IconButton(onClick = onSettings) {
-            Icon(
-                Icons.Outlined.Settings,
-                contentDescription = stringResource(R.string.chat_drawer_agent_settings, agent.name),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (actionMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                        RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
+                    )
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onDelete,
+                    enabled = canDelete,
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.45f),
+                    ),
+                ) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        stringResource(R.string.delete),
+                        color = if (canDelete) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    )
+                }
+                OutlinedButton(
+                    onClick = onSettings,
+                    modifier = Modifier.weight(1f).height(40.dp),
+                ) {
+                    Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.settings))
+                }
+            }
         }
     }
 }

@@ -71,6 +71,15 @@ class AgentRepository(private val dao: AgentDao) {
         dao.setDefault(id, System.currentTimeMillis())
     }
 
+    /** Persist the complete Agent presentation order after drag-and-drop. */
+    suspend fun reorder(ids: List<String>) {
+        val current = dao.listAll()
+        require(ids.size == current.size && ids.toSet() == current.map { it.id }.toSet()) {
+            "Agent reorder must contain every Agent exactly once"
+        }
+        dao.updateSortOrders(ids, System.currentTimeMillis())
+    }
+
     suspend fun deleteWithSessions(id: String): List<String> {
         val target = requireNotNull(dao.get(id)) { "Agent not found: $id" }
         val fallbackId = if (target.isDefault != 0) {

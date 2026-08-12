@@ -37,6 +37,11 @@ interface AgentDao {
     @Query("UPDATE agents SET sort_order = :sortOrder, updated_at = :updatedAt WHERE id = :id")
     suspend fun updateSortOrder(id: String, sortOrder: Int, updatedAt: Long)
 
+    @Transaction
+    suspend fun updateSortOrders(ids: List<String>, updatedAt: Long) {
+        ids.forEachIndexed { index, id -> updateSortOrder(id, index, updatedAt) }
+    }
+
     @Query("UPDATE agents SET is_default = CASE WHEN id = :id THEN 1 ELSE 0 END, updated_at = :updatedAt")
     suspend fun setDefault(id: String, updatedAt: Long)
 

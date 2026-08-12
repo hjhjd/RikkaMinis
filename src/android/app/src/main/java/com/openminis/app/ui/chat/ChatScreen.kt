@@ -1907,6 +1907,36 @@ fun ChatScreen(
                     historyDrawerScope.launch { historyDrawerState.close() }
                     onOpenAgentSettings(agentId)
                 },
+                onDeleteAgent = { agentId ->
+                    val deletingCurrentAgent = viewModel.activeAgentId.value == agentId
+                    val app = context.applicationContext as com.openminis.app.MinisApp
+                    historyDrawerScope.launch {
+                        val deleted = runCatching {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                val sessionIds = agentRepository.deleteWithSessions(agentId)
+                                skillRepository?.clearAgentBindings(agentId)
+                                sessionIds.forEach { deletedSessionId ->
+                                    skillRepository?.clearSessionOverrides(deletedSessionId)
+                                    mcpRepository?.clearSessionOverrides(deletedSessionId)
+                                    java.io.File(context.filesDir, "minis-sessions/$deletedSessionId").deleteRecursively()
+                                    java.io.File(context.filesDir, "sessions/$deletedSessionId").deleteRecursively()
+                                    com.openminis.app.data.storage.MediaStore(context).deleteSessionMedia(deletedSessionId)
+                                    ChatViewModelStore.release(deletedSessionId)
+                                    com.openminis.app.service.SessionBadgeStore.clear(deletedSessionId)
+                                }
+                                com.openminis.app.data.MemoryGlobalPrefs.clearAgent(context, agentId)
+                                app.agentMemoryRepositoryFactory.deleteAgentData(agentId)
+                            }
+                        }.isSuccess
+                        if (deleted && deletingCurrentAgent) {
+                            val fallback = agentRepository.defaultAgent()
+                            try {
+                                historyDrawerState.close()
+                            } catch (_: kotlinx.coroutines.CancellationException) {}
+                            onOpenAgent(fallback.id)
+                        }
+                    }
+                },
                 onCreateAgent = {
                     historyDrawerScope.launch { historyDrawerState.close() }
                     onCreateAgent()
