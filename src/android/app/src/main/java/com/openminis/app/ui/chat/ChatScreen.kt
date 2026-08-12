@@ -218,6 +218,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -2344,11 +2346,32 @@ fun ChatScreen(
                     // session switching via the drawer, which never confirms
                     // either; a "stop the task" prompt here would be both
                     // inconsistent and factually wrong.
+                    val newChatDescription = stringResource(R.string.chat_menu_new_chat)
                     IconButton(onClick = {
                         viewModel.promoteDraftIfNeeded()
                         onNewChat(viewModel.activeAgentId.value)
                     }) {
-                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.chat_menu_new_chat))
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .border(
+                                    width = 1.25.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                    shape = CircleShape,
+                                )
+                                .clearAndSetSemantics {
+                                    contentDescription = newChatDescription
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "+",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 25.sp,
+                                lineHeight = 25.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
                     }
                 },
                 windowInsets = WindowInsets.statusBars,
