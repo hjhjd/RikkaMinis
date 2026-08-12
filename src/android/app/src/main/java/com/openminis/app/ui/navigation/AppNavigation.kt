@@ -609,6 +609,7 @@ fun AppNavigation(
                 onOpenRules = { navController.safeNavigate(Routes.agentRules(it)) },
                 onCreateAgent = { navController.safeNavigate(Routes.AGENT_NEW) },
                 onOpenSettings = { navController.safeNavigate(Routes.SETTINGS) },
+                onOpenVcpInfo = { navController.safeNavigate(Routes.VCP_INFO) },
             )
         }
 

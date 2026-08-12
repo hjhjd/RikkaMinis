@@ -437,6 +437,8 @@ fun ChatScreen(
     onCreateAgent: () -> Unit = {},
     /** Open Settings from the chat-history drawer footer. */
     onOpenSettings: () -> Unit = {},
+    /** Open the standalone VCPInfo center from the right-side VCPLog drawer. */
+    onOpenVcpInfo: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -5522,6 +5524,10 @@ fun ChatScreen(
     ChatEventDrawer(
         visible = eventDrawerVisible,
         onDismiss = { eventDrawerVisible = false },
+        onOpenVcpInfo = {
+            eventDrawerVisible = false
+            onOpenVcpInfo()
+        },
     )
     }
     // [P0-0-drawer-fix] Always enabled BackHandler (registered AFTER

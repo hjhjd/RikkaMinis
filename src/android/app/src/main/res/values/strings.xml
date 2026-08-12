@@ -1648,7 +1648,6 @@
     <string name="chat_event_drawer_title">Event Center</string>
     <string name="chat_event_drawer_open">Open event center</string>
     <string name="chat_event_drawer_vcpinfo">VCPInfo</string>
-    <string name="chat_event_drawer_vcplog">VCPLog</string>
-    <string name="chat_event_drawer_vcpinfo_placeholder">VCPInfo will be connected later</string>
+    <string name="chat_event_drawer_waiting_vcplog">VCPLog is not connected</string>
     <string name="chat_event_drawer_vcplog_placeholder">Waiting for VCPLog support</string>
 </resources>

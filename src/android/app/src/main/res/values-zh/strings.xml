@@ -1581,7 +1581,6 @@
     <string name="chat_event_drawer_title">事件中心</string>
     <string name="chat_event_drawer_open">打开事件中心</string>
     <string name="chat_event_drawer_vcpinfo">VCPInfo</string>
-    <string name="chat_event_drawer_vcplog">VCPLog</string>
-    <string name="chat_event_drawer_vcpinfo_placeholder">VCPInfo 将在后续接入</string>
+    <string name="chat_event_drawer_waiting_vcplog">VCPLog 尚未接入</string>
     <string name="chat_event_drawer_vcplog_placeholder">等待 VCPLog 功能接入</string>
 </resources>
