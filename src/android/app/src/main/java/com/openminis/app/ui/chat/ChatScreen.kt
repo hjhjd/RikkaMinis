@@ -1950,6 +1950,18 @@ fun ChatScreen(
                         }
                     }
                 },
+                onDeleteSession = { id ->
+                    // Deleting the current session immediately navigates away,
+                    // which cancels composition-bound scopes. Use the existing
+                    // application scope so the DB write and resource cleanup
+                    // always finish.
+                    (context.applicationContext as com.openminis.app.MinisApp)
+                        .applicationScope.launch {
+                            chatRepository.deleteSession(id)
+                            ChatViewModelStore.release(id)
+                            com.openminis.app.service.SessionBadgeStore.clear(id)
+                        }
+                },
                 onNewChat = {
                     // [promote-draft-on-new-chat] Free the draft slot before
                     // closing the drawer + navigating, so onNewChat opens a
@@ -2266,7 +2278,10 @@ fun ChatScreen(
                             else historyDrawerState.open()
                         }
                     }) {
-                        Icon(Icons.Default.Menu, contentDescription = "Sessions")
+                        Icon(
+                            Icons.Default.Menu,
+                            contentDescription = stringResource(R.string.chat_drawer_open),
+                        )
                     }
                 },
                 actions = {

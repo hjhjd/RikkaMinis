@@ -898,4 +898,13 @@
     <string name="chat_attachment_limit">Only the first %1$d items were attached.</string>
     <string name="session_edit_title">Edit Session</string>
     <string name="session_new_chat_default">New Chat</string>
+    <string name="chat_drawer_tab_agents">助手</string>
+    <string name="chat_drawer_tab_topics">話題</string>
+    <string name="chat_drawer_search_agents">搜尋助手</string>
+    <string name="chat_drawer_search_topics">搜尋話題</string>
+    <string name="chat_drawer_create_agent">建立 Agent</string>
+    <string name="chat_drawer_agent_settings">設定 %1$s</string>
+    <string name="chat_drawer_global_default_model">使用全域預設模型</string>
+    <string name="chat_drawer_custom_default_model">已設定預設模型</string>
+    <string name="chat_drawer_open">開啟對話側欄</string>
 </resources>

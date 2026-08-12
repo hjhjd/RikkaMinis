@@ -1567,4 +1567,13 @@
     <string name="distributed_protocol_status">VCPToolBox 通信</string>
     <string name="distributed_client_id">客户端 ID：%1$s</string>
     <string name="distributed_phase_notice">当前阶段只建立和维护连接，不注册工具，也不会执行服务端工具请求。</string>
+    <string name="chat_drawer_tab_agents">助手</string>
+    <string name="chat_drawer_tab_topics">话题</string>
+    <string name="chat_drawer_search_agents">搜索助手</string>
+    <string name="chat_drawer_search_topics">搜索话题</string>
+    <string name="chat_drawer_create_agent">创建 Agent</string>
+    <string name="chat_drawer_agent_settings">设置 %1$s</string>
+    <string name="chat_drawer_global_default_model">使用全局默认模型</string>
+    <string name="chat_drawer_custom_default_model">已设置默认模型</string>
+    <string name="chat_drawer_open">打开会话侧栏</string>
 </resources>

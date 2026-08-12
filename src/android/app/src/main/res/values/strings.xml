@@ -1634,4 +1634,13 @@
     <string name="distributed_protocol_status">VCPToolBox communication</string>
     <string name="distributed_client_id">Client ID: %1$s</string>
     <string name="distributed_phase_notice">This phase only establishes and maintains the connection. It does not register tools or execute server tool requests.</string>
+    <string name="chat_drawer_tab_agents">Agents</string>
+    <string name="chat_drawer_tab_topics">Topics</string>
+    <string name="chat_drawer_search_agents">Search Agents</string>
+    <string name="chat_drawer_search_topics">Search topics</string>
+    <string name="chat_drawer_create_agent">Create Agent</string>
+    <string name="chat_drawer_agent_settings">Settings for %1$s</string>
+    <string name="chat_drawer_global_default_model">Using global default model</string>
+    <string name="chat_drawer_custom_default_model">Default model configured</string>
+    <string name="chat_drawer_open">Open conversation drawer</string>
 </resources>

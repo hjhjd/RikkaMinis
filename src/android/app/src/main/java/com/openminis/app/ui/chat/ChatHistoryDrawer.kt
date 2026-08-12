@@ -5,10 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +15,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.requiredWidth
@@ -35,7 +30,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.HorizontalDivider
@@ -74,14 +68,13 @@ import com.openminis.app.ui.components.MinisAlertDialog
 import com.openminis.app.ui.sessions.DatePeriod
 import com.openminis.app.ui.sessions.categoryStyle
 import com.openminis.app.ui.sessions.groupSessionsByDate
-import kotlinx.coroutines.launch
 
 /**
  * RikkaHub-style chat-history drawer that slides out from the left of the
  * chat screen. Mirrors [com.openminis.app.ui.sessions.SessionListScreen] but
  * in a slimmer, always-available form so the user can switch conversations
- * without leaving the current chat (the session list remains reachable as the
- * navigation start destination).
+ * without leaving the current chat. This drawer is the primary conversation-
+ * history entry from the chat screen.
  *
  * Data comes straight off [ChatRepository.observeSessions] — the same Room
  * flow the full list uses — so pins, deletions, titles and last-message
@@ -96,6 +89,8 @@ import kotlinx.coroutines.launch
  * @param onOpenDraft resume the draft session (caller closes the drawer).
  * @param onDiscardDraft drop the persisted draft (user confirms in the dialog).
  * @param onSessionClick open another conversation (caller closes the drawer).
+ * @param onDeleteSession permanently delete a conversation and release its
+ *        process-level resources. The caller owns the asynchronous work.
  * @param onNewChat start a fresh draft chat — used only as the fallback when
  *        the user deletes the chat they are currently viewing from the drawer
  *        (no visible button: creating a chat lives in the "..." menu and the
@@ -121,6 +116,7 @@ fun ChatHistoryDrawer(
     onOpenDraft: () -> Unit = {},
     onDiscardDraft: () -> Unit = {},
     onSessionClick: (String) -> Unit,
+    onDeleteSession: (String) -> Unit,
     onNewChat: () -> Unit,
     footerActions: List<ChatActionSpec> = emptyList(),
     onAction: (String) -> Unit = {},
@@ -131,7 +127,6 @@ fun ChatHistoryDrawer(
     val agents by agentRepository.observeAll().collectAsState(initial = emptyList())
     var drawerTab by rememberSaveable { mutableStateOf(0) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var revealedAgentId by remember { mutableStateOf<String?>(null) }
     val filteredAgents = remember(agents, searchQuery) {
         val q = searchQuery.trim()
         if (q.isEmpty()) agents else agents.filter { it.name.contains(q, ignoreCase = true) }
@@ -200,7 +195,10 @@ fun ChatHistoryDrawer(
                     .padding(3.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                listOf("助手", "话题").forEachIndexed { index, label ->
+                listOf(
+                    stringResource(R.string.chat_drawer_tab_agents),
+                    stringResource(R.string.chat_drawer_tab_topics),
+                ).forEachIndexed { index, label ->
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -218,7 +216,14 @@ fun ChatHistoryDrawer(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text(if (drawerTab == 0) "搜索助手" else "搜索话题") },
+                placeholder = {
+                    Text(
+                        stringResource(
+                            if (drawerTab == 0) R.string.chat_drawer_search_agents
+                            else R.string.chat_drawer_search_topics,
+                        ),
+                    )
+                },
                 leadingIcon = { Icon(Icons.Outlined.Search, null, Modifier.size(19.dp)) },
                 singleLine = true,
                 shape = RoundedCornerShape(13.dp),
@@ -332,10 +337,8 @@ fun ChatHistoryDrawer(
                         DrawerAgentRow(
                             agent = agent,
                             selected = agent.id == currentAgentId,
-                            onClick = { revealedAgentId = null; onAgentClick(agent.id) },
-                            onSettings = { revealedAgentId = null; onAgentSettings(agent.id) },
-                            revealed = revealedAgentId == agent.id,
-                            onReveal = { revealedAgentId = if (it) agent.id else null },
+                            onClick = { onAgentClick(agent.id) },
+                            onSettings = { onAgentSettings(agent.id) },
                         )
                     }
                 }
@@ -348,7 +351,7 @@ fun ChatHistoryDrawer(
                 ) {
                     Icon(Icons.Outlined.Add, null, Modifier.size(19.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("创建 Agent", fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.chat_drawer_create_agent), fontWeight = FontWeight.SemiBold)
                 }
             }
 
@@ -397,33 +400,14 @@ fun ChatHistoryDrawer(
             onConfirm = {
                 val id = target.id
                 deleteTarget = null
-                // deletion is a fire-and-forget DB write mirroring
-                // SessionListViewModel.deleteSession (row + messages gone,
-                // VM store released, badges cleared).
-                deleteSessionAndCleanup(chatRepository, id)
+                // The caller launches this in the application scope so deletion
+                // survives the current-chat navigation that may immediately follow.
+                onDeleteSession(id)
                 // If the user just deleted the chat they're viewing, drop back
                 // to a fresh draft so the screen isn't showing a dead session.
                 if (id == currentSessionId) onNewChat()
             },
         )
-    }
-}
-
-/**
- * Delete a session and release its resources. Mirrors
- * SessionListViewModel.deleteSession so drawer deletions behave identically to
- * list deletions (row + messages gone, VM store released, badges cleared).
- */
-private val drawerIoScope =
-    kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
-    )
-
-private fun deleteSessionAndCleanup(chatRepository: ChatRepository, id: String) {
-    drawerIoScope.launch {
-        chatRepository.deleteSession(id)
-        ChatViewModelStore.release(id)
-        com.openminis.app.service.SessionBadgeStore.clear(id)
     }
 }
 
@@ -575,51 +559,60 @@ private fun DrawerAgentRow(
     selected: Boolean,
     onClick: () -> Unit,
     onSettings: () -> Unit,
-    revealed: Boolean,
-    onReveal: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val revealPx = remember(density) { with(density) { 72.dp.toPx() } }
     val avatar = remember(agent.avatarPath) { AgentAvatarStore(context).resolve(agent.avatarPath) }
-    var dragOffset by remember(agent.id, revealed, revealPx) { mutableStateOf(if (revealed) revealPx else 0f) }
-    Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth()) {
+    Row(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                if (selected) MaterialTheme.colorScheme.surfaceContainerHigh
+                else MaterialTheme.colorScheme.surface,
+            )
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Box(
-            Modifier.matchParentSize().clip(RoundedCornerShape(16.dp))
+            Modifier
+                .size(48.dp)
+                .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.CenterStart,
+            contentAlignment = Alignment.Center,
         ) {
-            IconButton(onClick = onSettings, modifier = Modifier.padding(start = 8.dp).size(48.dp)) {
-                Icon(Icons.Outlined.Settings, contentDescription = "设置 ${agent.name}", tint = MaterialTheme.colorScheme.primary)
+            if (avatar != null) {
+                AsyncImage(avatar, contentDescription = agent.name, modifier = Modifier.size(48.dp))
+            } else {
+                Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(28.dp))
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().offset { IntOffset(dragOffset.roundToInt(), 0) }
-                .clip(RoundedCornerShape(16.dp))
-                .background(if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surface)
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.outlineVariant,
-                    RoundedCornerShape(16.dp),
-                )
-                .pointerInput(agent.id) {
-                    detectHorizontalDragGestures(
-                        onHorizontalDrag = { _, amount -> dragOffset = (dragOffset + amount).coerceIn(0f, revealPx) },
-                        onDragEnd = { val open = dragOffset > revealPx * 0.45f; dragOffset = if (open) revealPx else 0f; onReveal(open) },
-                        onDragCancel = { dragOffset = if (revealed) revealPx else 0f },
-                    )
-                }
-                .clickable(onClick = onClick).padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-                if (avatar != null) AsyncImage(avatar, null, Modifier.size(48.dp)) else Icon(Icons.Outlined.Person, null, Modifier.size(28.dp))
-            }
-            Column(Modifier.weight(1f)) {
-                Text(agent.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (agent.defaultModelBinding.isNullOrBlank()) "使用全局默认模型" else "已设置默认模型", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        Column(Modifier.weight(1f)) {
+            Text(
+                agent.name,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                stringResource(
+                    if (agent.defaultModelBinding.isNullOrBlank()) R.string.chat_drawer_global_default_model
+                    else R.string.chat_drawer_custom_default_model,
+                ),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onSettings) {
+            Icon(
+                Icons.Outlined.Settings,
+                contentDescription = stringResource(R.string.chat_drawer_agent_settings, agent.name),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
