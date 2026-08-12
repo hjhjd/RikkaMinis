@@ -93,24 +93,36 @@ private fun ChainDetail(json: JSONObject) {
         val stageNo = stage.optInt("stage", i + 1)
         val cluster = stage.text("clusterName") ?: "未命名聚类"
         val results = stage.array("results")
-        Row(Modifier.fillMaxWidth()) {
-            Column(Modifier.width(3.dp).background(purple.copy(alpha = .65f), RoundedCornerShape(2.dp))) {
-                Text(" ", fontSize = 1.sp, lineHeight = ((50 + results.length() * 48).coerceAtMost(240)).sp)
+        var stageOpen by remember(stageNo, cluster) { mutableStateOf(false) }
+        Row(
+            Modifier.fillMaxWidth()
+                .background(toneBackground(DetailTone.PURPLE), RoundedCornerShape(5.dp))
+                .border(.5.dp, purple.copy(alpha = .22f), RoundedCornerShape(5.dp)),
+        ) {
+            Column(Modifier.width(3.dp).background(purple.copy(alpha = .72f), RoundedCornerShape(2.dp))) {
+                Text(" ", fontSize = 1.sp, lineHeight = if (stageOpen) 72.sp else 34.sp)
             }
-            Column(Modifier.weight(1f).padding(start = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Row(Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Row(
+                    Modifier.fillMaxWidth().clickable { stageOpen = !stageOpen }.padding(horizontal = 8.dp, vertical = 7.dp),
+                ) {
                     Text("阶段 $stageNo: $cluster", fontSize = 10.sp, fontWeight = FontWeight.Bold,
                         color = purple, modifier = Modifier.weight(1f))
                     Text("K ${stage.optInt("k")} · 召回 ${stage.optInt("resultCount", results.length())}",
                         fontSize = 8.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (stageOpen) "  ▲" else "  ▼", fontSize = 8.sp, color = purple)
                 }
-                for (j in 0 until results.length()) {
-                    val result = results.optJSONObject(j)
-                    val text = result?.firstText("text", "content", "result") ?: results.optString(j)
-                    if (text.isNotBlank()) DetailResult(j + 1, text,
-                        result?.firstValue("score", "similarity"), tone = DetailTone.PURPLE)
+                if (stageOpen) {
+                    Column(Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        for (j in 0 until results.length()) {
+                            val result = results.optJSONObject(j)
+                            val text = result?.firstText("text", "content", "result") ?: results.optString(j)
+                            if (text.isNotBlank()) DetailResult(j + 1, text,
+                                result?.firstValue("score", "similarity"), tone = DetailTone.PURPLE)
+                        }
+                        if (results.length() == 0) DetailEmpty("本阶段没有召回结果")
+                    }
                 }
-                if (results.length() == 0) DetailEmpty("本阶段没有召回结果")
             }
         }
     }
@@ -261,15 +273,18 @@ private fun RagResult(index: Int, text: String, item: JSONObject?) {
     val source = item?.firstValue("source", "sourceFile", "fullPath")
     val boosted = item?.has("boostFactor") == true
     val tone = if (boosted) DetailTone.GOLD else DetailTone.BLUE
-    DetailResult(index, text, score?.let { "Score $it" }, tone, source)
-    val matched = item?.array("matchedTags")?.strings().orEmpty()
-    if (matched.isNotEmpty()) TagRow("命中标签", matched.map { "🏷 $it" }, DetailTone.GOLD)
-    val extra = buildList {
-        item?.firstValue("boostFactor")?.let { add("Boost $it") }
-        item?.firstValue("associateCoCount")?.let { add("共现 $it") }
-        item?.text("date")?.let { add(it) }
+    var open by remember(index, text) { mutableStateOf(false) }
+    DetailResult(index, text, score?.let { "Score $it" }, tone, source, open, onToggle = { open = !open })
+    if (open) {
+        val matched = item?.array("matchedTags")?.strings().orEmpty()
+        if (matched.isNotEmpty()) TagRow("命中标签", matched.map { "🏷 $it" }, DetailTone.GOLD)
+        val extra = buildList {
+            item?.firstValue("boostFactor")?.let { add("Boost $it") }
+            item?.firstValue("associateCoCount")?.let { add("共现 $it") }
+            item?.text("date")?.let { add(it) }
+        }
+        if (extra.isNotEmpty()) TagRow("结果增强", extra, DetailTone.GOLD)
     }
-    if (extra.isNotEmpty()) TagRow("结果增强", extra, DetailTone.GOLD)
 }
 
 @Composable
@@ -279,9 +294,17 @@ private fun DetailResult(
     score: String?,
     tone: DetailTone = DetailTone.BLUE,
     badge: String? = null,
+    expanded: Boolean? = null,
+    onToggle: (() -> Unit)? = null,
 ) {
-    Column(Modifier.fillMaxWidth().background(toneBackground(tone), RoundedCornerShape(5.dp))
-        .border(.5.dp, tone.accent.copy(alpha = .2f), RoundedCornerShape(5.dp)).padding(7.dp)) {
+    var localExpanded by remember(index, text) { mutableStateOf(false) }
+    val isExpanded = expanded ?: localExpanded
+    val toggle = onToggle ?: { localExpanded = !localExpanded }
+    val cardModifier = Modifier.fillMaxWidth().background(toneBackground(tone), RoundedCornerShape(5.dp))
+        .border(.5.dp, tone.accent.copy(alpha = .2f), RoundedCornerShape(5.dp))
+        .clickable(onClick = toggle)
+        .padding(7.dp)
+    Column(cardModifier) {
         Row(Modifier.fillMaxWidth()) {
             Text("#$index", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = tone.accent)
             badge?.let { Text("  $it", fontSize = 8.sp, fontFamily = FontFamily.Monospace,
@@ -289,8 +312,11 @@ private fun DetailResult(
                 ?: androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             score?.let { Text(it, fontSize = 8.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold,
                 color = tone.accent, modifier = Modifier.background(tone.accent.copy(alpha = .1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) }
+            Text(if (isExpanded) "  ▲" else "  ▼", fontSize = 8.sp, color = tone.accent)
         }
         Text(text, fontSize = 9.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurface,
+            maxLines = if (isExpanded) Int.MAX_VALUE else 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 3.dp))
     }
 }
@@ -302,10 +328,17 @@ private fun DetailBlock(
     accent: Color = MaterialTheme.colorScheme.primary,
     tone: DetailTone = DetailTone.BLUE,
 ) {
+    var expanded by remember(label, text) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(toneBackground(tone), RoundedCornerShape(5.dp))
-        .border(.5.dp, accent.copy(alpha = .22f), RoundedCornerShape(5.dp)).padding(8.dp)) {
-        Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = accent)
+        .border(.5.dp, accent.copy(alpha = .22f), RoundedCornerShape(5.dp))
+        .clickable { expanded = !expanded }.padding(8.dp)) {
+        Row(Modifier.fillMaxWidth()) {
+            Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = accent, modifier = Modifier.weight(1f))
+            Text(if (expanded) "收起 ▲" else "展开 ▼", fontSize = 8.sp, color = accent.copy(alpha = .75f))
+        }
         Text(text, fontSize = 9.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurface,
+            maxLines = if (expanded) Int.MAX_VALUE else 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 3.dp))
     }
 }
