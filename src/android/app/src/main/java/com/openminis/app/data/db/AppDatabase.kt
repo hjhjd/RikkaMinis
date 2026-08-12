@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WebAppShortcutEntity::class,
         TarvenRuleEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -248,6 +248,60 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Remove the abandoned soft-delete state; Agent deletion is permanent. */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE agents_new (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        avatar_path TEXT,
+                        instructions TEXT NOT NULL,
+                        preferred_language TEXT,
+                        default_model_binding TEXT,
+                        tool_prompt_enabled INTEGER NOT NULL DEFAULT 1,
+                        custom_tool_prompt_enabled INTEGER NOT NULL DEFAULT 0,
+                        custom_tool_prompt TEXT,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        sort_order INTEGER NOT NULL,
+                        is_default INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    DELETE FROM webapp_shortcuts
+                    WHERE scope_context IN (
+                        SELECT id FROM sessions WHERE agent_id IN (SELECT id FROM agents WHERE is_archived != 0)
+                    ) OR source_session_id IN (
+                        SELECT id FROM sessions WHERE agent_id IN (SELECT id FROM agents WHERE is_archived != 0)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("DELETE FROM sessions WHERE agent_id IN (SELECT id FROM agents WHERE is_archived != 0)")
+                db.execSQL("DELETE FROM tarven_rules WHERE agent_id IN (SELECT id FROM agents WHERE is_archived != 0)")
+                db.execSQL(
+                    """
+                    INSERT INTO agents_new (
+                        id, name, avatar_path, instructions, preferred_language,
+                        default_model_binding, tool_prompt_enabled,
+                        custom_tool_prompt_enabled, custom_tool_prompt, created_at,
+                        updated_at, sort_order, is_default
+                    )
+                    SELECT id, name, avatar_path, instructions, preferred_language,
+                        default_model_binding, tool_prompt_enabled,
+                        custom_tool_prompt_enabled, custom_tool_prompt, created_at,
+                        updated_at, sort_order, is_default
+                    FROM agents WHERE is_archived = 0
+                    """.trimIndent(),
+                )
+                db.execSQL("DROP TABLE agents")
+                db.execSQL("ALTER TABLE agents_new RENAME TO agents")
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -286,8 +340,8 @@ abstract class AppDatabase : RoomDatabase() {
                     INSERT OR IGNORE INTO agents (
                         id, name, avatar_path, instructions, preferred_language,
                         default_model_binding, created_at, updated_at, sort_order,
-                        is_default, is_archived
-                    ) VALUES (?, ?, NULL, '', 'auto', NULL, ?, ?, 0, 1, 0)
+                        is_default
+                    ) VALUES (?, ?, NULL, '', 'auto', NULL, ?, ?, 0, 1)
                     """.trimIndent(),
                     arrayOf(AgentIds.DEFAULT, "RikkaMinis", now, now),
                 )
@@ -301,7 +355,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                     .addCallback(CREATE_DEFAULT_AGENT_CALLBACK)
                     .build()
                     .also { INSTANCE = it }

@@ -128,7 +128,7 @@ fun ChatHistoryDrawer(
 ) {
     val sessions by chatRepository.observeSessions()
         .collectAsState(initial = emptyList())
-    val agents by agentRepository.observeActive().collectAsState(initial = emptyList())
+    val agents by agentRepository.observeAll().collectAsState(initial = emptyList())
     var drawerTab by rememberSaveable { mutableStateOf(0) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var revealedAgentId by remember { mutableStateOf<String?>(null) }

@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.Flow
 
 /** Application-scoped source of truth for Agent metadata. */
 class AgentRepository(private val dao: AgentDao) {
-    fun observeActive(): Flow<List<AgentEntity>> = dao.observeActive()
+    fun observeAll(): Flow<List<AgentEntity>> = dao.observeAll()
     fun observe(id: String): Flow<AgentEntity?> = dao.observe(id)
     suspend fun listAll(): List<AgentEntity> = dao.listAll()
     suspend fun get(id: String): AgentEntity? = dao.get(id)
@@ -56,7 +56,7 @@ class AgentRepository(private val dao: AgentDao) {
             return merged
         }
         val target = if (existing == null) source else source.copy(id = UUID.randomUUID().toString())
-        val imported = target.copy(isDefault = 0, isArchived = 0, updatedAt = System.currentTimeMillis())
+        val imported = target.copy(isDefault = 0, updatedAt = System.currentTimeMillis())
         dao.upsert(imported)
         return imported
     }
@@ -71,31 +71,18 @@ class AgentRepository(private val dao: AgentDao) {
         dao.setDefault(id, System.currentTimeMillis())
     }
 
-    suspend fun archive(id: String) {
+    suspend fun deleteWithSessions(id: String): List<String> {
         val target = requireNotNull(dao.get(id)) { "Agent not found: $id" }
-        if (target.isDefault != 0) {
-            val replacement = dao.listAll().firstOrNull { it.id != id && it.isArchived == 0 }
-                ?: error("At least one active Agent must remain")
-            dao.setDefault(replacement.id, System.currentTimeMillis())
-        }
-        dao.setArchived(id, 1, System.currentTimeMillis())
-    }
-
-    suspend fun archiveAndReassignToDefault(id: String) {
-        val target = requireNotNull(dao.get(id)) { "Agent not found: $id" }
-        val fallback = if (target.isDefault != 0) {
-            // Deleting the current default is valid as long as another active
-            // Agent can take over the invariant. Promote it before moving topics
-            // so every session always resolves to a live default Agent.
-            dao.listAll().firstOrNull { it.id != id && it.isArchived == 0 }
-                ?: error("At least one active Agent must remain")
+        val fallbackId = if (target.isDefault != 0) {
+            dao.listAll().firstOrNull { it.id != id }?.id
+                ?: error("At least one Agent must remain")
         } else {
-            defaultAgent()
+            null
         }
-        dao.setDefault(fallback.id, System.currentTimeMillis())
-        dao.reassignSessions(id, fallback.id)
-        dao.setArchived(id, 1, System.currentTimeMillis())
+        val sessionIds = dao.sessionIds(id)
+        dao.deleteWithSessions(id, fallbackId, System.currentTimeMillis())
+        return sessionIds
     }
 
-    suspend fun sessionCount(id: String): Int = dao.sessionCount(id)
+    suspend fun sessionIds(id: String): List<String> = dao.sessionIds(id)
 }

@@ -30,6 +30,12 @@ class AgentMemoryRepositoryFactory(private val context: Context) {
         return candidate.takeIf { it.path.startsWith(base.path + File.separator) }
     }
 
+    fun deleteAgentData(agentId: String) {
+        val safeId = requireSafeId(agentId)
+        repositories.remove(safeId)
+        check(File(root, safeId).deleteRecursively()) { "Failed to delete Agent files" }
+    }
+
     @Synchronized
     private fun migrateLegacyDefaultIfNeeded() {
         if (prefs.getBoolean(KEY_DEFAULT_MEMORY_V1, false)) return

@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, providerRepository: com.openminis.app.data.repository.ProviderRepository, onBack: () -> Unit, onSaved: (String) -> Unit, onSkills: (String) -> Unit, onMemory: (String) -> Unit, onRules: (String) -> Unit) {
+fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, providerRepository: com.openminis.app.data.repository.ProviderRepository, skillRepository: com.openminis.app.data.repository.SkillRepository?, mcpRepository: com.openminis.app.data.repository.MCPRepository?, memoryFactory: com.openminis.app.data.repository.AgentMemoryRepositoryFactory, onBack: () -> Unit, onSaved: (String) -> Unit, onSkills: (String) -> Unit, onMemory: (String) -> Unit, onRules: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val avatarStore = remember { AgentAvatarStore(context.applicationContext) }
@@ -47,7 +47,7 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
     var showAvatarCrop by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(agentId != null) }
     var saving by remember { mutableStateOf(false) }
-    var archiveCount by remember { mutableStateOf<Int?>(null) }
+    var deleteCount by remember { mutableStateOf<Int?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(agentId) {
@@ -200,7 +200,7 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
         ) {
             loadedAgent?.let { agent ->
                 OutlinedButton(
-                    onClick = { scope.launch { archiveCount = withContext(Dispatchers.IO) { agentRepository.sessionCount(agent.id) } } },
+                    onClick = { scope.launch { deleteCount = withContext(Dispatchers.IO) { agentRepository.sessionIds(agent.id).size } } },
                     modifier = Modifier.weight(1f).height(52.dp),
                     shape = MaterialTheme.shapes.medium,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
@@ -238,25 +238,39 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
         )
     }
 
-    archiveCount?.let { count ->
+    deleteCount?.let { count ->
         AlertDialog(
-            onDismissRequest = { archiveCount = null },
-            title = { Text("归档这个 Agent？") },
+            onDismissRequest = { deleteCount = null },
+            title = { Text("删除这个 Agent？") },
             text = {
-                val destination = if (loadedAgent?.isDefault != 0) "新的默认 Agent" else "默认 Agent"
-                Text("该 Agent 的 $count 个话题将迁移到$destination。头像和记忆文件不会立即删除。")
+                Text("该 Agent 及其 $count 个话题、消息、附件、工作区、头像、记忆、技能绑定和专属规则将永久删除，此操作无法撤销。")
             },
-            dismissButton = { TextButton({ archiveCount = null }) { Text("取消") } },
+            dismissButton = { TextButton({ deleteCount = null }) { Text("取消") } },
             confirmButton = {
                 TextButton(onClick = {
                     val id = loadedAgent?.id ?: return@TextButton
-                    archiveCount = null
+                    deleteCount = null
                     scope.launch {
-                        runCatching { withContext(Dispatchers.IO) { agentRepository.archiveAndReassignToDefault(id) } }
-                            .onSuccess { onBack() }
-                            .onFailure { error = it.message ?: "归档失败" }
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                val sessionIds = agentRepository.deleteWithSessions(id)
+                                skillRepository?.clearAgentBindings(id)
+                                sessionIds.forEach { sessionId ->
+                                    skillRepository?.clearSessionOverrides(sessionId)
+                                    mcpRepository?.clearSessionOverrides(sessionId)
+                                    java.io.File(context.filesDir, "minis-sessions/$sessionId").deleteRecursively()
+                                    java.io.File(context.filesDir, "sessions/$sessionId").deleteRecursively()
+                                    com.openminis.app.data.storage.MediaStore(context).deleteSessionMedia(sessionId)
+                                    com.openminis.app.ui.chat.ChatViewModelStore.release(sessionId)
+                                    com.openminis.app.service.SessionBadgeStore.clear(sessionId)
+                                }
+                                com.openminis.app.data.MemoryGlobalPrefs.clearAgent(context, id)
+                                memoryFactory.deleteAgentData(id)
+                            }
+                        }.onSuccess { onBack() }
+                            .onFailure { error = it.message ?: "删除失败" }
                     }
-                }) { Text("归档", color = MaterialTheme.colorScheme.error) }
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
             },
         )
     }

@@ -30,5 +30,4 @@ data class AgentEntity(
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     @ColumnInfo(name = "sort_order") val sortOrder: Int = 0,
     @ColumnInfo(name = "is_default") val isDefault: Int = 0,
-    @ColumnInfo(name = "is_archived") val isArchived: Int = 0,
 )

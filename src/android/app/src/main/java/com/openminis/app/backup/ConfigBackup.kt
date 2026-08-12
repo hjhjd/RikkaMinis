@@ -354,7 +354,7 @@ object ConfigBackup {
         // readers/writers compatible; old backups simply omit it.
         val agents = JSONArray()
         if (agentRepo != null && agentMemoryFactory != null) {
-            for (agent in agentRepo.listAll().filter { it.isArchived == 0 }) {
+            for (agent in agentRepo.listAll()) {
                 val item = JSONObject().apply {
                     put("id", agent.id)
                     put("name", agent.name)

@@ -691,8 +691,7 @@ class ChatViewModel(
     val activeAgent: StateFlow<com.openminis.app.data.db.AgentEntity?> = _activeAgent.asStateFlow()
 
     private suspend fun loadActiveAgent(id: String) {
-        val resolved = agentRepository.get(id)?.takeIf { it.isArchived == 0 }
-            ?: agentRepository.defaultAgent()
+        val resolved = agentRepository.get(id) ?: agentRepository.defaultAgent()
         _activeAgentId.value = resolved.id
         _activeAgent.value = resolved
         if (sessionId.startsWith("__new__")) {
@@ -2743,7 +2742,7 @@ class ChatViewModel(
         viewModelScope.launch {
             activeAgentId.collectLatest { id ->
                 agentRepository.observe(id).collect { updated ->
-                    if (updated != null && updated.isArchived == 0) _activeAgent.value = updated
+                    if (updated != null) _activeAgent.value = updated
                 }
             }
         }

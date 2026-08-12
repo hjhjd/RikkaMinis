@@ -48,4 +48,10 @@ object MemoryGlobalPrefs {
             .putBoolean("$KEY_GLOBAL_ENABLED.$agentId", enabled)
             .apply()
     }
+
+    fun clearAgent(context: Context, agentId: String) {
+        prefs(context).edit()
+            .remove("$KEY_GLOBAL_ENABLED.$agentId")
+            .apply()
+    }
 }
