@@ -2,7 +2,7 @@ package com.openminis.app.ui.chat.vcp
 
 /** Parses VCP's textual protocol without interpreting examples inside code fences. */
 internal object VcpContentParser {
-    private enum class Kind { THOUGHT, THINK, TOOL, TOOL_RESULT, HTML_FENCE, HTML_DOCUMENT, HTML_CONTAINER, IMAGE }
+    private enum class Kind { THOUGHT, THINK, TOOL, TOOL_RESULT, TOOL_SUMMARY, ROLE_DIVIDER, HTML_FENCE, HTML_DOCUMENT, HTML_CONTAINER, IMAGE }
     private data class Start(
         val kind: Kind,
         val start: Int,
@@ -15,6 +15,8 @@ internal object VcpContentParser {
     private val thoughtStart = Regex("^[ \\t]*\\[--- VCP元思考链(?::\\s*([^]]*?))?\\s*---]\\s*$", RegexOption.IGNORE_CASE)
     private val toolStart = Regex("^[ \\t]*<<<\\[TOOL_REQUEST]>>>\\s*$", RegexOption.IGNORE_CASE)
     private val resultStart = Regex("^[ \\t]*\\[\\[VCP调用结果信息汇总:\\s*$", RegexOption.IGNORE_CASE)
+    private val summaryStart = Regex("^[ \\t]*\\[本轮工具调用摘要:]\\s*$", RegexOption.IGNORE_CASE)
+    private val roleDivider = Regex("^[ \\t]*<<<\\[(END_)?ROLE_DIVIDE_(SYSTEM|ASSISTANT|USER)]>>>\\s*$", RegexOption.IGNORE_CASE)
     private val htmlFence = Regex("^[ \\t]*```html[ \\t]*$", RegexOption.IGNORE_CASE)
     private val genericFence = Regex("^[ \\t]*```.*$")
     private val htmlDoc = Regex("^[ \\t]*(?:<!doctype html>|<html(?:\\s|>))", RegexOption.IGNORE_CASE)
@@ -52,14 +54,29 @@ internal object VcpContentParser {
                 content = tail,
                 completion = if (streaming) VcpBlockCompletion.STREAMING else VcpBlockCompletion.STABLE,
             )
-            return if (streaming) VcpStreamParseResult(stable, block) else VcpStreamParseResult(stable + block, null)
+            if (streaming) return VcpStreamParseResult(stable, block)
+            addMarkdown(stable, tail)
+            return VcpStreamParseResult(stable, null)
         }
         return VcpStreamParseResult(stable, null)
     }
 
     private fun addMarkdown(out: MutableList<VcpContentBlock>, text: String) {
-        if (text.isNotEmpty()) out += VcpContentBlock.Markdown(text)
+        if (text.isEmpty()) return
+        // Raw emoticon images are often embedded mid-sentence rather than on
+        // their own line. Split them into native image blocks while preserving
+        // surrounding Markdown order. HTML containers are consumed before this
+        // method, so their internal images never reach this path.
+        var cursor = 0
+        for (match in INLINE_RAW_IMAGE.findAll(text)) {
+            if (match.range.first > cursor) out += VcpContentBlock.Markdown(text.substring(cursor, match.range.first))
+            out += parseImage(match.value, VcpBlockCompletion.STABLE)
+            cursor = match.range.last + 1
+        }
+        if (cursor < text.length) out += VcpContentBlock.Markdown(text.substring(cursor))
     }
+
+    private val INLINE_RAW_IMAGE = Regex("<img\\b[^>]*?/?>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
 
     private fun findStart(text: String, from: Int): Start? {
         var offset = from
@@ -71,6 +88,10 @@ internal object VcpContentParser {
                 thoughtStart.matchEntire(line)?.let { return Start(Kind.THOUGHT, offset, afterLine(text, end), it.groupValues[1].trim().trim('"').ifBlank { "元思考链" }) }
                 toolStart.matchEntire(line)?.let { return Start(Kind.TOOL, offset, afterLine(text, end)) }
                 resultStart.matchEntire(line)?.let { return Start(Kind.TOOL_RESULT, offset, afterLine(text, end)) }
+                summaryStart.matchEntire(line)?.let { return Start(Kind.TOOL_SUMMARY, offset, afterLine(text, end)) }
+                roleDivider.matchEntire(line)?.let {
+                    return Start(Kind.ROLE_DIVIDER, offset, offset, theme = it.groupValues[2].lowercase(), tagName = if (it.groupValues[1].isNotEmpty()) "end" else "start", markerEnd = afterLine(text, end))
+                }
                 htmlFence.matchEntire(line)?.let { return Start(Kind.HTML_FENCE, offset, afterLine(text, end)) }
                 htmlDoc.find(line)?.let { return Start(Kind.HTML_DOCUMENT, offset + it.range.first, offset + it.range.first) }
                 imagePrefix.find(line)?.let {
@@ -138,6 +159,8 @@ internal object VcpContentParser {
             Kind.THOUGHT -> lineEnd(text, start.contentStart, Regex("^[ \\t]*\\[--- 元思考链结束 ---]\\s*$", RegexOption.IGNORE_CASE))
             Kind.TOOL -> lineEnd(text, start.contentStart, Regex("^[ \\t]*<<<\\[END_TOOL_REQUEST]>>>\\s*$", RegexOption.IGNORE_CASE))
             Kind.TOOL_RESULT -> lineEnd(text, start.contentStart, Regex("^[ \\t]*VCP调用结果结束]]\\s*$", RegexOption.IGNORE_CASE))
+            Kind.TOOL_SUMMARY -> lineEnd(text, start.contentStart, Regex("^[ \\t]*\\[本轮工具调用摘要结束]\\s*$", RegexOption.IGNORE_CASE))
+            Kind.ROLE_DIVIDER -> start.start to start.markerEnd
             Kind.HTML_FENCE -> lineEnd(text, start.contentStart, Regex("^[ \\t]*```[ \\t]*$"))
             Kind.THINK -> tagEnd(text, start.contentStart, Regex("</think(?:ing)?>", RegexOption.IGNORE_CASE))
             Kind.HTML_DOCUMENT -> tagEnd(text, start.contentStart, Regex("</html>", RegexOption.IGNORE_CASE))
@@ -239,8 +262,11 @@ internal object VcpContentParser {
     private fun build(start: Start, inner: String, raw: String, completion: VcpBlockCompletion): VcpContentBlock = when (start.kind) {
         Kind.THOUGHT -> VcpContentBlock.Thought(start.theme, inner.trim(), VcpContentBlock.Thought.Source.VCP_META, raw, completion)
         Kind.THINK -> VcpContentBlock.Thought("思维链", inner.trim(), VcpContentBlock.Thought.Source.THINK_TAG, raw, completion)
-        Kind.TOOL -> VcpContentBlock.ToolUse(extractToolName(inner), inner.trim(), raw, completion)
+        Kind.TOOL -> if (isDailyNoteCreate(inner)) parseDiary(inner, raw, completion)
+            else VcpContentBlock.ToolUse(extractToolName(inner), inner.trim(), raw, completion)
         Kind.TOOL_RESULT -> parseToolResult(inner, raw, completion)
+        Kind.TOOL_SUMMARY -> parseToolSummary(inner, raw, completion)
+        Kind.ROLE_DIVIDER -> VcpContentBlock.RoleDivider(start.theme, start.tagName == "end", raw)
         Kind.HTML_FENCE -> VcpContentBlock.HtmlPreview(inner.trimEnd(), VcpContentBlock.HtmlPreview.Source.FENCE, raw, completion)
         Kind.HTML_DOCUMENT -> VcpContentBlock.HtmlPreview(raw, VcpContentBlock.HtmlPreview.Source.DOCUMENT, raw, completion)
         Kind.HTML_CONTAINER -> VcpContentBlock.HtmlPreview(
@@ -265,6 +291,42 @@ internal object VcpContentParser {
             raw = raw,
             completion = completion,
         )
+    }
+
+    private fun isDailyNoteCreate(content: String): Boolean =
+        content.contains("DailyNote", ignoreCase = true) && content.contains("create", ignoreCase = true)
+
+    private fun vcpField(content: String, name: String): String {
+        val escaped = Regex.escape(name)
+        val expanded = Regex("$escaped:\\s*「始(?:ESCAPE|exp)?」([\\s\\S]*?)「末(?:ESCAPE|exp)?」", RegexOption.IGNORE_CASE)
+        return expanded.find(content)?.groupValues?.get(1)?.trim().orEmpty()
+    }
+
+    private fun parseDiary(content: String, raw: String, completion: VcpBlockCompletion) =
+        VcpContentBlock.Diary(
+            maid = vcpField(content, "maid"),
+            date = vcpField(content, "Date"),
+            content = vcpField(content, "Content").ifBlank { "[日记内容解析失败]" },
+            raw = raw,
+            completion = completion,
+        )
+
+    private fun parseToolSummary(content: String, raw: String, completion: VcpBlockCompletion): VcpContentBlock.ToolCallSummary {
+        val items = content.split('；', ';', '。', '\n').mapNotNull { entryRaw ->
+            val entry = entryRaw.trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val status = when {
+                listOf("拒绝", "被拒", "denied", "rejected").any { entry.contains(it, true) } -> "rejected"
+                listOf("失败", "错误", "异常", "error", "failed").any { entry.contains(it, true) } -> "failure"
+                listOf("超时", "timeout").any { entry.contains(it, true) } -> "timeout"
+                listOf("成功", "完成", "success", "succeeded", "ok").any { entry.contains(it, true) } -> "success"
+                listOf("取消", "中止", "cancel").any { entry.contains(it, true) } -> "cancelled"
+                listOf("跳过", "skip").any { entry.contains(it, true) } -> "skipped"
+                else -> "unknown"
+            }
+            val toolName = entry.substringBefore("调用", entry).trim()
+            VcpContentBlock.ToolCallSummary.Item(toolName, status)
+        }
+        return VcpContentBlock.ToolCallSummary(items, raw, completion)
     }
 
     private fun extractToolName(content: String): String =

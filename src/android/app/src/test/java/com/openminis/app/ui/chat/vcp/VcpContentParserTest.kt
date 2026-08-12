@@ -174,4 +174,50 @@ tool_name:「始」Search「末」
         val html = VcpContentParser.parse("<div id=\"vcp-root\"><style>.x{color:red}").blocks.single() as VcpContentBlock.HtmlPreview
         assertEquals(VcpBlockCompletion.INCOMPLETE, html.completion)
     }
+
+    @Test fun parsesInlineRawEmoticonBetweenMarkdown() {
+        val blocks = VcpContentParser.parse("前文<img src=\"http://localhost:6005/a.jpg\" width=\"80\">后文").blocks
+        assertEquals(3, blocks.size)
+        assertTrue(blocks[0] is VcpContentBlock.Markdown)
+        assertTrue(blocks[1] is VcpContentBlock.Image)
+        assertTrue(blocks[2] is VcpContentBlock.Markdown)
+    }
+
+    @Test fun dailyNoteCreateBecomesDiary() {
+        val input = """<<<[TOOL_REQUEST]>>>
+maid:「始」酒狐「末」,
+tool_name:「始」DailyNote「末」,
+command:「始」create「末」,
+Date:「始」2026-08-12「末」,
+Content:「始ESCAPE」日记正文
+第二行「末ESCAPE」
+<<<[END_TOOL_REQUEST]>>>"""
+        val diary = VcpContentParser.parse(input).blocks.single() as VcpContentBlock.Diary
+        assertEquals("酒狐", diary.maid)
+        assertEquals("2026-08-12", diary.date)
+        assertTrue(diary.content.contains("第二行"))
+    }
+
+    @Test fun roleStartAndEndBecomeDividerBlocks() {
+        val input = """<<<[ROLE_DIVIDE_ASSISTANT]>>>
+正文
+<<<[END_ROLE_DIVIDE_ASSISTANT]>>>"""
+        val blocks = VcpContentParser.parse(input).blocks
+        val dividers = blocks.filterIsInstance<VcpContentBlock.RoleDivider>()
+        assertEquals(2, dividers.size)
+        assertEquals("assistant", dividers[0].role)
+        assertFalse(dividers[0].isEnd)
+        assertTrue(dividers[1].isEnd)
+    }
+
+    @Test fun toolCallSummaryBecomesStructuredBlock() {
+        val input = """[本轮工具调用摘要:]
+VSearch 调用成功；Shell 调用失败。
+[本轮工具调用摘要结束]"""
+        val summary = VcpContentParser.parse(input).blocks.single() as VcpContentBlock.ToolCallSummary
+        assertEquals(2, summary.items.size)
+        assertEquals("VSearch", summary.items[0].toolName)
+        assertEquals("success", summary.items[0].status)
+        assertEquals("failure", summary.items[1].status)
+    }
 }

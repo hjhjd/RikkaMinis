@@ -30,6 +30,13 @@ class VcpHtmlSandboxTest {
         assertTrue(document.contains("<body>ok</body>"))
     }
 
+    @Test fun fullscreenDocumentEnablesVerticalScrolling() {
+        val inline = sandboxDocument("<div>content</div>")
+        val fullscreen = sandboxDocument("<div>content</div>", fullscreen = true)
+        assertTrue(inline.contains("overflow:hidden"))
+        assertTrue(fullscreen.contains("overflow-y:auto"))
+    }
+
     @Test fun documentAllowsExternalResources() {
         val document = sandboxDocument("<img src='https://cdn.example/a.png'>")
         assertTrue(document.contains("img-src http: https:"))

@@ -46,6 +46,29 @@ internal sealed interface VcpContentBlock {
         data class Detail(val key: String, val value: String)
     }
 
+    data class RoleDivider(
+        val role: String,
+        val isEnd: Boolean,
+        override val raw: String,
+        override val completion: VcpBlockCompletion = VcpBlockCompletion.STABLE,
+    ) : VcpContentBlock
+
+    data class Diary(
+        val maid: String,
+        val date: String,
+        val content: String,
+        override val raw: String,
+        override val completion: VcpBlockCompletion,
+    ) : VcpContentBlock
+
+    data class ToolCallSummary(
+        val items: List<Item>,
+        override val raw: String,
+        override val completion: VcpBlockCompletion,
+    ) : VcpContentBlock {
+        data class Item(val toolName: String, val status: String)
+    }
+
     data class HtmlPreview(
         val content: String,
         val source: Source,

@@ -243,7 +243,25 @@ main, aside, figure, figcaption
 
 容器内部的 `<img>` 不会被单独拆分，由 HTML WebView自行渲染。
 
-### 4.6 防误判
+普通 Markdown正文中同行出现的原始表情图片也会按顺序拆分：
+
+```text
+Markdown前文 → Image → Markdown后文
+```
+
+因此类似 `文字<img ...>文字` 的 VCP表情包可以使用原生 Coil和图片画廊渲染。
+
+### 4.6 HTML容错扫描
+
+容器边界使用轻量上下文扫描器，不会把以下区域中的 `</div>` 当作外层结束：
+
+```text
+style, script, textarea, title, HTML comment
+```
+
+针对模型高频错误 `</style>` 被写成 `</div>`，仅在CSS以 `}` 收束、后续紧接明显HTML元素等高置信度条件下修复渲染副本；`raw` 原文保持不变。无法可靠修复的短残片保留为 `INCOMPLETE`，只显示源码而不执行空预览。
+
+### 4.7 防误判
 
 解析器已处理：
 
@@ -284,17 +302,75 @@ VcpBlockUI.kt
 
 - 默认折叠；
 - 显示 `VCP-ToolUse`、工具名和接收状态；
-- 参数使用等宽文本；
+- 使用蓝色卡片、浅蓝描边和白色文字；
+- 设置图标以线性匀速持续旋转；
+- 流式接收期间额外显示低强度扩散涟漪，稳定后停止涟漪；
+- 展开参数放入独立深灰色面板，以白色等宽字体显示；
 - 不提供原生工具的 Stop、Retry、Rerun 按钮。
 
 ### 6.2 Tool Result
 
 - 默认折叠；
 - 显示工具名称和执行状态；
+- 成功状态使用绿色轮廓和淡绿色背景；
+- 失败或拒绝使用红色轮廓和淡红背景；
+- 超时使用橙色，未知状态保持中性色；
 - 详情值使用紧凑 Markdown；
 - 支持单项复制；
 - 支持复制全部；
 - 支持 Footer。
+
+### 6.3 Tool Call Summary
+
+识别：
+
+```text
+[本轮工具调用摘要:]
+VSearch 调用成功；Shell 调用失败。
+[本轮工具调用摘要结束]
+```
+
+摘要显示为独立折叠块，并聚合结果颜色：
+
+```text
+失败/拒绝 > 超时 > 全部成功 > 中性
+```
+
+- 全部成功：绿色轮廓；
+- 任意失败或拒绝：红色轮廓；
+- 无失败但存在超时：橙色轮廓；
+- 展开后逐项显示工具名称和状态。
+
+### 6.4 DailyNote / Maid's Diary
+
+`DailyNote + create` 不再显示为普通 Tool Use，而是解析 `maid`、`Date`、`Content` 并直接渲染为非折叠日记卡：
+
+```text
+✒️ Maid's Diary                 日期
+────────────────────────────────────
+Maid: 名称
+
+Markdown 日记正文
+```
+
+视觉参考 VCPMobile 的暖白日记纸、棕色轮廓和墨水笔标签。
+
+### 6.5 Role Divider
+
+识别角色起止标记：
+
+```text
+<<<[ROLE_DIVIDE_ASSISTANT]>>>
+<<<[END_ROLE_DIVIDE_ASSISTANT]>>>
+```
+
+同时支持 `SYSTEM` 和 `USER`，显示为两侧虚线的角色分界：
+
+```text
+- - - 角色分界: Assistant [起始] - - -
+```
+
+System使用橙色、Assistant使用蓝色、User使用绿色，结束标记降低透明度。
 
 VCP 文本状态只用于展示，不覆盖真实原生工具状态。
 
@@ -492,7 +568,15 @@ window resize event
 - 3秒后自动淡出；
 - 再次点击重新显示并计时。
 
-全屏模式保留独立悬浮操作区。
+全屏模式保留独立悬浮操作区，并使用专用可滚动文档：
+
+```css
+overflow-x: hidden;
+overflow-y: auto;
+-webkit-overflow-scrolling: touch;
+```
+
+因此超出一屏的 HTML可以上下滑动查看全部内容；内联模式继续使用 `overflow:hidden`，避免与聊天列表争抢滚动。
 
 ---
 
@@ -767,17 +851,15 @@ WebView顶层导航统一拦截。目前 HTML按钮支持受控消息发送，�
 
 - 图片 URL / data URI自动预览；
 - 全屏查看；
-- 复制全部；
 - 原始内容；
-- 更完整的状态颜色和错误展示。
+- VCP交互工具 Overlay。
+
+当前已支持复制全部以及成功、失败、拒绝、超时的状态配色。
 
 ### P2：其他 VCP Block
 
 按优先级补充：
 
-- Diary；
-- Tool Call Summary；
-- Role Divider；
 - `[[点击按钮:...]]` 独立 Button Block；
 - Style Block（仅作用于对应 HTML，不影响 Compose主界面）；
 - VCP行内 highlight/alert/quoted标记。
@@ -814,8 +896,14 @@ Info
 真机开发验证中已确认：
 
 - VCP思考链可流式显示、折叠和展开；
-- VCP Tool Use / Result可折叠展示；
+- VCP Tool Use / Result可折叠展示，并按调用/结果状态显示蓝、绿、红、橙视觉；
+- Tool Use设置图标匀速旋转，流式期间显示轻微涟漪；
+- Tool Call Summary可折叠并聚合结果轮廓颜色；
+- DailyNote create可直接显示为 Maid's Diary；
+- Role Divide起止标记可显示为角色虚线分界；
+- 正文同行原始表情图片可以原生渲染；
 - 多行最外层 HTML不会被拆成多个控件；
+- style/script/comment内的伪结束标签不会截断外层气泡；
 - HTML稳定后默认直接渲染；
 - 外部和 localhost图片可以加载；
 - 气泡不再使用固定 HTML卡片标题栏；
@@ -823,6 +911,7 @@ Info
 - 长气泡不再受560dp限制裁切；
 - 两个 HTML气泡上下反复滚动时可以复用原 WebView；
 - CSS动画不会在普通离屏返回时重复播放；
+- HTML全屏模式可纵向滚动查看全部内容；
 - HTML按钮可以发送 `[[点击按钮:...]]`；
 - VCP按钮支持运行中排队发送；
 - Debug构建和 VCP单元/集成测试通过。

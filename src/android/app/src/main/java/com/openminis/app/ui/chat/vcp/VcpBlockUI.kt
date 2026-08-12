@@ -13,6 +13,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +23,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.window.Dialog
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -32,6 +35,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +59,9 @@ internal fun VcpBlockView(messageId: String, block: VcpContentBlock, isStreaming
         is VcpContentBlock.Thought -> VcpThoughtBlock(messageId, block)
         is VcpContentBlock.ToolUse -> VcpToolUseBlock(block)
         is VcpContentBlock.ToolResult -> VcpToolResultBlock(block)
+        is VcpContentBlock.RoleDivider -> VcpRoleDivider(block)
+        is VcpContentBlock.Diary -> VcpDiaryBlock(block)
+        is VcpContentBlock.ToolCallSummary -> VcpToolSummaryBlock(block)
         is VcpContentBlock.HtmlPreview -> VcpHtmlPreviewBlock(messageId, block)
         is VcpContentBlock.Image -> VcpImageBlock(block)
     }
@@ -90,9 +97,24 @@ private fun VcpToolUseBlock(block: VcpContentBlock.ToolUse) {
         title = "VCP-ToolUse", subtitle = block.toolName,
         status = if (block.completion == VcpBlockCompletion.STREAMING) "接收中" else null,
         icon = Icons.Default.Settings,
+        blueTool = true,
+        animated = block.completion == VcpBlockCompletion.STREAMING,
     ) {
         SelectionContainer {
-            Text(block.content, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 18.sp)
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Color(0xFF30343B), RoundedCornerShape(8.dp))
+                    .border(1.dp, Color.White.copy(alpha = .10f), RoundedCornerShape(8.dp))
+                    .padding(12.dp),
+            ) {
+                Text(
+                    block.content,
+                    color = Color.White.copy(alpha = .94f),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                )
+            }
         }
     }
 }
@@ -100,7 +122,14 @@ private fun VcpToolUseBlock(block: VcpContentBlock.ToolUse) {
 @Composable
 private fun VcpToolResultBlock(block: VcpContentBlock.ToolResult) {
     val context = LocalContext.current
-    VcpExpandableCard("VCP-ToolResult", block.toolName, block.status.ifBlank { null }, Icons.Default.Assessment) {
+    val resultColor = toolResultColor(block.status)
+    VcpExpandableCard(
+        "VCP-ToolResult",
+        block.toolName,
+        block.status.ifBlank { null },
+        Icons.Default.Assessment,
+        accentColor = resultColor,
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             block.details.forEach { detail ->
                 Column(Modifier.fillMaxWidth()) {
@@ -123,21 +152,164 @@ private fun VcpToolResultBlock(block: VcpContentBlock.ToolResult) {
     }
 }
 
+private fun toolResultColor(status: String): Color? {
+    val normalized = status.lowercase()
+    return when {
+        listOf("success", "succeeded", "成功", "完成", "✅", " ok").any { normalized.contains(it) } -> Color(0xFF2E9D57)
+        listOf("failure", "failed", "error", "rejected", "refused", "失败", "错误", "异常", "拒绝", "❌").any { normalized.contains(it) } -> Color(0xFFD64545)
+        listOf("timeout", "超时", "⏱").any { normalized.contains(it) } -> Color(0xFFE59A23)
+        else -> null
+    }
+}
+
 @Composable
-private fun VcpExpandableCard(title: String, subtitle: String, status: String?, icon: androidx.compose.ui.graphics.vector.ImageVector, content: @Composable () -> Unit) {
+private fun VcpExpandableCard(
+    title: String,
+    subtitle: String,
+    status: String?,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    blueTool: Boolean = false,
+    animated: Boolean = false,
+    accentColor: Color? = null,
+    content: @Composable () -> Unit,
+) {
     var expanded by remember(title, subtitle) { mutableStateOf(false) }
     val shape = RoundedCornerShape(12.dp)
-    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp).border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .25f), shape)) {
-        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-            Column(Modifier.padding(start = 8.dp).weight(1f)) {
-                Text(title, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-                Text(subtitle, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+    val transition = rememberInfiniteTransition(label = "tool-motion")
+    val phase by transition.animateFloat(0f, 1f, infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart), label = "phase")
+    val iconRotation by transition.animateFloat(0f, 360f, infiniteRepeatable(tween(3600, easing = LinearEasing), RepeatMode.Restart), label = "icon-rotation")
+    val bg = when {
+        blueTool -> Color(0xFF1677C8)
+        accentColor != null -> accentColor.copy(alpha = .13f)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .25f)
+    }
+    val fg = when {
+        blueTool -> Color.White
+        accentColor != null -> accentColor
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val cardModifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+        .clip(shape).background(bg, shape)
+        .then(
+            when {
+                blueTool -> Modifier.border(1.dp, Color(0xFF75C9FF).copy(alpha = .75f), shape)
+                accentColor != null -> Modifier.border(1.25.dp, accentColor.copy(alpha = .88f), shape)
+                else -> Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             }
-            status?.let { AssistChip(onClick = {}, label = { Text(it, fontSize = 10.sp) }, modifier = Modifier.height(28.dp)) }
-            Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, Modifier.size(18.dp))
+        )
+        .drawBehind {
+            if (blueTool && animated) {
+                val radius = size.maxDimension * (.25f + phase * .8f)
+                drawCircle(Color.White.copy(alpha = (1f - phase) * .10f), radius, center = Offset(size.width * .18f, size.height * .5f), style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+            }
+        }
+    Column(cardModifier) {
+        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                icon,
+                null,
+                Modifier.size(18.dp).graphicsLayer { rotationZ = if (blueTool) iconRotation else 0f },
+                tint = when {
+                    blueTool -> Color.White
+                    accentColor != null -> accentColor
+                    else -> MaterialTheme.colorScheme.primary
+                },
+            )
+            Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                Text(title, fontSize = 10.sp, color = fg.copy(alpha = .78f), fontWeight = FontWeight.Bold)
+                Text(subtitle, color = fg, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+            }
+            status?.let { Text(it, color = fg.copy(alpha = .86f), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp)) }
+            Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, Modifier.size(18.dp), tint = fg)
         }
         AnimatedVisibility(expanded) { Box(Modifier.fillMaxWidth().padding(12.dp)) { content() } }
+    }
+}
+
+@Composable
+private fun VcpRoleDivider(block: VcpContentBlock.RoleDivider) {
+    val color = when (block.role) {
+        "system" -> Color(0xFFE67E22)
+        "user" -> Color(0xFF2ECC71)
+        else -> Color(0xFF3498DB)
+    }.copy(alpha = if (block.isEnd) .5f else .78f)
+    val role = block.role.replaceFirstChar { it.uppercase() }
+    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        DashedDivider(Modifier.weight(1f), color)
+        Text("角色分界: $role ${if (block.isEnd) "[结束]" else "[起始]"}", Modifier.padding(horizontal = 12.dp), color = color, fontSize = 12.sp)
+        DashedDivider(Modifier.weight(1f), color)
+    }
+}
+
+@Composable
+private fun DashedDivider(modifier: Modifier, color: Color) {
+    androidx.compose.foundation.Canvas(modifier.height(1.dp)) {
+        drawLine(color, Offset.Zero, Offset(size.width, 0f), strokeWidth = 1.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())))
+    }
+}
+
+@Composable
+private fun VcpDiaryBlock(block: VcpContentBlock.Diary) {
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp)
+            .background(Color(0xFFFDF8F2), shape)
+            .border(1.dp, Color(0xFFEADDD0), shape)
+            .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 15.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("✒️", fontSize = 18.sp, modifier = Modifier.padding(end = 8.dp))
+            Text("Maid's Diary", Modifier.weight(1f), color = Color(0xFF6D4C41), fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            if (block.date.isNotBlank()) Text(block.date, color = Color(0xFFA1887F), fontSize = 12.sp)
+        }
+        HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Color(0xFFD7CCC8))
+        if (block.maid.isNotBlank()) {
+            Text("Maid: ${block.maid}", color = Color(0xFF8D6E63), fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+        }
+        MarkdownBlock(block.content, block.completion == VcpBlockCompletion.STREAMING, shardId = null)
+    }
+}
+
+@Composable
+private fun VcpToolSummaryBlock(block: VcpContentBlock.ToolCallSummary) {
+    var expanded by remember(block.hash) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    val outline = when {
+        block.items.any { it.status == "failure" || it.status == "rejected" } -> Color(0xFFD93025)
+        block.items.any { it.status == "timeout" } -> Color(0xFFF9AB00)
+        block.items.isNotEmpty() && block.items.all { it.status == "success" } -> Color(0xFF34A853)
+        else -> MaterialTheme.colorScheme.outline
+    }
+    val background = outline.copy(alpha = .09f)
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            .background(background, shape)
+            .border(1.25.dp, outline.copy(alpha = .82f), shape),
+    ) {
+        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Assessment, null, Modifier.size(18.dp), tint = outline)
+            Text("本轮工具调用摘要", Modifier.padding(start = 8.dp).weight(1f), color = outline, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text("${block.items.size}", color = outline.copy(alpha = .8f), fontSize = 11.sp)
+            Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, Modifier.size(18.dp), tint = outline)
+        }
+        AnimatedVisibility(expanded) {
+            Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                block.items.forEach { item ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val color = when (item.status) {
+                            "success" -> Color(0xFF34A853)
+                            "failure", "rejected" -> Color(0xFFD93025)
+                            "timeout" -> Color(0xFFF9AB00)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        Box(Modifier.size(7.dp).background(color, androidx.compose.foundation.shape.CircleShape))
+                        Text(item.toolName, Modifier.padding(start = 8.dp).weight(1f), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                        Text(item.status, color = color, fontSize = 11.sp)
+                    }
+                }
+                if (block.items.isEmpty()) Text(block.raw, fontSize = 12.sp)
+            }
+        }
     }
 }
 
@@ -217,6 +389,7 @@ private fun VcpHtmlPreviewBlock(messageId: String, block: VcpContentBlock.HtmlPr
                 content = block.content,
                 modifier = if (isFullscreen) modifier else modifier.height(rootHeightDp.dp),
                 onInteraction = { revealControls() },
+                fullscreen = isFullscreen,
             )
         } else {
             Box(
@@ -310,8 +483,9 @@ private fun SandboxedHtml(
     content: String,
     modifier: Modifier,
     onInteraction: () -> Unit = {},
+    fullscreen: Boolean = false,
 ) {
-    val document = remember(content) { sandboxDocument(content) }
+    val document = remember(content, fullscreen) { sandboxDocument(content, fullscreen) }
     val currentInteraction by rememberUpdatedState(onInteraction)
     val buttonHandler = LocalVcpHtmlButtonHandler.current
     val currentButtonHandler by rememberUpdatedState(buttonHandler)
@@ -381,13 +555,14 @@ private fun SandboxedHtml(
     )
 }
 
-internal fun sandboxDocument(content: String): String {
+internal fun sandboxDocument(content: String, fullscreen: Boolean = false): String {
     // Android System WebView versions differ substantially in their handling
     // of CSP-governed srcdoc iframes. Load the generated document directly in
     // this dedicated, bridge-free WebView instead. The WebView itself is the
     // isolation boundary: file/content access and storage are disabled, there
     // is no addJavascriptInterface, and every top-level navigation is blocked.
-    val head = """<meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self' http: https: data: blob:; img-src http: https: data: blob:; style-src 'unsafe-inline' http: https:; font-src http: https: data:; script-src 'unsafe-inline' 'self' http: https:; media-src http: https: data: blob:; connect-src http: https: ws: wss:; frame-src 'self' http: https: data: blob:; form-action 'none'; base-uri 'none'"><style>html,body{box-sizing:border-box;min-height:100%;margin:0;padding:0;background:transparent;overflow:hidden}*,*:before,*:after{box-sizing:inherit}img,video,canvas,svg,iframe{max-width:100%}</style>"""
+    val overflow = if (fullscreen) "overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch" else "overflow:hidden"
+    val head = """<meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self' http: https: data: blob:; img-src http: https: data: blob:; style-src 'unsafe-inline' http: https:; font-src http: https: data:; script-src 'unsafe-inline' 'self' http: https:; media-src http: https: data: blob:; connect-src http: https: ws: wss:; frame-src 'self' http: https: data: blob:; form-action 'none'; base-uri 'none'"><style>html,body{box-sizing:border-box;min-height:100%;margin:0;padding:0;background:transparent;$overflow}*,*:before,*:after{box-sizing:inherit}img,video,canvas,svg,iframe{max-width:100%}</style>"""
     val headMatch = Regex("<head\\b[^>]*>", RegexOption.IGNORE_CASE).find(content)
     if (headMatch != null) {
         val at = headMatch.range.last + 1
