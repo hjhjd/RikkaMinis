@@ -13,6 +13,7 @@ import com.openminis.app.data.model.LLMUsage
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.ImageBudget
 import com.openminis.app.provider.LLMProvider
+import com.openminis.app.provider.LLMRequestContext
 import com.openminis.app.provider.applyUserAgentOverride
 import com.openminis.app.provider.safeOptString
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,10 @@ class AnthropicProvider(
     private val customUserAgent: String? = null,
 ) : LLMProvider {
     override val name = "Anthropic"
+    private val activeCall = java.util.concurrent.atomic.AtomicReference<okhttp3.Call?>(null)
+    override fun cancelActiveRequest() {
+        try { activeCall.getAndSet(null)?.cancel() } catch (_: Exception) {}
+    }
     override val defaultMaxOutputTokens: Int get() = 64_000
 
     /**
@@ -111,6 +116,7 @@ class AnthropicProvider(
         imageParts: List<LLMMessage.ImagePart>,
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
+        requestContext: LLMRequestContext,
     ): Flow<LLMStreamChunk> = rawStreamMessage(
         messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel,
     ).failOnSilentEmptyCompletion(name)
@@ -140,7 +146,13 @@ class AnthropicProvider(
             headerMap[name] = request.headers[name] ?: ""
         }
 
-        val response = client.newCall(request).execute()
+        val call = client.newCall(request)
+        activeCall.set(call)
+        channel.invokeOnClose {
+            activeCall.compareAndSet(call, null)
+            try { call.cancel() } catch (_: Exception) {}
+        }
+        val response = call.execute()
         val durationMs = System.currentTimeMillis() - startTime
 
         if (!response.isSuccessful) {
@@ -268,7 +280,6 @@ class AnthropicProvider(
             response.close()
         }
         channel.close()
-        awaitClose()
     }
 
     /**

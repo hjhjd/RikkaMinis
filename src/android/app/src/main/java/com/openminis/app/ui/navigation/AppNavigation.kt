@@ -783,6 +783,7 @@ fun AppNavigation(
             ProviderConnectionScreen(
                 instanceId = cInstanceId,
                 providerRepository = providerRepository,
+                agentRepository = agentRepository,
                 onBack = { navController.safePopBackStack() },
             )
         }

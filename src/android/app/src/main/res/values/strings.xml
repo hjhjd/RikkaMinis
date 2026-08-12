@@ -1608,4 +1608,10 @@
     <string name="backup_snapshot_restore_confirm_text">The current configuration is replaced by the snapshot from %1$s. A new snapshot of the current config is saved first.</string>
     <string name="backup_snapshot_restore">Restore</string>
     <string name="backup_done_fatal">Restore failed mid-way — the configuration is only partially restored. Roll back from a snapshot.</string>
+    <string name="provider_vcp_cascade_stop_title">VCPToolBox Cascade Stop</string>
+    <string name="provider_vcp_cascade_stop_description">When stopping generation, also ask VCPToolBox to terminate server-side upstream requests and tool chains.</string>
+    <string name="provider_vcp_cascade_stop_footer">Only for VCPToolBox servers supporting the /v1/interrupt protocol.</string>
+    <string name="provider_vcp_scope_all">All Agents</string>
+    <string name="provider_vcp_scope_selected">Selected Agents</string>
+    <string name="provider_vcp_scope_empty">No Agent is authorized; conversations will use the default stop behavior.</string>
 </resources>

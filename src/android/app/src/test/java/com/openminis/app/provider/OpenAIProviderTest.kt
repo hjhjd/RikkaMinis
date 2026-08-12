@@ -5,8 +5,12 @@ import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.provider.openai.OpenAIProvider
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONObject
@@ -16,6 +20,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.TimeUnit
 
 class OpenAIProviderTest {
     private lateinit var server: MockWebServer
@@ -35,6 +40,57 @@ class OpenAIProviderTest {
     @After
     fun tearDown() {
         server.shutdown()
+    }
+
+    @Test
+    fun `VCPToolBox 中断地址保留反向代理前缀`() {
+        val actual = provider.vcpInterruptUrl(
+            "https://example.com/api/v1/chat/completions".toHttpUrl(),
+        )
+        assertEquals("https://example.com/api/v1/interrupt", actual.toString())
+    }
+
+    @Test
+    fun `非 Chat Completions 地址不生成中断地址`() {
+        val actual = provider.vcpInterruptUrl(
+            "https://example.com/v1/responses".toHttpUrl(),
+        )
+        assertNull(actual)
+    }
+
+    @Test
+    fun `授权 Agent 取消时向 VCPToolBox 发送中断`() = runBlocking {
+        val cascadeProvider = OpenAIProvider(
+            apiKey = "test-key",
+            model = LLMModel.gpt4oMini,
+            basePath = server.url("/v1").toString().trimEnd('/'),
+            vcpCascadeStopEnabled = true,
+            vcpCascadeStopAllAgents = false,
+            vcpCascadeStopAgentIds = setOf("allowed"),
+        )
+        server.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.NO_RESPONSE))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{\"status\":\"success\"}"))
+
+        val job = launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                cascadeProvider.streamMessage(
+                    messages = listOf(LLMMessage(LLMMessage.Role.USER, "hello")),
+                    systemPrompt = null,
+                    maxTokens = 32,
+                    requestContext = LLMRequestContext(agentId = "allowed"),
+                ).collect()
+            }
+        }
+        val chat = server.takeRequest(2, TimeUnit.SECONDS)!!
+        cascadeProvider.cancelActiveRequest()
+        job.cancelAndJoin()
+        val interrupt = server.takeRequest(2, TimeUnit.SECONDS)!!
+
+        assertEquals("/v1/chat/completions", chat.path)
+        val requestId = JSONObject(chat.body.readUtf8()).getString("requestId")
+        assertEquals("/v1/interrupt", interrupt.path)
+        assertEquals(requestId, JSONObject(interrupt.body.readUtf8()).getString("requestId"))
+        assertEquals("Bearer test-key", interrupt.getHeader("Authorization"))
     }
 
     /**

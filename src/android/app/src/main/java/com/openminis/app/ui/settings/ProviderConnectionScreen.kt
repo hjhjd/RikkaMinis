@@ -10,6 +10,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -29,6 +30,8 @@ import kotlinx.coroutines.withContext
 
 import com.openminis.app.R
 import com.openminis.app.data.model.ImageEndpointMode
+import com.openminis.app.data.model.CascadeStopScope
+import com.openminis.app.data.repository.AgentRepository
 import com.openminis.app.data.model.ProviderCredential
 import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.repository.ProviderRepository
@@ -48,6 +51,7 @@ private const val TAG = "ProviderConnection"
 fun ProviderConnectionScreen(
     instanceId: String,
     providerRepository: ProviderRepository,
+    agentRepository: AgentRepository,
     onBack: () -> Unit,
 ) {
     val config by providerRepository.config.collectAsState()
@@ -69,6 +73,7 @@ fun ProviderConnectionScreen(
 
     var customBaseURL by rememberSaveable { mutableStateOf(instance.customBaseURL ?: "") }
     var customUserAgent by rememberSaveable { mutableStateOf(instance.customUserAgent ?: "") }
+    val agents by agentRepository.observeAll().collectAsState(initial = emptyList())
 
     fun saveBaseURLSettings() {
         // /v1 is appended automatically for all non-Gemini providers (Gemini
@@ -235,6 +240,72 @@ fun ProviderConnectionScreen(
                             },
                             shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
                         ) { Text(stringResource(R.string.provider_detail_responses_api)) }
+                    }
+                }
+            }
+        }
+
+        // ─── VCPToolBox cascade stop (custom OpenAI Chat Completions) ─
+        if (instance.providerType == ProviderType.openAI &&
+            instance.credentialType != ProviderCredential.oauth &&
+            instance.customBaseURL != null &&
+            !instance.useResponsesAPI &&
+            !instance.azureMode
+        ) {
+            SettingsSection(
+                header = stringResource(R.string.provider_vcp_cascade_stop_title),
+                footer = stringResource(R.string.provider_vcp_cascade_stop_footer),
+            ) {
+                SettingsSwitchRow(
+                    title = stringResource(R.string.provider_vcp_cascade_stop_title),
+                    subtitle = stringResource(R.string.provider_vcp_cascade_stop_description),
+                    checked = instance.vcpCascadeStopEnabled,
+                    onCheckedChange = { enabled ->
+                        providerRepository.updateInstance(instance.copy(vcpCascadeStopEnabled = enabled))
+                    },
+                    showDivider = instance.vcpCascadeStopEnabled,
+                )
+                if (instance.vcpCascadeStopEnabled) {
+                    SingleChoiceSegmentedButtonRow(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        CascadeStopScope.entries.forEachIndexed { index, scope ->
+                            SegmentedButton(
+                                selected = instance.vcpCascadeStopScope == scope,
+                                onClick = { providerRepository.updateInstance(instance.copy(vcpCascadeStopScope = scope)) },
+                                shape = SegmentedButtonDefaults.itemShape(index, CascadeStopScope.entries.size),
+                            ) {
+                                Text(stringResource(if (scope == CascadeStopScope.allAgents) R.string.provider_vcp_scope_all else R.string.provider_vcp_scope_selected))
+                            }
+                        }
+                    }
+                    if (instance.vcpCascadeStopScope == CascadeStopScope.selectedAgents) {
+                        agents.forEach { agent ->
+                            val selected = agent.id in instance.vcpCascadeStopAgentIds
+                            SettingsRow(
+                                title = agent.name,
+                                showChevron = false,
+                                trailing = {
+                                    Checkbox(
+                                        checked = selected,
+                                        onCheckedChange = null,
+                                    )
+                                },
+                                onClick = {
+                                    val ids = instance.vcpCascadeStopAgentIds.toMutableSet()
+                                    if (selected) ids.remove(agent.id) else ids.add(agent.id)
+                                    providerRepository.updateInstance(instance.copy(vcpCascadeStopAgentIds = ids))
+                                },
+                            )
+                        }
+                        if (instance.vcpCascadeStopAgentIds.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.provider_vcp_scope_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
                     }
                 }
             }

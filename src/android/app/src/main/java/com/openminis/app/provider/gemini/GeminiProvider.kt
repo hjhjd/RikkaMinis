@@ -13,6 +13,7 @@ import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.LLMUsage
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.LLMProvider
+import com.openminis.app.provider.LLMRequestContext
 import com.openminis.app.provider.safeOptString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -37,6 +38,10 @@ class GeminiProvider(
     private val basePath: String = "https://generativelanguage.googleapis.com/v1beta",
 ) : LLMProvider {
     override val name = "Google"
+    private val activeCall = java.util.concurrent.atomic.AtomicReference<okhttp3.Call?>(null)
+    override fun cancelActiveRequest() {
+        try { activeCall.getAndSet(null)?.cancel() } catch (_: Exception) {}
+    }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -90,6 +95,7 @@ class GeminiProvider(
         imageParts: List<LLMMessage.ImagePart>,
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
+        requestContext: LLMRequestContext,
     ): Flow<LLMStreamChunk> = rawStreamMessage(
         messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel,
     ).failOnSilentEmptyCompletion(name)
@@ -113,7 +119,13 @@ class GeminiProvider(
             .applyUserAgentOverride(null)
             .build()
 
-        val response = client.newCall(request).execute()
+        val call = client.newCall(request)
+        activeCall.set(call)
+        channel.invokeOnClose {
+            activeCall.compareAndSet(call, null)
+            try { call.cancel() } catch (_: Exception) {}
+        }
+        val response = call.execute()
         if (!response.isSuccessful) {
             val errorBody = response.body?.string() ?: ""
             response.close()
@@ -170,7 +182,6 @@ class GeminiProvider(
             response.close()
         }
         channel.close()
-        awaitClose()
     }
 
     private fun buildRequestBody(

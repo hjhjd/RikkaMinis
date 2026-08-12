@@ -1,5 +1,6 @@
 package com.openminis.app.data.db
 
+import com.openminis.app.data.model.CascadeStopScope
 import com.openminis.app.data.model.FallbackStrategy
 import com.openminis.app.data.model.ImageEndpointMode
 import com.openminis.app.data.model.LLMModel
@@ -84,6 +85,13 @@ fun ProviderConfig.toSnapshot(
             appendV1Suffix = if (inst.appendV1Suffix) 1 else 0,
             useResponsesAPI = if (inst.useResponsesAPI) 1 else 0,
             azureMode = if (inst.azureMode) 1 else 0,
+            vcpCascadeStopEnabled = if (inst.vcpCascadeStopEnabled) 1 else 0,
+            vcpCascadeStopScope = inst.vcpCascadeStopScope.name,
+            vcpCascadeStopAgentIdsJson = if (inst.vcpCascadeStopAgentIds.isEmpty()) null
+                else jsonForBlobs.encodeToString(
+                    ListSerializer(String.serializer()),
+                    inst.vcpCascadeStopAgentIds.sorted(),
+                ),
             // [GH#68] Persist the picker choice + probe cache; auto is stored
             // explicitly (not null) so a legit "auto" survives round-trips too.
             imageEndpointMode = inst.imageEndpointMode.name,
@@ -207,6 +215,18 @@ fun ProviderConfigSnapshot.toProviderConfig(jsonForBlobs: Json): ProviderConfig 
             customUserAgent = row.customUserAgent,
             useResponsesAPI = row.useResponsesAPI != 0,
             azureMode = row.azureMode != 0,
+            vcpCascadeStopEnabled = row.vcpCascadeStopEnabled != 0,
+            vcpCascadeStopScope = runCatching {
+                CascadeStopScope.valueOf(row.vcpCascadeStopScope)
+            }.getOrDefault(CascadeStopScope.allAgents),
+            vcpCascadeStopAgentIds = row.vcpCascadeStopAgentIdsJson?.let { raw ->
+                runCatching {
+                    jsonForBlobs.decodeFromString(
+                        ListSerializer(String.serializer()),
+                        raw,
+                    ).toSet()
+                }.getOrDefault(emptySet())
+            } ?: emptySet(),
             // [GH#68] Safe parse: null (pre-migration rows) or an unknown
             // name from a future build falls back to auto / no cache rather
             // than throwing and wiping the whole provider load.

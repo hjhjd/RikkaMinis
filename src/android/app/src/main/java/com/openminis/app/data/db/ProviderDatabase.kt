@@ -35,7 +35,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProviderAgentLoopIdEntity::class,
         ProviderConfigMetaEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class ProviderDatabase : RoomDatabase() {
@@ -104,6 +104,15 @@ abstract class ProviderDatabase : RoomDatabase() {
             }
         }
 
+        /** Persist VCPToolBox cascade-stop enablement and per-Agent scope. */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE provider_instances ADD COLUMN vcp_cascade_stop_enabled INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE provider_instances ADD COLUMN vcp_cascade_stop_scope TEXT NOT NULL DEFAULT 'allAgents'")
+                db.execSQL("ALTER TABLE provider_instances ADD COLUMN vcp_cascade_stop_agent_ids TEXT")
+            }
+        }
+
         fun getInstance(context: Context): ProviderDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -111,7 +120,7 @@ abstract class ProviderDatabase : RoomDatabase() {
                     ProviderDatabase::class.java,
                     "provider.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { INSTANCE = it }
             }

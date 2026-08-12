@@ -173,6 +173,12 @@ data class ModelGroup(
 const val DEFAULT_GROUP_CONTEXT_LIMIT_TOKENS: Int = 128_000
 
 @Serializable
+enum class CascadeStopScope {
+    allAgents,
+    selectedAgents,
+}
+
+@Serializable
 @Stable
 data class ProviderInstance(
     val id: String,
@@ -215,6 +221,11 @@ data class ProviderInstance(
     // so existing OpenAI instances are completely unaffected. Field name
     // matches iOS for cross-platform export/import interop.
     var azureMode: Boolean = false,
+    // VCPToolBox-specific request interrupt protocol. Disabled by default so
+    // ordinary OpenAI-compatible servers never receive non-standard fields.
+    var vcpCascadeStopEnabled: Boolean = false,
+    var vcpCascadeStopScope: CascadeStopScope = CascadeStopScope.allAgents,
+    var vcpCascadeStopAgentIds: Set<String> = emptySet(),
     // [P0-pinned-providers] User "favorite" flag. Pinned instances are
     // rendered in a dedicated "常用/Favorites" section at the very top of
     // the provider list, separate from their providerType group, so the

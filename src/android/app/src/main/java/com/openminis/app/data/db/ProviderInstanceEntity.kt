@@ -23,6 +23,10 @@ data class ProviderInstanceEntity(
     // MIGRATION_1_2's ALTER TABLE backfills existing rows to off, matching the
     // entity default and the JSON model's `azureMode = false`.
     @ColumnInfo(name = "azure_mode") val azureMode: Int = 0,
+    @ColumnInfo(name = "vcp_cascade_stop_enabled") val vcpCascadeStopEnabled: Int = 0,
+    @ColumnInfo(name = "vcp_cascade_stop_scope") val vcpCascadeStopScope: String = "allAgents",
+    // JSON array of stable Agent ids; null/empty means no selected Agent.
+    @ColumnInfo(name = "vcp_cascade_stop_agent_ids") val vcpCascadeStopAgentIdsJson: String? = null,
     // [GH#68 T-android-image-endpoint-persist] Kotlin enum .name of
     // ImageEndpointMode ("auto"/"imagesGenerations"/"chatCompletions"). These
     // two were on the JSON model but never given Room columns, so every save

@@ -6847,6 +6847,9 @@ class ChatViewModel(
                         tarvenRequest.systemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
                         tools = agentTools,
                         thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
+                        requestContext = com.openminis.app.provider.LLMRequestContext(
+                            agentId = _activeAgentId.value,
+                        ),
                     ).collect { chunk ->
                 when (chunk) {
                     is LLMStreamChunk.ThinkingDelta -> {
@@ -10001,6 +10004,11 @@ class ChatViewModel(
 
     fun cancelStream() {
         AppLogger.info(TAG_STREAM, "cancelStream invoked _isStreaming=false (sid=$activeSessionId)")
+        // Synchronous OkHttp execute()/readLine() cannot observe coroutine
+        // cancellation until the socket is torn down. Cancel the currently
+        // selected (including fallback) provider first; VCPToolBox providers
+        // also dispatch their best-effort /interrupt here.
+        currentProvider?.cancelActiveRequest()
         streamJob?.cancel()
         _isStreaming.value = false
         // T-streaming-side-channel: flush any in-flight delta back into the

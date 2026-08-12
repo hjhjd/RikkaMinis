@@ -88,6 +88,9 @@ object ProviderFactory {
                         // azureUrl() can preserve the ?api-version query.
                         isAzure = instance.azureMode,
                         azureBase = instance.customBaseURL,
+                        vcpCascadeStopEnabled = instance.vcpCascadeStopEnabled && basePath != null,
+                        vcpCascadeStopAllAgents = instance.vcpCascadeStopScope == com.openminis.app.data.model.CascadeStopScope.allAgents,
+                        vcpCascadeStopAgentIds = instance.vcpCascadeStopAgentIds,
                     )
                 }
             }

@@ -12,6 +12,7 @@ import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.LLMUsage
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.LLMProvider
+import com.openminis.app.provider.LLMRequestContext
 import com.openminis.app.provider.applyUserAgentOverride
 import com.openminis.app.provider.safeOptString
 import kotlinx.coroutines.CancellationException
@@ -87,8 +88,31 @@ class OpenAIProvider private constructor(
      * which is wrong for Azure's deployments-path routing.
      */
     private val azureBase: String? = null,
+    /** VCPToolBox /v1/interrupt extension; valid only for custom Chat Completions. */
+    private val vcpCascadeStopEnabled: Boolean = false,
+    private val vcpCascadeStopAllAgents: Boolean = true,
+    private val vcpCascadeStopAgentIds: Set<String> = emptySet(),
 ) : LLMProvider {
     override val name = "OpenAI"
+
+    private data class ActiveStreamRequest(
+        val call: Call,
+        val chatRequest: Request,
+        val cascadeRequestId: String?,
+        val cascadeDispatched: java.util.concurrent.atomic.AtomicBoolean,
+    )
+
+    private val activeStreamRequest = java.util.concurrent.atomic.AtomicReference<ActiveStreamRequest?>(null)
+
+    override fun cancelActiveRequest() {
+        val active = activeStreamRequest.getAndSet(null) ?: return
+        active.cascadeRequestId?.let { id ->
+            if (active.cascadeDispatched.compareAndSet(false, true)) {
+                dispatchVcpInterrupt(active.chatRequest, id)
+            }
+        }
+        try { active.call.cancel() } catch (_: Exception) {}
+    }
 
     /** API Key constructor (Chat Completions API by default; set useResponsesAPI=true for /v1/responses). */
     constructor(
@@ -100,6 +124,9 @@ class OpenAIProvider private constructor(
         customUserAgent: String? = null,
         isAzure: Boolean = false,
         azureBase: String? = null,
+        vcpCascadeStopEnabled: Boolean = false,
+        vcpCascadeStopAllAgents: Boolean = true,
+        vcpCascadeStopAgentIds: Set<String> = emptySet(),
     ) : this(
         apiKey = apiKey,
         oauthTokenProvider = null,
@@ -110,6 +137,9 @@ class OpenAIProvider private constructor(
         customUserAgent = customUserAgent,
         isAzure = isAzure,
         azureBase = azureBase,
+        vcpCascadeStopEnabled = vcpCascadeStopEnabled,
+        vcpCascadeStopAllAgents = vcpCascadeStopAllAgents,
+        vcpCascadeStopAgentIds = vcpCascadeStopAgentIds,
     )
 
     /** OAuth constructor (Codex Responses API). */
@@ -469,8 +499,9 @@ class OpenAIProvider private constructor(
         imageParts: List<LLMMessage.ImagePart>,
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
+        requestContext: LLMRequestContext,
     ): Flow<LLMStreamChunk> = rawStreamMessage(
-        messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel,
+        messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel, requestContext,
     ).failOnSilentEmptyCompletion(name)
 
     private fun rawStreamMessage(
@@ -481,7 +512,13 @@ class OpenAIProvider private constructor(
         imageParts: List<LLMMessage.ImagePart>,
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
+        requestContext: LLMRequestContext,
     ): Flow<LLMStreamChunk> = callbackFlow {
+        val cascadeEnabledForRequest = vcpCascadeStopEnabled &&
+            requestContext.agentId != null &&
+            (vcpCascadeStopAllAgents || requestContext.agentId in vcpCascadeStopAgentIds) &&
+            usesChatCompletionsAPI && !isAzure && !isOAuth
+        val cascadeRequestId = if (cascadeEnabledForRequest) "minis-${java.util.UUID.randomUUID()}" else null
         val body = if (isCodexImageModel) {
             // [T-gpt-image2-codex-backend-route-android] gpt-image-2 on an
             // OpenAI OAuth (Codex) instance is driven through the Codex backend
@@ -511,6 +548,7 @@ class OpenAIProvider private constructor(
         } else {
             buildResponsesAPIBody(messages, systemPrompt, maxTokens, stream = true, tools = tools, thinkingLevel = thinkingLevel)
         }
+        cascadeRequestId?.let { body.put("requestId", it) }
         // T302: serialize the request body exactly once. Pre-T302 we called
         // body.toString() three times per request (debug log + OAuth byte
         // build + non-OAuth RequestBody), each materialising a fresh 30+ MB
@@ -552,6 +590,20 @@ class OpenAIProvider private constructor(
         }
 
         val call = client.newCall(request)
+        val cascadeDispatched = java.util.concurrent.atomic.AtomicBoolean(false)
+        val activeRequest = ActiveStreamRequest(call, request, cascadeRequestId, cascadeDispatched)
+        activeStreamRequest.set(activeRequest)
+        // Register before execute()/readLine(): both are blocking OkHttp calls.
+        // Flow cancellation closes the producer channel from another thread,
+        // so this hook can tear down the socket immediately and notify
+        // VCPToolBox even while the producer is blocked in native I/O.
+        channel.invokeOnClose { cause ->
+            activeStreamRequest.compareAndSet(activeRequest, null)
+            if (cause != null && cascadeRequestId != null && cascadeDispatched.compareAndSet(false, true)) {
+                dispatchVcpInterrupt(request, cascadeRequestId)
+            }
+            try { call.cancel() } catch (_: Exception) {}
+        }
         // [T-android-stale-conn-retry-hang] Time-to-first-byte watchdog. A
         // request written into a dead pooled h2 tunnel (local proxy socket
         // survives a network flap) produces NO further events — no headers,
@@ -660,10 +712,6 @@ class OpenAIProvider private constructor(
                 response.close()
             }
             channel.close()
-            awaitClose {
-                try { call.cancel() } catch (_: Exception) {}
-                try { response.close() } catch (_: Exception) {}
-            }
             return@callbackFlow
         }
 
@@ -1141,15 +1189,48 @@ class OpenAIProvider private constructor(
             response.close()
         }
         channel.close()
-        // T171: when the coroutine is cancelled (user tapped stop), the
-        // reader loop above is suspended inside the OkHttp source — only
-        // call.cancel() will tear the socket down promptly. response.close()
-        // is also explicit so connection-pool leaks are impossible if cancel
-        // races with the finally block.
-        awaitClose {
-            try { call.cancel() } catch (_: Exception) {}
-            try { response.close() } catch (_: Exception) {}
-        }
+    }
+
+    /**
+     * Best-effort VCPToolBox cascade stop. The interrupt call is deliberately
+     * asynchronous and uses a short-timeout client, so local cancellation is
+     * never held hostage by a missing or incompatible server endpoint.
+     */
+    private fun dispatchVcpInterrupt(chatRequest: Request, requestId: String) {
+        val interruptUrl = vcpInterruptUrl(chatRequest.url) ?: return
+        val body = JSONObject().put("requestId", requestId).toString()
+            .toRequestBody("application/json".toMediaType())
+        val builder = Request.Builder().url(interruptUrl).post(body)
+        chatRequest.header("Authorization")?.let { builder.header("Authorization", it) }
+        chatRequest.header("User-Agent")?.let { builder.header("User-Agent", it) }
+        val interruptClient = client.newBuilder()
+            .connectTimeout(2, TimeUnit.SECONDS)
+            .writeTimeout(2, TimeUnit.SECONDS)
+            .readTimeout(3, TimeUnit.SECONDS)
+            .callTimeout(3, TimeUnit.SECONDS)
+            .build()
+        interruptClient.newCall(builder.build()).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                com.openminis.app.logging.AppLogger.warning("OpenAIProvider", "VCPToolBox interrupt failed: ${e.message}")
+            }
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    if (it.code != 200 && it.code != 404) {
+                        com.openminis.app.logging.AppLogger.warning("OpenAIProvider", "VCPToolBox interrupt returned HTTP ${it.code}")
+                    }
+                }
+            }
+        })
+    }
+
+    internal fun vcpInterruptUrl(chatUrl: HttpUrl): HttpUrl? {
+        val parts = chatUrl.pathSegments
+        if (parts.size < 2 || parts.takeLast(2) != listOf("chat", "completions")) return null
+        return chatUrl.newBuilder()
+            .removePathSegment(parts.lastIndex)
+            .removePathSegment(parts.lastIndex - 1)
+            .addPathSegment("interrupt")
+            .build()
     }
 
     // MARK: - Raw Passthrough [T-android-model-use-passthrough-mode]

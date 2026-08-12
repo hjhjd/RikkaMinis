@@ -10,6 +10,10 @@ import com.openminis.app.data.model.ThinkingLevel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
+data class LLMRequestContext(
+    val agentId: String? = null,
+)
+
 interface LLMProvider {
     val name: String
     var model: LLMModel
@@ -40,6 +44,9 @@ interface LLMProvider {
      * semantic block order.
      */
     val streamTextIsMonolithic: Boolean get() = false
+
+    /** Immediately tears down the provider's active streaming HTTP request. */
+    fun cancelActiveRequest() = Unit
 
     /**
      * [T-android-thinking-level-arch] PUBLIC entry — this is what every caller
@@ -73,9 +80,10 @@ interface LLMProvider {
         imageParts: List<LLMMessage.ImagePart> = emptyList(),
         tools: List<AgentToolDefinition> = emptyList(),
         thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
+        requestContext: LLMRequestContext = LLMRequestContext(),
     ): Flow<LLMStreamChunk> = streamMessageClamped(
         messages, systemPrompt, maxTokens, temperature, imageParts, tools,
-        clampThinkingLevel(thinkingLevel),
+        clampThinkingLevel(thinkingLevel), requestContext,
     )
 
     /**
@@ -103,6 +111,7 @@ interface LLMProvider {
         imageParts: List<LLMMessage.ImagePart>,
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
+        requestContext: LLMRequestContext,
     ): Flow<LLMStreamChunk>
 
     /**
