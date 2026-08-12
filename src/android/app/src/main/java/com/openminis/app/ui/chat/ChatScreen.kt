@@ -2351,12 +2351,13 @@ fun ChatScreen(
                         viewModel.promoteDraftIfNeeded()
                         onNewChat(viewModel.activeAgentId.value)
                     }) {
+                        val newChatColor = MaterialTheme.colorScheme.onSurfaceVariant
                         Box(
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(20.dp)
                                 .border(
-                                    width = 1.25.dp,
-                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                    width = 2.dp,
+                                    color = newChatColor,
                                     shape = CircleShape,
                                 )
                                 .clearAndSetSemantics {
@@ -2366,9 +2367,9 @@ fun ChatScreen(
                         ) {
                             Text(
                                 text = "+",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 25.sp,
-                                lineHeight = 25.sp,
+                                color = newChatColor,
+                                fontSize = 18.sp,
+                                lineHeight = 18.sp,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
