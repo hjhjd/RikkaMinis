@@ -2322,19 +2322,31 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        historyDrawerScope.launch {
-                            if (historyDrawerState.isOpen) historyDrawerState.close()
-                            keyboardController?.hide()
-                            focusManager.clearFocus()
-                            eventDrawerVisible = true
+                    Row(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .height(40.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(
+                            onClick = {
+                                historyDrawerScope.launch {
+                                    if (historyDrawerState.isOpen) historyDrawerState.close()
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                    eventDrawerVisible = true
+                                }
+                            },
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Icon(
+                                Icons.Outlined.NotificationsNone,
+                                contentDescription = stringResource(R.string.chat_event_drawer_open),
+                                modifier = Modifier.size(21.dp),
+                            )
                         }
-                    }) {
-                        Icon(
-                            Icons.Outlined.NotificationsNone,
-                            contentDescription = stringResource(R.string.chat_event_drawer_open),
-                        )
-                    }
                     // New Chat — promoted from the "..." menu to a persistent
                     // top-bar button beside "..." (iOS parity: square.and.pencil
                     // sits next to the overflow, one tap instead of two).
@@ -2348,10 +2360,13 @@ fun ChatScreen(
                     // either; a "stop the task" prompt here would be both
                     // inconsistent and factually wrong.
                     val newChatDescription = stringResource(R.string.chat_menu_new_chat)
-                    IconButton(onClick = {
-                        viewModel.promoteDraftIfNeeded()
-                        onNewChat(viewModel.activeAgentId.value)
-                    }) {
+                    IconButton(
+                        onClick = {
+                            viewModel.promoteDraftIfNeeded()
+                            onNewChat(viewModel.activeAgentId.value)
+                        },
+                        modifier = Modifier.size(40.dp),
+                    ) {
                         val newChatColor = MaterialTheme.colorScheme.onSurfaceVariant
                         Box(
                             modifier = Modifier
@@ -2383,6 +2398,7 @@ fun ChatScreen(
                                     contentDescription = newChatDescription
                                 },
                         )
+                    }
                     }
                 },
                 windowInsets = WindowInsets.statusBars,
