@@ -702,19 +702,20 @@ object PRootKernel {
      * shared subdirs (memory/skills/shared) which don't depend on sessionId.
      */
     fun resolveSessionHostPath(sessionId: String, linuxPath: String, context: Context): File? {
+        if (!SafeHostPathResolver.validateSessionId(sessionId)) return null
+        if ('\u0000' in linuxPath) return null
         if (!linuxPath.startsWith("/var/minis/")) return resolveHostPath(linuxPath)
         val rest = linuxPath.removePrefix("/var/minis/")
         val slash = rest.indexOf('/')
         val subdir = if (slash < 0) rest else rest.substring(0, slash)
+        val tail = if (slash < 0) "" else rest.substring(slash + 1)
         if (subdir == "memory") {
             val memoryBase = sessionMemoryDirectory(sessionId) ?: return resolveHostPath(linuxPath)
-            val tail = if (slash < 0) "" else rest.substring(slash + 1)
-            return if (tail.isEmpty()) memoryBase else File(memoryBase, tail)
+            return SafeHostPathResolver.resolve(memoryBase, tail)
         }
         if (subdir !in perSessionSubdirs) return resolveHostPath(linuxPath)
         val sessionBase = File(context.filesDir, "minis-sessions/$sessionId/$subdir")
-        val tail = if (slash < 0) "" else rest.substring(slash + 1)
-        return if (tail.isEmpty()) sessionBase else File(sessionBase, tail)
+        return SafeHostPathResolver.resolve(sessionBase, tail)
     }
 
     /**
@@ -732,17 +733,14 @@ object PRootKernel {
      * the empty rootfs placeholder.
      */
     fun resolveHostPath(linuxPath: String): File? {
+        if ('\u0000' in linuxPath || !linuxPath.startsWith('/')) return null
         // Check bind mounts (longest prefix match)
         val sorted = bindMounts.keys.sortedByDescending { it.length }
         for (mountPoint in sorted) {
             if (linuxPath == mountPoint || linuxPath.startsWith("$mountPoint/")) {
                 val hostBase = bindMounts[mountPoint]!!
                 val relativePath = linuxPath.removePrefix(mountPoint).removePrefix("/")
-                return if (relativePath.isEmpty()) {
-                    File(hostBase)
-                } else {
-                    File(hostBase, relativePath)
-                }
+                return SafeHostPathResolver.resolve(File(hostBase), relativePath)
             }
         }
 
@@ -761,7 +759,8 @@ object PRootKernel {
                         if (!sessionDir.isDirectory) return@forEach
                         val candidate = if (tail.isEmpty()) File(sessionDir, subdir)
                         else File(sessionDir, "$subdir/$tail")
-                        if (candidate.exists()) return candidate
+                        val safeCandidate = SafeHostPathResolver.resolve(sessionDir, if (tail.isEmpty()) subdir else "$subdir/$tail")
+                        if (safeCandidate?.exists() == true) return safeCandidate
                     }
                 }
                 // No existing file in any session — fall through to rootfs
@@ -772,7 +771,7 @@ object PRootKernel {
         // Fallback: resolve relative to rootfs
         if (!::rootfsManager.isInitialized) return null
         val stripped = linuxPath.removePrefix("/")
-        return if (stripped.isEmpty()) rootfsManager.rootfsDir else File(rootfsManager.rootfsDir, stripped)
+        return SafeHostPathResolver.resolve(rootfsManager.rootfsDir, stripped)
     }
 
     /**

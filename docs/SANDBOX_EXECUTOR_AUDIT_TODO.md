@@ -63,8 +63,8 @@ capabilities / dispatch / cancel
   - [ ] 超时后 guest 命令仍继续运行。
   - [x] marker 跨读取块无法识别。
   - [x] UTF-8 多字节字符跨读取块损坏。
-  - [ ] `/var/minis/workspace/../../...` 路径逃逸。
-  - [ ] 符号链接逃逸。
+  - [x] `/var/minis/workspace/../../...` 路径逃逸。
+  - [x] 符号链接逃逸。
   - [ ] 空闲清理误杀长命令。
   - [ ] Shell 回收时同 session 创建第二把 mutex。
   - [ ] 远端持续输出导致无界内存增长。
@@ -223,10 +223,10 @@ capabilities / dispatch / cancel
 
 ### P1
 
-- [ ] **统一安全路径解析器**：对所有 Linux → host 路径执行 canonical containment。
-- [ ] 拒绝 NUL、绝对 relative tail、`..` 逃逸及不允许的符号链接。
+- [x] **统一安全路径解析器**：PRootKernel 的 Linux → host 路径统一执行 canonical containment。
+- [x] 拒绝 NUL、绝对 relative tail、`..` 逃逸及越界符号链接。
 - [ ] 文件读写编辑、图片、媒体、调试接口和 transfer 共用同一 resolver。
-- [ ] 对 sessionId 使用安全格式或不可伪造的内部目录键。
+- [x] PRootKernel resolver 对 sessionId 强制安全格式，禁止其参与宿主路径逃逸。
 - [x] 空闲回收检查 `isExecuting=false`，避免回收正在执行的 Shell；活动时间在命令结束更新。
 - [ ] 修复执行中回收导致同 session 两把 mutex 的竞态。
 - [x] marker 解析改为跨 chunk 增量状态机。
