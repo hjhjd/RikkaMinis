@@ -345,7 +345,6 @@ class ChatViewModel(
 
     fun memoryRepositoryForActiveAgent(): MemoryRepository? = activeMemoryRepository()
 
-    private val mediaStore = com.openminis.app.data.storage.MediaStore(context)
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -2514,6 +2513,9 @@ class ChatViewModel(
                     }
                     is AgentContentPart.ImageData -> {
                         append(role).append(" [image: ").append(part.mimeType).append("]\n")
+                    }
+                    is AgentContentPart.FileData -> {
+                        append(role).append(" [file: ").append(part.fileName).append("]\n")
                     }
                 }
             }
@@ -5163,10 +5165,13 @@ class ChatViewModel(
         }
         prepared.imageParts.forEachIndexed { idx, part ->
             val path = prepared.imageUploadPaths.getOrNull(idx)
-            if (path != null) combinedParts.add(AgentContentPart.Text("[attached image: $path]"))
+            if (path != null) combinedParts.add(AgentContentPart.Text("[Image path: $path]"))
             combinedParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path))
         }
-        prepared.attachedFilesXml?.let { combinedParts.add(AgentContentPart.Text(it)) }
+        prepared.fileParts.forEach { file ->
+            combinedParts.add(AgentContentPart.Text("[Attachment path: ${file.linuxPath}]"))
+            combinedParts.add(file)
+        }
 
         // Guard: every queued prompt produced no content (no text, no
         // image). An empty user msg is a 400 from every provider. Skip —
@@ -5199,7 +5204,7 @@ class ChatViewModel(
         // Persist the queued user message as its own DB row + append to
         // agentHistory so the next API call carries it.
         val userText = combinedText.toString()
-        val userPartsJson = buildUserPartsJson(userText, prepared.mediaRefPartsJson, prepared.attachedFilesXml)
+        val userPartsJson = buildUserPartsJson(userText, prepared.mediaRefPartsJson)
         val userEntity = chatRepository.appendMessage(sid, "user", userPartsJson)
         agentHistory.add(
             LLMMessage(
@@ -5304,10 +5309,8 @@ class ChatViewModel(
             val combinedAttachments = queued.flatMap { it.attachments }
             val prepared = prepareUserAttachments(combinedAttachments, sid)
 
-            // T132: same shape as sendMessage — caption(s) first, then for each
-            // image emit "[attached image: <path>]" + ImageData, finally the
-            // <user-attached-files> XML. Keeps caption adjacent to image and
-            // lets the agent re-read the file via read_image.
+            // Caption first, followed by native image/file parts. Provider
+            // serialization decides whether to inline or emit one path fallback.
             val combinedParts = mutableListOf<AgentContentPart>()
             val combinedText = StringBuilder()
             for (prompt in queued) {
@@ -5319,13 +5322,16 @@ class ChatViewModel(
             }
             prepared.imageParts.forEachIndexed { idx, part ->
                 val path = prepared.imageUploadPaths.getOrNull(idx)
-                if (path != null) combinedParts.add(AgentContentPart.Text("[attached image: $path]"))
+                if (path != null) combinedParts.add(AgentContentPart.Text("[Image path: $path]"))
                 combinedParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path))
             }
-            prepared.attachedFilesXml?.let { combinedParts.add(AgentContentPart.Text(it)) }
+            prepared.fileParts.forEach { file ->
+                combinedParts.add(AgentContentPart.Text("[Attachment path: ${file.linuxPath}]"))
+                combinedParts.add(file)
+            }
 
             val userText = combinedText.toString()
-            val userPartsJson = buildUserPartsJson(userText, prepared.mediaRefPartsJson, prepared.attachedFilesXml)
+            val userPartsJson = buildUserPartsJson(userText, prepared.mediaRefPartsJson)
             chatRepository.appendMessage(sid, "user", userPartsJson)
 
             agentHistory.add(LLMMessage(
@@ -5490,7 +5496,7 @@ class ChatViewModel(
             // Save user message — text + persisted mediaRef parts so images survive
             // a session reload (T128). Non-image attachments still only contribute
             // their name (rendered as a file tile) and are not persisted.
-            val userPartsJson = buildUserPartsJson(trimmed, prepared.mediaRefPartsJson, prepared.attachedFilesXml)
+            val userPartsJson = buildUserPartsJson(trimmed, prepared.mediaRefPartsJson)
             val persistedUser = chatRepository.appendMessage(activeSessionId, "user", userPartsJson)
 
             val userMsg = ChatMessage(
@@ -5504,22 +5510,19 @@ class ChatViewModel(
             _messages.value = _messages.value + userMsg
             val imageParts = prepared.imageParts
 
-            // T132: build the user contentParts in iOS order — caption first
-            // (only if non-empty), then per image emit
-            //   text("[attached image: /var/minis/attachments/uploads/<f>]")
-            //   ImageData(<bytes>, <mime>)
-            // so the caption sits adjacent to the image in the wire payload,
-            // and the agent's read_image tool can resolve the same path back
-            // to bytes. Trailing <user-attached-files> XML block lets the
-            // model see filenames/sizes without needing tool calls.
+            // Build native attachment parts only. Providers inline supported
+            // media/files and emit a single linux-path fallback when unsupported.
             val userContentParts = mutableListOf<AgentContentPart>()
             if (trimmed.isNotEmpty()) userContentParts.add(AgentContentPart.Text(trimmed))
             imageParts.forEachIndexed { idx, part ->
                 val path = prepared.imageUploadPaths.getOrNull(idx)
-                if (path != null) userContentParts.add(AgentContentPart.Text("[attached image: $path]"))
+                if (path != null) userContentParts.add(AgentContentPart.Text("[Image path: $path]"))
                 userContentParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path))
             }
-            prepared.attachedFilesXml?.let { userContentParts.add(AgentContentPart.Text(it)) }
+            prepared.fileParts.forEach { file ->
+                userContentParts.add(AgentContentPart.Text("[Attachment path: ${file.linuxPath}]"))
+                userContentParts.add(file)
+            }
 
             agentHistory.add(LLMMessage(
                 role = LLMMessage.Role.USER,
@@ -6168,6 +6171,7 @@ class ChatViewModel(
                     is AgentContentPart.ImageData -> {
                         imageTokens += BPETokenizer.countImageTokens(part.data)
                     }
+                    is AgentContentPart.FileData -> totalChars += part.fileName.length + 64
                 }
             }
         }
@@ -6187,6 +6191,7 @@ class ChatViewModel(
                 (part.imageData?.let { BPETokenizer.countImageTokens(it) } ?: 0)
         }
         is AgentContentPart.ImageData -> BPETokenizer.countImageTokens(part.data)
+        is AgentContentPart.FileData -> (part.size.coerceAtMost(512 * 1024L) / 4L).toInt()
     }
 
     /**
@@ -6312,7 +6317,7 @@ class ChatViewModel(
                         val synthId = "img${msgIdx}_$partIdx"
                         candidates.add(OffloadCandidate(msgIdx, partIdx, tokens, part.data.size, synthId, "image"))
                     }
-                    is AgentContentPart.Text -> Unit
+                    is AgentContentPart.Text, is AgentContentPart.FileData -> Unit
                 }
             }
         }
@@ -6379,7 +6384,7 @@ class ChatViewModel(
                         ContextOffload.stub(candidate.tokens, candidate.bytes, linuxPath),
                     )
                 }
-                is AgentContentPart.Text -> null
+                is AgentContentPart.Text, is AgentContentPart.FileData -> null
             }
 
             if (newPart == null) continue
@@ -6496,6 +6501,7 @@ class ChatViewModel(
                         part.imageData?.let { imageTokens += BPETokenizer.countImageTokens(it) }
                     }
                     is AgentContentPart.ImageData -> imageTokens += BPETokenizer.countImageTokens(part.data)
+                    is AgentContentPart.FileData -> totalChars += part.fileName.length + 64
                 }
             }
         }
@@ -6516,6 +6522,7 @@ class ChatViewModel(
                         part.imageData?.let { imageTokens += BPETokenizer.countImageTokens(it) }
                     }
                     is AgentContentPart.ImageData -> imageTokens += BPETokenizer.countImageTokens(part.data)
+                    is AgentContentPart.FileData -> totalChars += part.fileName.length + 64
                 }
             }
         }
@@ -9388,10 +9395,8 @@ class ChatViewModel(
         // open these paths).
         //   imageUploadPaths: one /var/minis/attachments/uploads/<safe> per
         //     inlined image, in the same order as `imageParts`.
-        //   attachedFilesXml:  null when no attachments, otherwise the
-        //     <user-attached-files> XML block iOS appends to the user turn.
         val imageUploadPaths: List<String>,
-        val attachedFilesXml: String?,
+        val fileParts: List<AgentContentPart.FileData>,
         // T150: file:// URIs of persisted non-image attachments, in the same
         // order as the non-image suffix of `attachmentNames`. Carried into
         // ChatMessage so the user-bubble file chip can route a tap directly
@@ -9418,6 +9423,7 @@ class ChatViewModel(
         val imageNames = mutableListOf<String>()
         val nonImageNames = mutableListOf<String>()
         val nonImageUris = mutableListOf<Uri>()
+        val fileParts = mutableListOf<AgentContentPart.FileData>()
         // T150: separate buffers so the persisted mediaRefPartsJson is
         // image-first, matching the on-screen UserAttachmentList ordering
         // and `attachmentNames = imageNames + nonImageNames`. On restore,
@@ -9436,16 +9442,6 @@ class ChatViewModel(
             context.filesDir,
             "minis-sessions/$sessionId/attachments/uploads",
         ).apply { mkdirs() }
-        // Metadata captured per attachment for the <user-attached-files> XML.
-        data class UploadMeta(val linuxPath: String, val size: Long, val modifiedIso: String)
-        val metas = mutableListOf<UploadMeta>()
-        val nowMs = System.currentTimeMillis()
-        val isoFormatter = java.text.SimpleDateFormat(
-            "yyyy-MM-dd'T'HH:mm:ss'Z'",
-            java.util.Locale.US,
-        ).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
-        val nowStr = isoFormatter.format(java.util.Date(nowMs))
-
         for (attachment in attachments) {
             if (attachment.isImage) {
                 // T209: read the original image bytes once and reuse them
@@ -9461,17 +9457,6 @@ class ChatViewModel(
                     Log.w(TAG, "image read failed for ${attachment.fileName}: ${e.message}")
                     null
                 } ?: continue
-                val ref = try {
-                    mediaStore.saveMedia(
-                        data = rawBytes,
-                        mimeType = attachment.mimeType,
-                        sessionId = sessionId,
-                        originalFileName = attachment.fileName,
-                    )
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to persist image attachment ${attachment.fileName}", e)
-                    continue
-                }
                 // Resize only for the LLM payload — token-efficient and a
                 // close-enough sketch of the picture for the model. Falls
                 // back to raw bytes if the source is already small or the
@@ -9496,17 +9481,22 @@ class ChatViewModel(
                     Log.w(TAG, "uploads write failed for ${attachment.fileName}: ${e.message}")
                     false
                 }
-                val linuxPath = if (uploadOk) "/var/minis/attachments/uploads/$safeName" else null
-                if (linuxPath != null) {
-                    imageUploadPaths.add(linuxPath)
-                    metas.add(UploadMeta(linuxPath = linuxPath, size = rawBytes.size.toLong(), modifiedIso = nowStr))
-                }
+                if (!uploadOk) continue
+                val linuxPath = "/var/minis/attachments/uploads/$safeName"
+                imageUploadPaths.add(linuxPath)
 
                 imageParts.add(LLMMessage.ImagePart(inferenceBytes, attachment.mimeType, linuxPath = linuxPath))
-                val savedFile = java.io.File(mediaStore.mediaBaseDir, ref.relativePath)
-                imageUris.add(Uri.fromFile(savedFile))
+                imageUris.add(Uri.fromFile(dest))
                 imageNames.add(attachment.fileName)
-                imageMediaRefPartsJson.add(buildMediaRefPartJson(ref, linuxPath = linuxPath))
+                imageMediaRefPartsJson.add(
+                    buildSessionAttachmentPartJson(
+                        relativePath = "uploads/$safeName",
+                        mimeType = attachment.mimeType,
+                        originalFileName = attachment.fileName,
+                        linuxPath = linuxPath,
+                        size = dest.length(),
+                    )
+                )
                 continue
             }
 
@@ -9526,7 +9516,6 @@ class ChatViewModel(
             // Stream-copy to the uploads dest first, then hand that
             // file to MediaStore.saveMediaStreamed so a second
             // streaming pass produces the durable mediaRef.
-            nonImageNames.add(attachment.fileName)
             val safeName = uniqueUploadFileName(uploadsHostDir, attachment.fileName)
             val dest = java.io.File(uploadsHostDir, safeName)
             val uploadOk = try {
@@ -9540,26 +9529,27 @@ class ChatViewModel(
             }
             if (!uploadOk) continue
 
-            val ref = try {
-                dest.inputStream().use { input ->
-                    mediaStore.saveMediaStreamed(
-                        source = input,
-                        mimeType = attachment.mimeType,
-                        sessionId = sessionId,
-                        originalFileName = attachment.fileName,
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to persist non-image attachment ${attachment.fileName}", e)
-                null
-            }
-            if (ref != null) {
-                nonImageMediaRefPartsJson.add(buildMediaRefPartJson(ref))
-                nonImageUris.add(Uri.fromFile(java.io.File(mediaStore.mediaBaseDir, ref.relativePath)))
-            }
-
             val linuxPath = "/var/minis/attachments/uploads/$safeName"
-            metas.add(UploadMeta(linuxPath = linuxPath, size = dest.length(), modifiedIso = nowStr))
+            nonImageNames.add(attachment.fileName)
+            nonImageUris.add(Uri.fromFile(dest))
+            fileParts.add(
+                AgentContentPart.FileData(
+                    fileName = attachment.fileName,
+                    mimeType = attachment.mimeType,
+                    hostPath = dest.absolutePath,
+                    linuxPath = linuxPath,
+                    size = dest.length(),
+                )
+            )
+            nonImageMediaRefPartsJson.add(
+                buildSessionAttachmentPartJson(
+                    relativePath = "uploads/$safeName",
+                    mimeType = attachment.mimeType,
+                    originalFileName = attachment.fileName,
+                    linuxPath = linuxPath,
+                    size = dest.length(),
+                )
+            )
         }
 
         // T-imgsize: byte-level budget enforcement. The resizeImageBytes pass
@@ -9598,27 +9588,6 @@ class ChatViewModel(
             }
         }
 
-        // Build the <user-attached-files> XML block (iOS parity). One <file>
-        // per attachment (image and non-image) that successfully landed in
-        // the iSH uploads dir — gives the model a metadata-only inventory
-        // it can resolve via shell tools when content is needed.
-        val xml = if (metas.isEmpty()) null else buildString {
-            append("<user-attached-files>\n")
-            for (m in metas) {
-                val urlPath = m.linuxPath.removePrefix("/var/minis/")
-                append("  <file path=\"")
-                append(m.linuxPath)
-                append("\" url=\"minis://")
-                append(urlPath)
-                append("\" size=\"")
-                append(m.size)
-                append("\" modified=\"")
-                append(m.modifiedIso)
-                append("\" />\n")
-            }
-            append("</user-attached-files>")
-        }
-
         // Order matches UserAttachmentList convention: images first, then files.
         return PreparedAttachments(
             imageParts = imageParts,
@@ -9626,7 +9595,7 @@ class ChatViewModel(
             attachmentNames = imageNames + nonImageNames,
             mediaRefPartsJson = imageMediaRefPartsJson + nonImageMediaRefPartsJson,
             imageUploadPaths = imageUploadPaths,
-            attachedFilesXml = xml,
+            fileParts = fileParts,
             nonImageUris = nonImageUris,
         )
     }
@@ -9653,22 +9622,20 @@ class ChatViewModel(
         }
     }
 
-    private fun buildMediaRefPartJson(
-        ref: com.openminis.app.data.model.MediaRef,
-        linuxPath: String? = null,
+    private fun buildSessionAttachmentPartJson(
+        relativePath: String,
+        mimeType: String,
+        originalFileName: String,
+        linuxPath: String,
+        size: Long,
     ): String {
         val value = JSONObject()
-            .put("id", ref.id)
-            .put("relativePath", ref.relativePath)
-            .put("mimeType", ref.mimeType)
-        if (ref.originalFileName != null) value.put("originalFileName", ref.originalFileName)
-        // Carry the iSH-visible uploads path through persistence so that
-        // restored history can reconstruct AgentContentPart.ImageData with
-        // its original linuxPath. Restored images that miss this field
-        // (older rows written before this column existed) get linuxPath=null
-        // and fall back to spillover at budget-elide time.
-        if (linuxPath != null) value.put("linuxPath", linuxPath)
-        return JSONObject().put("type", "mediaRef").put("value", value).toString()
+            .put("relativePath", relativePath)
+            .put("mimeType", mimeType)
+            .put("originalFileName", originalFileName)
+            .put("linuxPath", linuxPath)
+            .put("size", size)
+        return JSONObject().put("type", "sessionAttachment").put("value", value).toString()
     }
 
     /**
@@ -9680,23 +9647,12 @@ class ChatViewModel(
     private fun buildUserPartsJson(
         text: String,
         mediaRefPartsJson: List<String>,
-        // [T-android-retry-attachment-loss] The <user-attached-files> XML
-        // inventory (non-image file paths/sizes the model uses to `cat` the
-        // file). iOS persists this same XML as a trailing text part so it
-        // round-trips through retry / rerun / session-reload unchanged — the
-        // model keeps seeing the /var/minis/attachments/uploads/... paths.
-        // Android previously only added it to the in-memory agentHistory and
-        // never persisted it, so a retry silently dropped the file inventory.
-        // Persist it here as a text part (iOS parity); toLLMMessage restores
-        // it via the plain "text" case with zero special-casing.
-        attachedFilesXml: String? = null,
     ): String {
         val parts = mutableListOf<String>()
         if (text.isNotEmpty() || mediaRefPartsJson.isEmpty()) {
             parts.add("""{"type":"text","value":${escapeJson(text)}}""")
         }
         parts.addAll(mediaRefPartsJson)
-        attachedFilesXml?.let { parts.add("""{"type":"text","value":${escapeJson(it)}}""") }
         return parts.joinToString(prefix = "[", postfix = "]", separator = ",")
     }
 
@@ -10670,7 +10626,10 @@ class ChatViewModel(
                             if (entity.role != "user") continue
                             val rel = part.relativePath
                             if (rel.isEmpty()) continue
-                            val file = java.io.File(mediaStore.mediaBaseDir, rel)
+                            val file = java.io.File(
+                                context.filesDir,
+                                "minis-sessions/${entity.sessionId}/attachments/$rel",
+                            )
                             if (!file.exists()) continue
                             val name = part.originalFileName.ifEmpty { file.name }
                             if (part.mimeType.startsWith("image/")) {
@@ -10688,7 +10647,7 @@ class ChatViewModel(
             }
 
             // Skip user messages with no visible content
-            if (entity.role == "user" && text.isBlank() && restoredImageUris.isEmpty()) return@mapNotNull null
+            if (entity.role == "user" && text.isBlank() && restoredImageUris.isEmpty() && restoredAttachmentUris.isEmpty()) return@mapNotNull null
             // Skip assistant messages that became empty
             if (entity.role == "assistant" && text.isBlank() && blocks.isEmpty()) return@mapNotNull null
             ChatMessage(
@@ -10803,13 +10762,28 @@ class ChatViewModel(
                         val rel = part.relativePath
                         if (rel.isEmpty()) continue
                         val mime = part.mimeType
-                        if (!mime.startsWith("image/")) continue
-                        val file = java.io.File(mediaStore.mediaBaseDir, rel)
+                        val file = java.io.File(
+                            context.filesDir,
+                            "minis-sessions/${entity.sessionId}/attachments/$rel",
+                        )
                         if (!file.exists()) continue
-                        val bytes = try { file.readBytes() } catch (_: Exception) { continue }
-                        val restoredPath = part.linuxPath
-                        imageParts.add(LLMMessage.ImagePart(bytes, mime, linuxPath = restoredPath))
-                        contentParts.add(AgentContentPart.ImageData(bytes, mime, linuxPath = restoredPath))
+                        if (mime.startsWith("image/")) {
+                            val bytes = try { file.readBytes() } catch (_: Exception) { continue }
+                            imageParts.add(LLMMessage.ImagePart(bytes, mime, linuxPath = part.linuxPath))
+                            contentParts.add(AgentContentPart.Text("[Image path: ${part.linuxPath}]"))
+                            contentParts.add(AgentContentPart.ImageData(bytes, mime, linuxPath = part.linuxPath))
+                        } else {
+                            contentParts.add(AgentContentPart.Text("[Attachment path: ${part.linuxPath}]"))
+                            contentParts.add(
+                                AgentContentPart.FileData(
+                                    fileName = part.originalFileName.ifEmpty { file.name },
+                                    mimeType = mime,
+                                    hostPath = file.absolutePath,
+                                    linuxPath = part.linuxPath,
+                                    size = part.size.takeIf { it > 0 } ?: file.length(),
+                                )
+                            )
+                        }
                     }
                 }
             }

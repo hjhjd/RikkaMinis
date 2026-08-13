@@ -12,6 +12,7 @@ import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.LLMUsage
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.ImageBudget
+import com.openminis.app.provider.DirectAttachment
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.LLMRequestContext
 import com.openminis.app.provider.applyUserAgentOverride
@@ -613,6 +614,29 @@ class AnthropicProvider(
                                 put("content", resultContent)
                                 if (part.isError) put("is_error", true)
                             })
+                        }
+                        is AgentContentPart.FileData -> {
+                            val text = DirectAttachment.text(part)
+                            val pdf = if (text == null && DirectAttachment.isPdf(part)) DirectAttachment.binary(part) else null
+                            when {
+                                text != null -> contentArray.put(JSONObject().apply {
+                                    put("type", "text")
+                                    put("text", text)
+                                })
+                                pdf != null -> contentArray.put(JSONObject().apply {
+                                    put("type", "document")
+                                    put("source", JSONObject().apply {
+                                        put("type", "base64")
+                                        put("media_type", "application/pdf")
+                                        put("data", Base64.encodeToString(pdf, Base64.NO_WRAP))
+                                    })
+                                    put("title", part.fileName)
+                                })
+                                else -> contentArray.put(JSONObject().apply {
+                                    put("type", "text")
+                                    put("text", "[Attachment available at ${part.linuxPath}; use file tools to inspect it]")
+                                })
+                            }
                         }
                         is AgentContentPart.ImageData -> {
                             // T-imgsize: provider-boundary backstop for history

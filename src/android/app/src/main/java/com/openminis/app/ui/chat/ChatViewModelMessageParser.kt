@@ -29,7 +29,8 @@ sealed interface ParsedPart {
         val relativePath: String,
         val mimeType: String,
         val originalFileName: String,
-        val linuxPath: String?,
+        val linuxPath: String,
+        val size: Long,
     ) : ParsedPart
 }
 
@@ -82,17 +83,20 @@ fun tryParsePartsJson(partsJson: String): List<ParsedPart>? {
                         success = v.optBoolean("success", true),
                     )
                 }
-                "mediaRef" -> {
+                "sessionAttachment" -> {
                     val v = obj.optJSONObject("value")
                     if (v != null) {
                         ParsedPart.MediaRef(
                             relativePath = v.optString("relativePath", ""),
-                            mimeType = v.optString("mimeType", "image/jpeg"),
+                            mimeType = v.optString("mimeType", "application/octet-stream"),
                             originalFileName = v.optString("originalFileName", ""),
-                            linuxPath = v.optString("linuxPath", "").ifEmpty { null },
+                            linuxPath = v.optString("linuxPath", ""),
+                            size = v.optLong("size", 0L),
                         )
                     } else null
                 }
+                // 旧 mediaRef 格式明确停用，避免混用两套存储根目录。
+                "mediaRef" -> null
                 else -> null
             }
             if (part != null) result.add(part)

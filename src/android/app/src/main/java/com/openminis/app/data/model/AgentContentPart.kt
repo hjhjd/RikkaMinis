@@ -50,6 +50,18 @@ sealed class AgentContentPart {
         }
     }
 
+    /**
+     * 用户直接附加的非图片文件。文件只在会话 attachments/uploads 中保存一份，
+     * Provider 在组装请求时按自身协议直接读取；不支持的类型退化为路径提示。
+     */
+    data class FileData(
+        val fileName: String,
+        val mimeType: String,
+        val hostPath: String,
+        val linuxPath: String,
+        val size: Long,
+    ) : AgentContentPart()
+
     data class ImageData(
         val data: ByteArray,
         val mimeType: String,

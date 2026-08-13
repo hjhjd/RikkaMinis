@@ -13,6 +13,7 @@ import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.LLMUsage
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.LLMProvider
+import com.openminis.app.provider.DirectAttachment
 import com.openminis.app.provider.LLMRequestContext
 import com.openminis.app.provider.safeOptString
 import kotlinx.coroutines.Dispatchers
@@ -232,6 +233,23 @@ class GeminiProvider(
                             if (part.isError) responseContent.put("error", true)
                             responseObj.put("response", responseContent)
                             parts.put(JSONObject().put("functionResponse", responseObj))
+                        }
+                        is AgentContentPart.FileData -> {
+                            val text = DirectAttachment.text(part)
+                            val binary = if (text == null && DirectAttachment.isPdf(part)) {
+                                DirectAttachment.binary(part)
+                            } else null
+                            when {
+                                text != null -> parts.put(JSONObject().put("text", text))
+                                binary != null -> parts.put(JSONObject().put("inlineData", JSONObject().apply {
+                                    put("mimeType", part.mimeType)
+                                    put("data", Base64.encodeToString(binary, Base64.NO_WRAP))
+                                }))
+                                else -> parts.put(JSONObject().put(
+                                    "text",
+                                    "[Attachment available at ${part.linuxPath}; use file tools to inspect it]",
+                                ))
+                            }
                         }
                         is AgentContentPart.ImageData -> {
                             parts.put(JSONObject().put("inlineData", JSONObject().apply {

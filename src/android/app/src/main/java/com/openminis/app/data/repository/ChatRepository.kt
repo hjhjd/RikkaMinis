@@ -356,7 +356,7 @@ class ChatRepository(internal val dao: ChatDao) {
                     if (text.isNotBlank()) {
                         return cleanPreview(text)
                     }
-                } else if (type == "mediaRef") {
+                } else if (type == "sessionAttachment") {
                     hasMedia = true
                 } else if (type == "toolUse") {
                     val v = obj.optJSONObject("value")
@@ -676,7 +676,7 @@ class ChatRepository(internal val dao: ChatDao) {
                         val v = o.optString("value", "")
                         if (v.isNotBlank()) texts.add(stripSystemReminders(v))
                     }
-                    "mediaRef" -> hasMedia = true
+                    "sessionAttachment" -> hasMedia = true
                     "toolUse" -> o.optJSONObject("value")?.let { toolUses.add(it) }
                     "toolResult" -> o.optJSONObject("value")?.let { toolResults.add(it) }
                 }

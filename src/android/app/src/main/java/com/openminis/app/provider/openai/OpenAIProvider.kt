@@ -12,6 +12,7 @@ import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.LLMUsage
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.LLMProvider
+import com.openminis.app.provider.DirectAttachment
 import com.openminis.app.provider.LLMRequestContext
 import com.openminis.app.provider.applyUserAgentOverride
 import com.openminis.app.provider.safeOptString
@@ -1514,15 +1515,9 @@ class OpenAIProvider private constructor(
         tools: List<AgentToolDefinition> = emptyList(),
         thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
     ): JSONObject {
-        // T264: cross-provider image sanitization, mirrors iOS
-        // OpenAIAgentProvider.swift:744-768 / 900-918. When the target model
-        // doesn't declare "image" in inputModalities (e.g. DeepSeek V4 after
-        // user sent image to GPT-5.5 then switched provider), serialize a
-        // text placeholder instead of an image_url block — otherwise the
-        // server returns "400 unknown variant `image_url`". Decided once
-        // here so the structured-contentParts loop and the legacy
-        // imageParts loop below stay consistent.
-        val supportsImages = "image" in (model.inputModalities ?: emptyList())
+        // 附件发送不依赖本地模型目录的模态声明。用户选择图片后始终发送
+        // Provider 原生图片块；模型/服务端是否接受由真实 API 响应决定。
+        val supportsImages = true
         val body = JSONObject()
         body.put("model", model.id)
         if (isOpenRouter) {
@@ -1656,9 +1651,10 @@ class OpenAIProvider private constructor(
                         // and that path is unreachable once contentParts is
                         // populated (which is always now). Mirrors iOS
                         // OpenAIAgentProvider.swift L732-738.
-                        val hasImages = imageParts.isNotEmpty()
-                        if (hasImages || textParts.isNotEmpty()) {
-                            if (hasImages) {
+                        val hasRichAttachments = imageParts.isNotEmpty() ||
+                            msg.contentParts.any { it is AgentContentPart.FileData }
+                        if (hasRichAttachments || textParts.isNotEmpty()) {
+                            if (hasRichAttachments) {
                                 val contentArray = JSONArray()
                                 // Walk contentParts in original order so the
                                 // [attached image: …] text caption that
@@ -1673,6 +1669,16 @@ class OpenAIProvider private constructor(
                                                     put("text", part.text)
                                                 })
                                             }
+                                        }
+                                        is AgentContentPart.FileData -> {
+                                            val text = DirectAttachment.text(part)
+                                            contentArray.put(JSONObject().apply {
+                                                put("type", "text")
+                                                put(
+                                                    "text",
+                                                    text ?: "[Attachment available at ${part.linuxPath}; use file tools to inspect it]",
+                                                )
+                                            })
                                         }
                                         is AgentContentPart.ImageData -> {
                                             if (supportsImages) {
@@ -1692,7 +1698,11 @@ class OpenAIProvider private constructor(
                                                 // — emit text placeholder (iOS-parity literal).
                                                 contentArray.put(JSONObject().apply {
                                                     put("type", "text")
-                                                    put("text", "[Image attached but this model does not support vision input]")
+                                                    put(
+                                                        "text",
+                                                        part.linuxPath?.let { "[Image available at $it; use read_image to inspect it]" }
+                                                            ?: "[Image attached but this model does not support vision input]",
+                                                    )
                                                 })
                                             }
                                         }
@@ -1753,7 +1763,11 @@ class OpenAIProvider private constructor(
                                 // emit text placeholder (iOS-parity literal).
                                 contentArray.put(JSONObject().apply {
                                     put("type", "text")
-                                    put("text", "[Image attached but this model does not support vision input]")
+                                    put(
+                                                        "text",
+                                                        part.linuxPath?.let { "[Image available at $it; use read_image to inspect it]" }
+                                                            ?: "[Image attached but this model does not support vision input]",
+                                                    )
                                 })
                             }
                         }
@@ -2448,13 +2462,8 @@ class OpenAIProvider private constructor(
         tools: List<AgentToolDefinition> = emptyList(),
         thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
     ): JSONObject {
-        // T264: same vision-capability gate as buildRequestBody. Responses API
-        // path (Codex OAuth) is currently always wired to a vision-capable
-        // GPT-5.x so this branch is defensive rather than load-bearing, but
-        // keeping the two paths symmetric prevents future regressions when
-        // a non-vision model gets routed through Responses (e.g. via
-        // forceResponsesAPI on a custom provider).
-        val supportsImages = "image" in (model.inputModalities ?: emptyList())
+        // 与 Chat Completions 一致：始终发送用户选择的图片，能力由服务端裁决。
+        val supportsImages = true
         val body = JSONObject()
         body.put("model", model.id)
         body.put("stream", stream)
@@ -2635,7 +2644,8 @@ class OpenAIProvider private constructor(
                         // convertMessagesResponsesAPI's image handling.
                         val textParts = msg.contentParts.filterIsInstance<AgentContentPart.Text>()
                         val imgParts = msg.contentParts.filterIsInstance<AgentContentPart.ImageData>()
-                        if (imgParts.isNotEmpty()) {
+                        val hasFiles = msg.contentParts.any { it is AgentContentPart.FileData }
+                        if (imgParts.isNotEmpty() || hasFiles) {
                             val contentArray = JSONArray()
                             for (part in msg.contentParts) {
                                 when (part) {
@@ -2644,6 +2654,25 @@ class OpenAIProvider private constructor(
                                             contentArray.put(JSONObject().apply {
                                                 put("type", "input_text")
                                                 put("text", part.text)
+                                            })
+                                        }
+                                    }
+                                    is AgentContentPart.FileData -> {
+                                        val text = DirectAttachment.text(part)
+                                        val pdf = if (text == null && DirectAttachment.isPdf(part)) DirectAttachment.binary(part) else null
+                                        when {
+                                            text != null -> contentArray.put(JSONObject().apply {
+                                                put("type", "input_text")
+                                                put("text", text)
+                                            })
+                                            pdf != null -> contentArray.put(JSONObject().apply {
+                                                put("type", "input_file")
+                                                put("filename", part.fileName)
+                                                put("file_data", "data:application/pdf;base64,${Base64.encodeToString(pdf, Base64.NO_WRAP)}")
+                                            })
+                                            else -> contentArray.put(JSONObject().apply {
+                                                put("type", "input_text")
+                                                put("text", "[Attachment available at ${part.linuxPath}; use file tools to inspect it]")
                                             })
                                         }
                                     }
@@ -2669,7 +2698,11 @@ class OpenAIProvider private constructor(
                                             // branch above at line 1038).
                                             contentArray.put(JSONObject().apply {
                                                 put("type", "input_text")
-                                                put("text", "[Image attached but this model does not support vision input]")
+                                                put(
+                                                        "text",
+                                                        part.linuxPath?.let { "[Image available at $it; use read_image to inspect it]" }
+                                                            ?: "[Image attached but this model does not support vision input]",
+                                                    )
                                             })
                                         }
                                     }
