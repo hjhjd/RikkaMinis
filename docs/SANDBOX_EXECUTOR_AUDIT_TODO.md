@@ -4,7 +4,7 @@
 >
 > 审计基线：`44f3a53`
 >
-> 状态：持续施工；阶段 1 与阶段 2 主链路完成，P0 完成，P1 正在施工；旧协议、PRoot 生命周期与 Resource 通道待继续。
+> 状态：持续施工；阶段 1 与阶段 2 主链路完成，P0 完成，P1 生命周期竞态修复完成；旧协议、PRoot 能力拆分与 Resource 通道待继续。
 >
 > 最近更新：2026-08-14
 >
@@ -13,7 +13,7 @@
 > - 阶段 1：完成；固定 `sandbox_dispatch`、Provider 骨架、Channel 事件与 UI 节流已落地。
 > - 阶段 2：主链路完成；不透明协议、稳定 sandbox ID、指令集 UI 与服务端最小 DSL 已验证。
 > - 阶段 3：未完成；PRoot 生命周期统一和旧 ExecPlane 兼容层仍待收敛。
-> - 阶段 4：P0 完成；P1 已完成路径 containment、空闲执行检查、marker 与 UTF-8，mutex 回收竞态仍待修复。
+> - 阶段 4：P0 完成；P1 路径 containment、空闲执行检查、marker、UTF-8 与 mutex 回收竞态均已修复。
 > - 阶段 5：未完成；本地 Shell 最终语义与工具契约待确定。
 > - 阶段 6：未完成；通用 Resource 通道与纵深防御待实现。
 
@@ -77,7 +77,7 @@ capabilities / dispatch / cancel
   - [x] `/var/minis/workspace/../../...` 路径逃逸。
   - [x] 符号链接逃逸。
   - [ ] 空闲清理误杀长命令。
-  - [ ] Shell 回收时同 session 创建第二把 mutex。
+  - [x] Shell 回收时同 session 创建第二把 mutex。
   - [x] 远端持续输出导致无界内存增长。
   - [x] 远端 `truncated=true` 未传播。
 - [ ] 保存一组端到端 smoke commands，供每阶段验证。
@@ -239,7 +239,7 @@ capabilities / dispatch / cancel
 - [ ] 文件读写编辑、图片、媒体、调试接口和 transfer 共用同一 resolver。
 - [x] PRootKernel resolver 对 sessionId 强制安全格式，禁止其参与宿主路径逃逸。
 - [x] 空闲回收检查 `isExecuting=false`，避免回收正在执行的 Shell；活动时间在命令结束更新。
-- [ ] 修复执行中回收导致同 session 两把 mutex 的竞态。
+- [x] 修复执行中回收导致同 session 两把 mutex 的竞态。
 - [x] marker 解析改为跨 chunk 增量状态机。
 - [x] 使用 `CharsetDecoder` 正确处理跨 chunk UTF-8。
 
@@ -248,7 +248,7 @@ capabilities / dispatch / cancel
 - [x] 超时/取消返回后，对应命令已停止。
 - [x] 普通文件工具经 PRootKernel resolver 时无法越出允许根目录；其他直连入口仍在统一审计。
 - [x] 恶意或异常远端输出不能造成 App 无界内存增长。
-- [ ] 同 session 命令在回收和取消场景下仍严格串行。
+- [x] 同 session 命令在回收和取消场景下仍严格串行。
 
 ---
 

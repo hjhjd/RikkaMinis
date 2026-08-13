@@ -82,8 +82,8 @@ object ExecutionCoordinator {
     /** Thread-safe per-session shell registry. */
     private val shells = ConcurrentHashMap<String, PersistentShell>()
 
-    /** Thread-safe per-session mutex registry. */
-    private val mutexes = ConcurrentHashMap<String, Mutex>()
+    /** Stable process-lifetime mutex identity for each session. */
+    private val mutexes = SessionMutexRegistry()
 
     /**
      * Per-session snapshot of the env-var keys injected on the previous
@@ -136,7 +136,7 @@ object ExecutionCoordinator {
         lineCallback: ((String) -> Unit)? = null
     ): CommandResult {
         // ConcurrentHashMap.getOrPut is not atomic, use putIfAbsent pattern
-        val mutex = mutexes.getOrPut(sessionId) { Mutex() }
+        val mutex = mutexes.get(sessionId)
 
         return mutex.withLock {
             val startTime = System.currentTimeMillis()
@@ -379,7 +379,10 @@ object ExecutionCoordinator {
      */
     fun sessionDidTerminate(sessionId: String) {
         val shell = shells.remove(sessionId)
-        mutexes.remove(sessionId)
+        // Keep the per-session mutex stable across shell recycling/termination.
+        // Removing it here allows a concurrent caller that already captured the
+        // old mutex and a new caller to execute under two different locks. The
+        // mutex is deliberately lightweight and lives for the process lifetime.
         // T124a: drop the snapshot too — a future shell for the same id
         // restarts from a clean baseline, so the next applyEnvironment
         // shouldn't try to `unset` keys that don't exist in the new shell.
@@ -397,11 +400,20 @@ object ExecutionCoordinator {
     fun recycleIdleShells() {
         val now = SystemClock.elapsedRealtime()
         for (sessionId in shells.keys) {
-            val last = lastActiveMs[sessionId] ?: 0L
-            val shell = shells[sessionId] ?: continue
-            if (!shell.isExecuting && last != 0L && (now - last) > SHELL_IDLE_TIMEOUT_MS) {
-                Log.w(TAG, "[$sessionId] shell idle ${(now - last) / 1000}s — recycling")
-                sessionDidTerminate(sessionId)
+            val mutex = mutexes.get(sessionId)
+            // The idle check and removal must share the exact lock used by
+            // executeLocal. A bare isExecuting check has a TOCTOU window in
+            // which a command can start immediately before shell.stop().
+            if (!mutex.tryLock()) continue
+            try {
+                val last = lastActiveMs[sessionId] ?: 0L
+                val shell = shells[sessionId] ?: continue
+                if (!shell.isExecuting && last != 0L && (now - last) > SHELL_IDLE_TIMEOUT_MS) {
+                    Log.w(TAG, "[$sessionId] shell idle ${(now - last) / 1000}s — recycling")
+                    sessionDidTerminate(sessionId)
+                }
+            } finally {
+                mutex.unlock()
             }
         }
     }
