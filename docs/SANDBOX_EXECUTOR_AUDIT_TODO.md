@@ -12,7 +12,7 @@
 > - 阶段 0：部分完成；marker、UTF-8、路径逃逸、远端输出与截断已有回归测试，其余基线待补。
 > - 阶段 1：完成；固定 `sandbox_dispatch`、Provider 骨架、Channel 事件与 UI 节流已落地。
 > - 阶段 2：主链路完成；不透明协议、稳定 sandbox ID、指令集 UI 与服务端最小 DSL 已验证。
-> - 阶段 3：未完成；PRoot 生命周期统一和旧 ExecPlane 兼容层仍待收敛。
+> - 阶段 3：进行中；本地结果契约、取消句柄与统一 SessionExecutionState 已落地，Provider 拆分、旧协议适配与状态最终回收仍待继续。
 > - 阶段 4：P0 完成；P1 路径 containment、空闲执行检查、marker、UTF-8 与 mutex 回收竞态均已修复。
 > - 阶段 5：未完成；本地 Shell 最终语义与工具契约待确定。
 > - 阶段 6：未完成；WebSocket 文本/协议限额已完成，通用 Resource 通道与其余纵深防御待实现。
@@ -177,19 +177,19 @@ capabilities / dispatch / cancel
 ### 3.1 本地执行模型
 
 - [ ] PRoot 执行实现为 `PRootToolProvider` 的内部能力，不再要求动态 WS 工具实现 `SandboxExecutor`。
-- [ ] 定义本地 Shell 统一结果：
+- [x] 定义本地 Shell 统一结果：
   - stdout/stderr 或规范化 output；
   - exitCode；
   - durationMs；
   - timedOut；
   - cancelled；
   - truncated。
-- [ ] 定义本地 `ActiveExecutionHandle.cancel()`。
+- [x] 定义本地 `ActiveExecutionHandle.cancel()`。
 - [ ] `ExecutionCoordinator` 只管理 PRoot session 状态和执行生命周期，不再承担 WS 路由或 UI 文本格式化。
 
 ### 3.2 PRoot 会话状态
 
-- [ ] 用单一 `SessionExecutionState` 聚合：
+- [x] 用单一 `SessionExecutionState` 聚合：
   - session mutex；
   - 当前 Shell；
   - 当前 execution handle；
@@ -199,7 +199,7 @@ capabilities / dispatch / cancel
   - injectedEnvKeys。
 - [x] Shell 回收与 mutex 生命周期分离。
 - [ ] 只有会话真正结束且无活动执行时才删除 session state。
-- [ ] 资源监控只请求回收，由持锁执行路径完成最终清理。
+- [x] 资源监控只请求回收，由持锁执行路径完成最终清理。
 
 ### 3.3 旧 ExecPlane 迁移
 

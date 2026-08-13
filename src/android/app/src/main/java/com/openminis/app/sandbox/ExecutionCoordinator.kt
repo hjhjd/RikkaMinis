@@ -8,7 +8,6 @@ import com.openminis.app.data.repository.EnvVarRepository
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Manages per-session persistent shell processes.
@@ -72,6 +71,8 @@ object ExecutionCoordinator {
         val exitCode: Int,
         val durationMs: Long,
         val truncated: Boolean = false,
+        val timedOut: Boolean = false,
+        val cancelled: Boolean = false,
         val sandboxName: String = "proot",
         val degraded: Boolean = false,
     )
@@ -79,22 +80,8 @@ object ExecutionCoordinator {
     private lateinit var appContext: Context
     var envVarRepository: EnvVarRepository? = null
 
-    /** Thread-safe per-session shell registry. */
-    private val shells = ConcurrentHashMap<String, PersistentShell>()
-
-    /** Stable process-lifetime mutex identity for each session. */
-    private val mutexes = SessionMutexRegistry()
-
-    /**
-     * Per-session snapshot of the env-var keys injected on the previous
-     * `applyEnvironment` call. Used to issue `unset` for keys the user has
-     * since deleted from EnvVarRepository. Long-lived shells would otherwise
-     * keep the stale value around indefinitely.
-     */
-    private val lastInjectedKeys = ConcurrentHashMap<String, Set<String>>()
-    // [P2-proot-native-leak] elapsedRealtime of last command completion
-    // per session; drives recycleIdleShells.
-    private val lastActiveMs = ConcurrentHashMap<String, Long>()
+    /** Single owner for shell, lock, activity and environment state. */
+    private val sessions = SessionExecutionStateRegistry()
 
     /**
      * Global lock used only for shell creation to prevent duplicate shells
@@ -136,7 +123,8 @@ object ExecutionCoordinator {
         lineCallback: ((String) -> Unit)? = null
     ): CommandResult {
         // ConcurrentHashMap.getOrPut is not atomic, use putIfAbsent pattern
-        val mutex = mutexes.get(sessionId)
+        val state = sessions.get(sessionId)
+        val mutex = state.mutex
 
         return mutex.withLock {
             val startTime = System.currentTimeMillis()
@@ -148,25 +136,28 @@ object ExecutionCoordinator {
             }
 
             // Get or create shell — protected by globalLock to avoid duplicate creation
-            val shell = getOrCreateShell(sessionId)
+            val shell = getOrCreateShell(sessionId, state)
 
             // Inject user-defined environment variables as a *full snapshot*
             // (T124a). Pass the previously-injected key set so applyEnvironment
             // can `unset` anything the user has since removed from settings;
             // otherwise the long-lived shell would keep stale values.
             val envVars = envVarRepository?.allAsDict() ?: emptyMap()
-            val previousKeys = lastInjectedKeys[sessionId] ?: emptySet()
+            val previousKeys = state.injectedEnvKeys
             if (envVars.isNotEmpty() || previousKeys.isNotEmpty()) {
                 shell.applyEnvironment(envVars, previousKeys = previousKeys)
-                lastInjectedKeys[sessionId] = envVars.keys.toSet()
+                state.injectedEnvKeys = envVars.keys.toSet()
             }
 
-            val result = shell.executeCommand(
-                command = command,
-                timeout = timeout,
-                lineCallback = lineCallback,
-                memoryMonitor = { rssMB ->
-                    midCommandRecycleIfOversized(shell, sessionId, rssMB)
+            val executionHandle = ActiveExecutionHandle { shell.stop() }
+            state.activeExecution = executionHandle
+            val result = try {
+                shell.executeCommand(
+                    command = command,
+                    timeout = timeout,
+                    lineCallback = lineCallback,
+                    memoryMonitor = { rssMB ->
+                        midCommandRecycleIfOversized(state, sessionId, rssMB)
                     // [P2-app-native-oom] Also watch the app-process native
                     // heap in-flight: Debug.getNativeHeapAllocatedSize is a
                     // cheap O(1) read, and the actual Scudo OOM happens
@@ -176,10 +167,14 @@ object ExecutionCoordinator {
                     val appNativeMB = Debug.getNativeHeapAllocatedSize() / (1024L * 1024L)
                     if (appNativeMB > APP_NATIVE_HEAP_HIGH_WATER_MARK_MB) {
                         Log.w(TAG, "[$sessionId] App native heap ${appNativeMB}MB crossed mark in-flight — recycling shell")
-                        sessionDidTerminate(sessionId)
+                        state.recycleRequested = true
                     }
-                },
-            )
+                    },
+                )
+            } finally {
+                if (state.activeExecution === executionHandle) state.activeExecution = null
+                state.lastActivityMs = SystemClock.elapsedRealtime()
+            }
 
             val durationMs = System.currentTimeMillis() - startTime
             val sanitized = TerminalSanitizer.sanitize(result.output)
@@ -196,11 +191,10 @@ object ExecutionCoordinator {
             // process* RSS ballooned past the safe ceiling (tracer leak). This
             // reads the real child (PersistentShell.nativeRssMB) — NOT app
             // Debug.getNativeHeapAllocatedSize(), which misses the leak.
-            lastActiveMs[sessionId] = SystemClock.elapsedRealtime()
             val prootRssMB = shell.nativeRssMB()
             if (prootRssMB > NATIVE_HEAP_HIGH_WATER_MARK_MB) {
-                Log.w(TAG, "[$sessionId] PRoot child RSS > ${NATIVE_HEAP_HIGH_WATER_MARK_MB}MB after command — recycling PRoot shell")
-                sessionDidTerminate(sessionId)
+                Log.w(TAG, "[$sessionId] PRoot child RSS > ${NATIVE_HEAP_HIGH_WATER_MARK_MB}MB after command — recycle requested")
+                state.recycleRequested = true
             } else {
                 Log.d(TAG, "[$sessionId] PRoot child RSS ${prootRssMB}MB — within mark")
             }
@@ -234,11 +228,17 @@ object ExecutionCoordinator {
                     TAG, "[$sessionId] Shell command count ${shell.commandCount} >= $MAX_COMMANDS_PER_SHELL — recycling shell"
                 )
             }
-            if (nativeOversized || javaPressured || cmdOverLimit) {
+            if (nativeOversized || javaPressured || cmdOverLimit || state.recycleRequested) {
                 sessionDidTerminate(sessionId)
             }
 
-            CommandResult(output = output, exitCode = result.exitCode, durationMs = durationMs, truncated = outputTruncated)
+            CommandResult(
+                output = output,
+                exitCode = result.exitCode,
+                durationMs = durationMs,
+                truncated = outputTruncated,
+                timedOut = result.exitCode == 124,
+            )
         }
     }
 
@@ -246,10 +246,10 @@ object ExecutionCoordinator {
      * (it OOM'd), immediately recycle the session so the shell isn't held as
      * a zombie and the next command spawns fresh. Called from the executeCommand
      * in-flight monitor; rssMB of 0 means the child already died. */
-    private fun midCommandRecycleIfOversized(shell: PersistentShell, sessionId: String, rssMB: Long) {
+    private fun midCommandRecycleIfOversized(state: SessionExecutionState, sessionId: String, rssMB: Long) {
         if (rssMB > NATIVE_HEAP_HIGH_WATER_MARK_MB) {
-            Log.w(TAG, "[$sessionId] PRoot child RSS ${rssMB}MB crossed mark mid-command — recycling")
-            sessionDidTerminate(sessionId)
+            Log.w(TAG, "[$sessionId] PRoot child RSS ${rssMB}MB crossed mark mid-command — recycle requested")
+            state.recycleRequested = true
         }
     }
 
@@ -258,9 +258,9 @@ object ExecutionCoordinator {
      * Uses globalLock to prevent two coroutines from simultaneously creating
      * a shell for the same session (e.g. if the old shell just died).
      */
-    private suspend fun getOrCreateShell(sessionId: String): PersistentShell {
+    private suspend fun getOrCreateShell(sessionId: String, state: SessionExecutionState): PersistentShell {
         // Fast path: existing alive shell
-        val existing = shells[sessionId]
+        val existing = state.shell
         if (existing != null && existing.isAlive) {
             Log.d(TAG, "[$sessionId] Reusing existing shell")
             return existing
@@ -269,7 +269,7 @@ object ExecutionCoordinator {
         // Slow path: need to create (or recreate after crash)
         return globalLock.withLock {
             // Double-check after acquiring lock
-            val recheck = shells[sessionId]
+            val recheck = state.shell
             if (recheck != null && recheck.isAlive) {
                 Log.d(TAG, "[$sessionId] Reusing existing shell (post-lock)")
                 return@withLock recheck
@@ -283,7 +283,7 @@ object ExecutionCoordinator {
 
             val bindMounts = buildSessionBindMounts(sessionId)
             val shell = PersistentShell(appContext, sessionId, bindMounts)
-            shells[sessionId] = shell
+            state.shell = shell
             shell.ensureStarted()
             Log.i(TAG, "[$sessionId] Shell created with ${bindMounts.size} bind mounts")
             shell
@@ -369,25 +369,23 @@ object ExecutionCoordinator {
      * Read-only diagnostics for same-module tests. There is intentionally no
      * singular "mounted session": each session owns an independent shell.
      */
-    internal fun activeShellSessionIds(): Set<String> = shells.keys.toSet()
+    internal fun activeShellSessionIds(): Set<String> = sessions.entries().filter { it.second.shell != null }.map { it.first }.toSet()
 
     internal fun hasActiveShell(sessionId: String): Boolean =
-        shells[sessionId]?.isAlive == true
+        sessions.existing(sessionId)?.shell?.isAlive == true
 
     /**
      * Called when a session is closed. Stops and removes the shell.
      */
     fun sessionDidTerminate(sessionId: String) {
-        val shell = shells.remove(sessionId)
-        // Keep the per-session mutex stable across shell recycling/termination.
-        // Removing it here allows a concurrent caller that already captured the
-        // old mutex and a new caller to execute under two different locks. The
-        // mutex is deliberately lightweight and lives for the process lifetime.
-        // T124a: drop the snapshot too — a future shell for the same id
-        // restarts from a clean baseline, so the next applyEnvironment
-        // shouldn't try to `unset` keys that don't exist in the new shell.
-        lastInjectedKeys.remove(sessionId)
-        lastActiveMs.remove(sessionId)
+        val state = sessions.existing(sessionId) ?: return
+        val shell = state.shell
+        state.activeExecution?.cancel()
+        state.activeExecution = null
+        state.shell = null
+        state.injectedEnvKeys = emptySet()
+        state.lastActivityMs = 0L
+        state.recycleRequested = false
         shell?.stop()
         if (shell != null) Log.i(TAG, "[$sessionId] Shell terminated")
     }
@@ -399,21 +397,18 @@ object ExecutionCoordinator {
      */
     fun recycleIdleShells() {
         val now = SystemClock.elapsedRealtime()
-        for (sessionId in shells.keys) {
-            val mutex = mutexes.get(sessionId)
-            // The idle check and removal must share the exact lock used by
-            // executeLocal. A bare isExecuting check has a TOCTOU window in
-            // which a command can start immediately before shell.stop().
-            if (!mutex.tryLock()) continue
+        for ((sessionId, state) in sessions.entries()) {
+            if (!state.mutex.tryLock()) continue
             try {
-                val last = lastActiveMs[sessionId] ?: 0L
-                val shell = shells[sessionId] ?: continue
-                if (!shell.isExecuting && last != 0L && (now - last) > SHELL_IDLE_TIMEOUT_MS) {
+                val last = state.lastActivityMs
+                val shell = state.shell ?: continue
+                if (!state.isExecuting && !shell.isExecuting && last != 0L &&
+                    (now - last) > SHELL_IDLE_TIMEOUT_MS) {
                     Log.w(TAG, "[$sessionId] shell idle ${(now - last) / 1000}s — recycling")
                     sessionDidTerminate(sessionId)
                 }
             } finally {
-                mutex.unlock()
+                state.mutex.unlock()
             }
         }
     }
@@ -434,7 +429,7 @@ object ExecutionCoordinator {
     fun cleanupProotTmp() {
         // Skip entirely if any shell is alive and possibly executing — safest
         // and sufficient given the sweeper runs every minute.
-        if (shells.values.any { it.isAlive }) return
+        if (sessions.values().any { it.shell?.isAlive == true }) return
         if (!::appContext.isInitialized) return
         val ctx = appContext
         val tmpDir = PRootKernel.getProotTmpDir(ctx)
@@ -457,18 +452,19 @@ object ExecutionCoordinator {
      */
     fun stopCurrentCommand(sessionId: String? = null) {
         if (sessionId != null) {
-            val shell = shells.remove(sessionId)
-            // T124a: snapshot belongs to the now-dead shell.
-            lastInjectedKeys.remove(sessionId)
-            lastActiveMs.remove(sessionId)
-            shell?.stop()
+            sessionDidTerminate(sessionId)
             Log.i(TAG, "[$sessionId] Shell stopped by user")
         } else {
             // Stop all sessions (legacy/fallback)
-            shells.values.forEach { it.stop() }
-            shells.clear()
-            lastInjectedKeys.clear()
-            lastActiveMs.clear()
+            sessions.values().forEach { state ->
+                state.activeExecution?.cancel()
+                state.activeExecution = null
+                state.shell?.stop()
+                state.shell = null
+                state.injectedEnvKeys = emptySet()
+                state.lastActivityMs = 0L
+                state.recycleRequested = false
+            }
             @Suppress("DEPRECATION")
             ShellExecutor.destroyCurrent()
         }
@@ -492,7 +488,8 @@ object ExecutionCoordinator {
         if (!PRootKernel.isBooted) return
         val tz = PRootKernel.updateTimezone()
         val tzMap = mapOf("TZ" to tz)
-        for ((_, shell) in shells) {
+        for ((_, state) in sessions.entries()) {
+            val shell = state.shell ?: continue
             if (shell.isAlive) shell.applyEnvironment(tzMap)
         }
         TerminalSession.broadcastTimezone(tz)
@@ -509,7 +506,8 @@ object ExecutionCoordinator {
     suspend fun broadcastProxyChange() {
         if (!PRootKernel.isBooted) return
         val env = PRootKernel.updateProxy(appContext)
-        for ((_, shell) in shells) {
+        for ((_, state) in sessions.entries()) {
+            val shell = state.shell ?: continue
             if (shell.isAlive) shell.applyEnvironment(env)
         }
         TerminalSession.broadcastProxy(env)
