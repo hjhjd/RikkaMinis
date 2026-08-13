@@ -22,6 +22,8 @@ class ExecPlaneSettingsRepository(context: Context) {
     val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
     val port: StateFlow<Int> = _port.asStateFlow()
     val allowLanPlaintextWs: StateFlow<Boolean> = _allowLanPlaintextWs.asStateFlow()
+    private val _viewedInstructionRevisions = MutableStateFlow(loadViewedInstructionRevisions())
+    val viewedInstructionRevisions: StateFlow<Map<String, String>> = _viewedInstructionRevisions.asStateFlow()
     private val _forwardServers = MutableStateFlow(loadForwardServers())
     val forwardServers: StateFlow<List<ForwardServerConfig>> = _forwardServers.asStateFlow()
     private val legacyDefault = prefs.getString(KEY_DEFAULT_SANDBOX, SANDBOX_PROOT) ?: SANDBOX_PROOT
@@ -50,6 +52,14 @@ class ExecPlaneSettingsRepository(context: Context) {
         if (_sandboxMode.value != MODE_WS) return null
         return selectEnabledForwardServer(_forwardServers.value, _defaultWsId.value)
     }
+
+    fun markInstructionRevisionViewed(sandboxId: String, revision: String) {
+        if (sandboxId.isBlank() || revision.isBlank()) return
+        val updated = _viewedInstructionRevisions.value + (sandboxId to revision)
+        prefs.edit().putString(KEY_VIEWED_INSTRUCTION_REVISIONS, JSONObject(updated).toString()).apply()
+        _viewedInstructionRevisions.value = updated
+    }
+
 
     fun setEnabled(value: Boolean) {
         prefs.edit().putBoolean(KEY_ENABLED, value).apply()
@@ -199,6 +209,13 @@ class ExecPlaneSettingsRepository(context: Context) {
         return applied
     }
 
+    private fun loadViewedInstructionRevisions(): Map<String, String> = runCatching {
+        val json = JSONObject(prefs.getString(KEY_VIEWED_INSTRUCTION_REVISIONS, "{}") ?: "{}")
+        json.keys().asSequence().associateWith { key -> json.getString(key) }
+            .filterKeys { it.isNotBlank() }
+            .filterValues { it.isNotBlank() }
+    }.getOrDefault(emptyMap())
+
     private fun loadForwardServers(): List<ForwardServerConfig> = runCatching {
         ExecPlaneJson.codec.decodeFromString<List<ForwardServerConfig>>(
             prefs.getString(KEY_FORWARD_SERVERS, "[]") ?: "[]",
@@ -251,6 +268,9 @@ class ExecPlaneSettingsRepository(context: Context) {
                 normalized.startsWith("fea") || normalized.startsWith("feb")
         }
 
+        internal fun instructionRevisionChanged(viewed: String?, current: String): Boolean =
+            viewed != null && viewed != current
+
         internal fun selectEnabledForwardServer(
             servers: List<ForwardServerConfig>,
             defaultId: String?,
@@ -270,6 +290,7 @@ class ExecPlaneSettingsRepository(context: Context) {
         private const val KEY_SANDBOX_MODE = "sandboxMode"
         private const val KEY_DEFAULT_WS = "defaultWsSandbox"
         private const val KEY_ALLOW_LAN_PLAINTEXT_WS = "allowLanPlaintextWs"
+        private const val KEY_VIEWED_INSTRUCTION_REVISIONS = "viewedInstructionRevisions"
         private const val KEY_CONCURRENCY_PREFIX = "concurrency."
         private val ENV_KEY = Regex("[A-Za-z_][A-Za-z0-9_]*")
         private val RESERVED_ENV = setOf(

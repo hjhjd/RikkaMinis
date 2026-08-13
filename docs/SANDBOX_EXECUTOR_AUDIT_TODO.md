@@ -125,7 +125,7 @@ capabilities / dispatch / cancel
 - [x] Android 在对应 WS 沙箱详情中展示来源沙箱、revision 和完整内容。
 - [x] 提供“复制全部指令”按钮，复制内容逐字保持，不自动添加或删改提示。
 - [x] 指令集不会自动进入 system prompt、Agent prompt、会话记忆或剪贴板。
-- [ ] 指令集更新提示 revision 变化；不得覆盖用户已有内容。
+- [x] 按稳定 sandbox ID 持久记录已查看 revision；服务端 revision 变化时提示更新，且不覆盖用户已有内容。
   - [x] 指令集详情展示当前 revision、更新时间和内容长度。
 - [x] 限制指令集为 256 KiB；反向注册异常内容会拒绝，正向异常握手不会上线。
 

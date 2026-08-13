@@ -194,6 +194,7 @@
     <string name="sandbox_dispatch_test">发送指令</string>
     <string name="sandbox_dispatch_on">向 %1$s 发送不透明指令</string>
     <string name="sandbox_payload">不透明指令内容</string>
+    <string name="sandbox_instruction_updated_badge">AI 指令集有更新</string>
     <string name="sandbox_instruction_set">AI 指令集</string>
     <string name="sandbox_instruction_revision">版本：%1$s · 仅在你主动点击“复制全部”时写入剪贴板</string>
     <string name="sandbox_instruction_length">指令长度：%1$d 字符</string>

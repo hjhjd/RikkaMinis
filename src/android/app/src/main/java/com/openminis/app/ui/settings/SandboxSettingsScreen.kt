@@ -64,6 +64,7 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
     val sandboxMode by settings.sandboxMode.collectAsState()
     val defaultWsId by settings.defaultWsId.collectAsState()
     val savedServers by settings.forwardServers.collectAsState()
+    val viewedInstructionRevisions by settings.viewedInstructionRevisions.collectAsState()
     val status by bridge.status.collectAsState()
     val servers by bridge.connections.snapshots.collectAsState()
     val scope = rememberCoroutineScope()
@@ -266,9 +267,18 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                             TextButton(onClick = { concurrencyTarget = server.name }) {
                                 Text(stringResource(R.string.sandbox_concurrency_edit))
                             }
-                            bridge.handshake(server.name)?.instructionSet?.let {
-                                TextButton(onClick = { instructionTarget = server.name }) {
-                                    Text(stringResource(R.string.sandbox_instruction_set))
+                            bridge.handshake(server.name)?.let { handshake ->
+                                handshake.instructionSet?.let { instructions ->
+                                    val changed = com.openminis.app.execplane.ExecPlaneSettingsRepository.instructionRevisionChanged(
+                                        viewedInstructionRevisions[server.sandboxId],
+                                        instructions.revision,
+                                    )
+                                    TextButton(onClick = {
+                                        settings.markInstructionRevisionViewed(server.sandboxId, instructions.revision)
+                                        instructionTarget = server.name
+                                    }) {
+                                        Text(stringResource(if (changed) R.string.sandbox_instruction_updated_badge else R.string.sandbox_instruction_set))
+                                    }
                                 }
                             }
                             if (server.online) {

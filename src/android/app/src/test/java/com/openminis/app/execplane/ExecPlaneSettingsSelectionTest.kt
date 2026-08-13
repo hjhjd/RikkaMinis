@@ -34,6 +34,13 @@ class ExecPlaneSettingsSelectionTest {
     }
 
     @Test
+    fun instructionUpdateRequiresPreviouslyViewedDifferentRevision() {
+        assertEquals(false, ExecPlaneSettingsRepository.instructionRevisionChanged(null, "r1"))
+        assertEquals(false, ExecPlaneSettingsRepository.instructionRevisionChanged("r1", "r1"))
+        assertEquals(true, ExecPlaneSettingsRepository.instructionRevisionChanged("r1", "r2"))
+    }
+
+    @Test
     fun noEnabledServerReturnsNull() {
         assertNull(ExecPlaneSettingsRepository.selectEnabledForwardServer(
             listOf(server("one", false), server("two", false)),

@@ -296,6 +296,7 @@
     <string name="sandbox_dispatch_test">Dispatch</string>
     <string name="sandbox_dispatch_on">Dispatch opaque payload to %1$s</string>
     <string name="sandbox_payload">Opaque payload</string>
+    <string name="sandbox_instruction_updated_badge">AI instructions updated</string>
     <string name="sandbox_instruction_set">AI instructions</string>
     <string name="sandbox_instruction_revision">Revision: %1$s · copied only when you explicitly choose Copy all</string>
     <string name="sandbox_instruction_length">Length: %1$d characters</string>
