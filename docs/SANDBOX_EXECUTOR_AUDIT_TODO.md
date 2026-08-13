@@ -61,8 +61,8 @@ capabilities / dispatch / cancel
 - [ ] 记录当前 `shell_execute` 本地/远端行为矩阵：cwd、环境变量、profile、后台任务、超时、取消、stdout/stderr、退出码、截断。
 - [ ] 为关键缺陷增加失败测试或最小复现：
   - [ ] 超时后 guest 命令仍继续运行。
-  - [ ] marker 跨读取块无法识别。
-  - [ ] UTF-8 多字节字符跨读取块损坏。
+  - [x] marker 跨读取块无法识别。
+  - [x] UTF-8 多字节字符跨读取块损坏。
   - [ ] `/var/minis/workspace/../../...` 路径逃逸。
   - [ ] 符号链接逃逸。
   - [ ] 空闲清理误杀长命令。
@@ -229,8 +229,8 @@ capabilities / dispatch / cancel
 - [ ] 对 sessionId 使用安全格式或不可伪造的内部目录键。
 - [x] 空闲回收检查 `isExecuting=false`，避免回收正在执行的 Shell；活动时间在命令结束更新。
 - [ ] 修复执行中回收导致同 session 两把 mutex 的竞态。
-- [ ] marker 解析改为跨 chunk 增量状态机。
-- [ ] 使用 `CharsetDecoder` 正确处理跨 chunk UTF-8。
+- [x] marker 解析改为跨 chunk 增量状态机。
+- [x] 使用 `CharsetDecoder` 正确处理跨 chunk UTF-8。
 
 **阶段 4 完成条件**
 

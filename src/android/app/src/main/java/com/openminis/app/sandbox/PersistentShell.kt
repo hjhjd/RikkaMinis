@@ -260,55 +260,48 @@ class PersistentShell(
     }
 
     private fun readLoop(p: Process) {
+        var activeCallback: CommandCallback? = null
+        var framer: ShellOutputFramer? = null
+        fun consume(frame: ShellOutputFramer.Frame, cb: CommandCallback) {
+            if (frame.output.isNotEmpty()) {
+                cb.appendOutput(frame.output)
+                cb.lineCallback?.let { feedLines(frame.output, it) }
+            }
+            frame.exitCode?.let { exitCode ->
+                cb.onComplete?.invoke(cb.output.toString(), exitCode, cb.truncated)
+                if (pendingCallback === cb) pendingCallback = null
+                activeCallback = null
+                framer = null
+            }
+        }
         try {
             val buffer = ByteArray(4096)
             val stream = p.inputStream
             while (true) {
                 val n = stream.read(buffer)
                 if (n < 0) break
-                val text = String(buffer, 0, n, StandardCharsets.UTF_8)
-
                 val cb = pendingCallback
                 if (cb != null) {
-                    // Check if this chunk contains the end marker
-                    val markerExitPattern = "__MINIS_DONE_${cb.marker}_EXIT_"
-                    val markerIdx = text.indexOf(markerExitPattern)
-
-                    if (markerIdx >= 0) {
-                        // Extract output before marker, with truncation guard
-                        val beforeMarker = text.substring(0, markerIdx)
-                        cb.appendOutput(beforeMarker)
-                        if (cb.lineCallback != null) {
-                            feedLines(beforeMarker, cb.lineCallback)
-                        }
-
-                        // Extract exit code from marker line
-                        val afterMarker = text.substring(markerIdx)
-                        val exitCode = parseExitCode(afterMarker, cb.marker)
-
-                        // Signal completion with truncated flag
-                        cb.onComplete?.invoke(cb.output.toString(), exitCode, cb.truncated)
-                        pendingCallback = null
-                    } else {
-                        cb.appendOutput(text)
-                        if (cb.lineCallback != null) {
-                            feedLines(text, cb.lineCallback)
-                        }
+                    if (activeCallback !== cb) {
+                        activeCallback = cb
+                        framer = ShellOutputFramer(cb.marker)
                     }
+                    consume(framer!!.feed(buffer, n), cb)
+                } else {
+                    activeCallback = null
+                    framer = null
                 }
-                // If no pending callback, discard (shell prompt noise etc.)
             }
+            activeCallback?.let { cb -> framer?.finish()?.let { consume(it, cb) } }
         } catch (e: Exception) {
             Log.d(TAG, "Reader loop ended: ${e.message}")
         }
 
-        // Process exited
         val cb = pendingCallback
         if (cb != null) {
             cb.onComplete?.invoke(cb.output.toString(), -1, cb.truncated)
             pendingCallback = null
         }
-
         process = null
         stdinWriter = null
         Log.i(TAG, "Persistent shell process exited")
@@ -341,13 +334,6 @@ class PersistentShell(
         } else {
             output.append(text)
         }
-    }
-
-    private fun parseExitCode(text: String, marker: String): Int {
-        // Pattern: __MINIS_DONE_{marker}_EXIT_{code}__
-        val regex = Regex("__MINIS_DONE_${Regex.escape(marker)}_EXIT_(\\d+)__")
-        val match = regex.find(text)
-        return match?.groupValues?.get(1)?.toIntOrNull() ?: -1
     }
 
     /**
