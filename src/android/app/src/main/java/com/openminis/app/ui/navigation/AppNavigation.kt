@@ -633,7 +633,6 @@ fun AppNavigation(
                 onBackgroundClick = { navController.safeNavigate(Routes.BACKGROUND) },
                 onSandboxClick = { navController.safeNavigate(Routes.SANDBOX) },
                 onDistributedClick = { navController.safeNavigate(Routes.DISTRIBUTED) },
-                onVcpInfoClick = { navController.safeNavigate(Routes.VCP_INFO) },
                 onLogsClick = { navController.safeNavigate(Routes.LOGS) },
                 onMountedFoldersClick = { navController.safeNavigate(Routes.MOUNTED_FOLDERS) },
                 onSharedFoldersClick = { navController.safeNavigate(Routes.SHARED_FOLDERS) },
@@ -1335,6 +1334,7 @@ fun AppNavigation(
                 onLogFileClick = { fileName ->
                     navController.safeNavigate(Routes.logDetail(fileName))
                 },
+                onServerSettingsClick = { navController.safeNavigate(Routes.DISTRIBUTED) },
             )
         }
 

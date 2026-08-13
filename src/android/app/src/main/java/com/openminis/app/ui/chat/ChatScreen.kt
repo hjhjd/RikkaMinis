@@ -443,6 +443,8 @@ fun ChatScreen(
     onOpenVcpInfo: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val app = context.applicationContext as com.openminis.app.MinisApp
+    val vcpLogUnread by app.vcpLogConnectionManager.store.unreadCount.collectAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     // Scoped to a process-level per-session ViewModelStore (ChatViewModelStore)
@@ -2341,11 +2343,25 @@ fun ChatScreen(
                             },
                             modifier = Modifier.size(40.dp),
                         ) {
-                            Icon(
-                                Icons.Outlined.NotificationsNone,
-                                contentDescription = stringResource(R.string.chat_event_drawer_open),
-                                modifier = Modifier.size(21.dp),
-                            )
+                            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Outlined.NotificationsNone,
+                                    contentDescription = stringResource(R.string.chat_event_drawer_open),
+                                    modifier = Modifier.size(21.dp),
+                                )
+                                if (vcpLogUnread > 0) {
+                                    Box(
+                                        Modifier.align(Alignment.TopEnd).size(12.dp)
+                                            .background(Color(0x5535D07F), CircleShape),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Box(
+                                            Modifier.size(7.dp)
+                                                .background(Color(0xFF35D07F), CircleShape),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     // New Chat — promoted from the "..." menu to a persistent
                     // top-bar button beside "..." (iOS parity: square.and.pencil

@@ -82,6 +82,7 @@ fun DistributedSettingsScreen(onBack: () -> Unit) {
                     if (repository.save(wsUrl, vcpKey, deviceName, wanted)) {
                         manager.reconcile()
                         app.vcpInfoConnectionManager.reconcile()
+                        app.vcpLogConnectionManager.reconcile()
                     }
                     else validationError = app.getString(R.string.distributed_invalid_config)
                 },
@@ -130,6 +131,7 @@ fun DistributedSettingsScreen(onBack: () -> Unit) {
                         if (valid && persisted.enabled) {
                             manager.reconnectNow()
                             app.vcpInfoConnectionManager.reconnectNow()
+                            app.vcpLogConnectionManager.reconnectNow()
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),

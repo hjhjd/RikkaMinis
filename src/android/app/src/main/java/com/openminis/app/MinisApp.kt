@@ -108,6 +108,9 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     lateinit var vcpInfoConnectionManager: com.openminis.app.vcpinfo.VcpInfoConnectionManager
         private set
+    lateinit var vcpLogConnectionManager: com.openminis.app.vcplog.VcpLogConnectionManager
+        private set
+    private lateinit var vcpLogLifecycleObserver: com.openminis.app.vcplog.VcpLogLifecycleObserver
     lateinit var execPlaneBridge: com.openminis.app.execplane.ExecPlaneBridge
     lateinit var sandboxFileService: com.openminis.app.execplane.SandboxFileService
     lateinit var sandboxTransferService: com.openminis.app.execplane.SandboxTransferService
@@ -514,6 +517,13 @@ class MinisApp : Application(), ImageLoaderFactory {
             distributedSettingsRepository,
         )
         vcpInfoConnectionManager.reconcile()
+        vcpLogConnectionManager = com.openminis.app.vcplog.VcpLogConnectionManager(
+            distributedSettingsRepository,
+            networkMonitor = networkMonitor,
+        )
+        vcpLogConnectionManager.reconcile()
+        vcpLogLifecycleObserver = com.openminis.app.vcplog.VcpLogLifecycleObserver(vcpLogConnectionManager)
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(vcpLogLifecycleObserver)
         // ExecPlane reverse WS manager is application-scoped so connections
         // survive Settings navigation. It binds loopback only and currently
         // accepts register/ping/status; remote exec stays disabled.

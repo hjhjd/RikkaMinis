@@ -70,6 +70,7 @@ import java.io.RandomAccessFile
 fun LogManagementScreen(
     onBack: () -> Unit,
     onLogFileClick: (fileName: String) -> Unit = {},
+    onServerSettingsClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
     // T-logs-perf: capped, separated daily/crash lists. Pre-T-logs-perf the
@@ -138,18 +139,25 @@ fun LogManagementScreen(
             SegmentedButton(
                 selected = tab == "logs",
                 onClick = { tab = "logs" },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
             ) { Text(stringResource(R.string.log_title)) }
+            SegmentedButton(
+                selected = tab == "vcp-log",
+                onClick = { tab = "vcp-log" },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
+            ) { Text("VCP Log") }
             SegmentedButton(
                 selected = tab == "config-audit",
                 onClick = { tab = "config-audit" },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
             ) { Text(stringResource(R.string.logs_tab_config_changes)) }
         }
 
         if (tab == "config-audit") {
             // Audit body. Owns its own scrolling.
             ConfigAuditScreen(modifier = Modifier.fillMaxSize())
+        } else if (tab == "vcp-log") {
+            VcpLogScreen(onServerSettingsClick = onServerSettingsClick)
         } else {
             // Logs body — original layout. The LazyColumn picks up
             // viewport height since the scaffold gave us a Column slot.
