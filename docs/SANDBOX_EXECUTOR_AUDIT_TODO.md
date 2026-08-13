@@ -15,7 +15,9 @@
 > - 阶段 3：未完成；PRoot 生命周期统一和旧 ExecPlane 兼容层仍待收敛。
 > - 阶段 4：P0 完成；P1 路径 containment、空闲执行检查、marker、UTF-8 与 mutex 回收竞态均已修复。
 > - 阶段 5：未完成；本地 Shell 最终语义与工具契约待确定。
-> - 阶段 6：未完成；通用 Resource 通道与纵深防御待实现。
+> - 阶段 6：未完成；WebSocket 文本/协议限额已完成，通用 Resource 通道与其余纵深防御待实现。
+>
+> 最近验证：Android JVM 完整测试与 Debug APK 构建通过；Debug APK SHA-256：`b1da1e9e6899c2b60d6d859f3a561352004c359c3110e31dd7ea5b178c63bcde`。
 
 ## 目标
 
@@ -195,7 +197,7 @@ capabilities / dispatch / cancel
   - lastActivity；
   - recycleRequested；
   - injectedEnvKeys。
-- [ ] Shell 回收与 mutex 生命周期分离。
+- [x] Shell 回收与 mutex 生命周期分离。
 - [ ] 只有会话真正结束且无活动执行时才删除 session state。
 - [ ] 资源监控只请求回收，由持锁执行路径完成最终清理。
 
@@ -207,7 +209,7 @@ capabilities / dispatch / cancel
 - [ ] 明确旧协议弃用窗口和服务端最低兼容版本。
 - [ ] 文本 dispatch 稳定后，移除 WS `shell_execute`、远端 `file_read/write/edit` 的 Android 特殊分支。
 - [ ] `transfer.*` 在通用 resource 通道落地前保留，仅用于兼容旧客户端/服务端，不作为新架构入口。
-- [ ] 显式 WS dispatch 永不降级到 PRoot；通道失败只返回通道错误。
+- [x] 显式 WS dispatch 永不降级到 PRoot；通道失败只返回通道错误。
 
 **阶段 3 完成条件**
 
@@ -263,7 +265,7 @@ capabilities / dispatch / cancel
   - [ ] timeout/cancel 明确会重建 Shell；
   - [ ] 切换 sandbox 不共享 Shell 状态；
   - [ ] 增加状态重置命令或 API。
-- [ ] WS payload 不承诺任何 `/bin/sh` 语义；具体 DSL 及行为仅由用户复制的服务端指令集说明。
+- [x] WS payload 不承诺任何 `/bin/sh` 语义；具体 DSL 及行为仅由用户复制的服务端指令集说明。
 - [ ] 对旧 WS `exec` 兼容路径记录 login/profile、stderr 和独立进程行为，避免伪装成与 PRoot 完全相同。
 - [ ] 将 WS 入口从 `shell_execute` 中移出，使用固定 `sandbox_dispatch`；`shell_execute` 最终只代表本地 PRoot（若保留）。
 - [ ] 通用展示层统一 timeout、cancelled、truncated、sandboxName；WS dispatch 禁止 fallback。
@@ -286,7 +288,7 @@ capabilities / dispatch / cancel
 - [ ] 只读外部挂载在 UI/文档中标明为软限制，不宣称为安全边界。
 - [ ] 挂载配置从磁盘/备份恢复时重新校验名称、数量、URI、重复项和 resolved path。
 - [ ] PRoot PID 获取失败时输出一次诊断警告，不得静默关闭 RSS 监控。
-- [ ] 为远端 WebSocket 增加消息、payload、指令集和协议字段长度限制。
+- [x] 为远端 WebSocket 增加消息、payload、指令集和协议字段长度限制。
 - [ ] 审核日志，确保 token、环境变量值、完整敏感 payload 和代理认证信息不会写入日志。
 - [ ] 删除或隔离已弃用的 `ShellExecutor`，避免生产代码重新走旧路径。
 - [ ] 更新架构文档、服务端指令集规范和故障排查文档。
