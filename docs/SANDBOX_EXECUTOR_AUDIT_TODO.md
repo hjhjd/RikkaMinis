@@ -4,7 +4,18 @@
 >
 > 审计基线：`44f3a53`
 >
-> 状态：持续施工；不透明 Dispatch 主链路已完成，旧协议与 PRoot 整改待继续。
+> 状态：持续施工；阶段 1 与阶段 2 主链路完成，P0 完成，P1 正在施工；旧协议、PRoot 生命周期与 Resource 通道待继续。
+>
+> 最近更新：2026-08-14
+>
+> 进度摘要：
+> - 阶段 0：部分完成；marker、UTF-8、路径逃逸、远端输出与截断已有回归测试，其余基线待补。
+> - 阶段 1：完成；固定 `sandbox_dispatch`、Provider 骨架、Channel 事件与 UI 节流已落地。
+> - 阶段 2：主链路完成；不透明协议、稳定 sandbox ID、指令集 UI 与服务端最小 DSL 已验证。
+> - 阶段 3：未完成；PRoot 生命周期统一和旧 ExecPlane 兼容层仍待收敛。
+> - 阶段 4：P0 完成；P1 已完成路径 containment、空闲执行检查、marker 与 UTF-8，mutex 回收竞态仍待修复。
+> - 阶段 5：未完成；本地 Shell 最终语义与工具契约待确定。
+> - 阶段 6：未完成；通用 Resource 通道与纵深防御待实现。
 
 ## 目标
 
@@ -67,8 +78,8 @@ capabilities / dispatch / cancel
   - [x] 符号链接逃逸。
   - [ ] 空闲清理误杀长命令。
   - [ ] Shell 回收时同 session 创建第二把 mutex。
-  - [ ] 远端持续输出导致无界内存增长。
-  - [ ] 远端 `truncated=true` 未传播。
+  - [x] 远端持续输出导致无界内存增长。
+  - [x] 远端 `truncated=true` 未传播。
 - [ ] 保存一组端到端 smoke commands，供每阶段验证。
 
 ## 阶段 1：建立通用调用骨架（已启动，按新方向收敛）
@@ -98,9 +109,9 @@ capabilities / dispatch / cancel
 
 **阶段 1 完成条件**
 
-- WS 调用入口只接受 sandbox identity 与不透明 payload。
-- Android 不再为 WS 的新增业务指令增加 schema、参数类或 `when(toolName)` 分支。
-- 现有本地工具和 PRoot 行为暂时保持不变。
+- [x] WS 调用入口只接受 sandbox identity 与不透明 payload。
+- [x] Android 不再为 WS 的新增业务指令增加 schema、参数类或 `when(toolName)` 分支。
+- [x] 现有本地工具和 PRoot 行为暂时保持不变。
 
 ---
 
@@ -234,10 +245,10 @@ capabilities / dispatch / cancel
 
 **阶段 4 完成条件**
 
-- 超时/取消返回后，对应命令已停止。
-- 普通文件工具无法越出允许根目录。
-- 恶意或异常远端输出不能造成 App 无界内存增长。
-- 同 session 命令在回收和取消场景下仍严格串行。
+- [x] 超时/取消返回后，对应命令已停止。
+- [x] 普通文件工具经 PRootKernel resolver 时无法越出允许根目录；其他直连入口仍在统一审计。
+- [x] 恶意或异常远端输出不能造成 App 无界内存增长。
+- [ ] 同 session 命令在回收和取消场景下仍严格串行。
 
 ---
 
