@@ -1671,14 +1671,12 @@ class OpenAIProvider private constructor(
                                             }
                                         }
                                         is AgentContentPart.FileData -> {
-                                            val text = DirectAttachment.text(part)
-                                            contentArray.put(JSONObject().apply {
-                                                put("type", "text")
-                                                put(
-                                                    "text",
-                                                    text ?: "[Attachment available at ${part.linuxPath}; use file tools to inspect it]",
-                                                )
-                                            })
+                                            DirectAttachment.text(part)?.let { text ->
+                                                contentArray.put(JSONObject().apply {
+                                                    put("type", "text")
+                                                    put("text", text)
+                                                })
+                                            }
                                         }
                                         is AgentContentPart.ImageData -> {
                                             if (supportsImages) {
@@ -2670,10 +2668,8 @@ class OpenAIProvider private constructor(
                                                 put("filename", part.fileName)
                                                 put("file_data", "data:application/pdf;base64,${Base64.encodeToString(pdf, Base64.NO_WRAP)}")
                                             })
-                                            else -> contentArray.put(JSONObject().apply {
-                                                put("type", "input_text")
-                                                put("text", "[Attachment available at ${part.linuxPath}; use file tools to inspect it]")
-                                            })
+                                            // 路径描述已由 ChatViewModel 作为相邻 input_text 发送。
+                                            else -> Unit
                                         }
                                     }
                                     is AgentContentPart.ImageData -> {

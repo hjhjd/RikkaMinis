@@ -15,7 +15,7 @@ object DirectAttachment {
         return runCatching {
             file.inputStream().bufferedReader(Charsets.UTF_8).use { it.readText() }
         }.getOrNull()?.let {
-            "<attached-file name=\"${xmlEscape(part.fileName)}\" type=\"${xmlEscape(part.mimeType)}\">\n$it\n</attached-file>"
+            "<附加文件 文件名=\"${xmlEscape(part.fileName)}\" 类型=\"${xmlEscape(part.mimeType)}\">\n$it\n</附加文件>"
         }
     }
 

@@ -245,10 +245,8 @@ class GeminiProvider(
                                     put("mimeType", part.mimeType)
                                     put("data", Base64.encodeToString(binary, Base64.NO_WRAP))
                                 }))
-                                else -> parts.put(JSONObject().put(
-                                    "text",
-                                    "[Attachment available at ${part.linuxPath}; use file tools to inspect it]",
-                                ))
+                                // 路径描述已由 ChatViewModel 作为相邻文本块发送。
+                                else -> Unit
                             }
                         }
                         is AgentContentPart.ImageData -> {

@@ -15,7 +15,7 @@ class DirectAttachmentTest {
 
         val text = DirectAttachment.text(part)
 
-        assertTrue(text!!.contains("name=\"note.md\""))
+        assertTrue(text!!.contains("文件名=\"note.md\""))
         assertTrue(text.contains("hello"))
     }
 

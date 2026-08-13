@@ -632,10 +632,9 @@ class AnthropicProvider(
                                     })
                                     put("title", part.fileName)
                                 })
-                                else -> contentArray.put(JSONObject().apply {
-                                    put("type", "text")
-                                    put("text", "[Attachment available at ${part.linuxPath}; use file tools to inspect it]")
-                                })
+                                // 路径描述已由 ChatViewModel 作为相邻文本块发送，
+                                // 不支持直传的二进制文件无需重复追加提示。
+                                else -> Unit
                             }
                         }
                         is AgentContentPart.ImageData -> {
