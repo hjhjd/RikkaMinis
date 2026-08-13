@@ -235,6 +235,7 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                         Text(
                             "${if (server.online) stringResource(R.string.sandbox_online) else stringResource(R.string.sandbox_offline)} · " +
                                 stringResource(R.string.sandbox_concurrency_value, settings.concurrencyLimit(server.name)) + " · " +
+                                (bridge.handshake(server.name)?.let { "v${it.protocol} · ${it.limits.maxConcurrentCommands} hard · " } ?: "") +
                                 server.caps.sorted().joinToString(", "),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

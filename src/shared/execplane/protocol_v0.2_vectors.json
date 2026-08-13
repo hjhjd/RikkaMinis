@@ -1,0 +1,70 @@
+{
+  "version": "0.2",
+  "cases": [
+    {
+      "name": "register_droidspaces",
+      "message": {
+        "id": 1,
+        "method": "register",
+        "params": {
+          "protocol": "0.2",
+          "name": "droidspaces",
+          "caps": ["exec", "android-build"],
+          "resources": {"cpuCores": 8, "memoryMb": 8192, "os": "debian", "arch": "aarch64"},
+          "limits": {"maxStdoutBytes": 16777216, "maxStderrBytes": 8388608, "maxTotalOutputBytes": 20971520, "maxTransferBytes": 536870912, "maxConcurrentCommands": 64, "maxTimeoutMs": 3600000},
+          "trust": "LOCAL",
+          "tags": ["local", "build"]
+        },
+        "ts": 1786330800000
+      },
+      "valid": true
+    },
+    {
+      "name": "exec_argv",
+      "message": {
+        "id": 2,
+        "method": "exec",
+        "params": {"cmd": ["uname", "-a"], "timeoutMs": 30000, "shell": false},
+        "target": "droidspaces",
+        "ts": 1786330801000
+      },
+      "valid": true
+    },
+    {
+      "name": "exec_output_event",
+      "message": {
+        "event": "exec.output",
+        "data": {"requestId": 2, "sequence": 0, "stream": "stdout", "data": "hello\n"}
+      },
+      "valid": true
+    },
+    {
+      "name": "cancel_exec",
+      "message": {
+        "id": 3,
+        "method": "cancel",
+        "params": {"requestId": 2},
+        "ts": 1786330802000
+      },
+      "valid": true
+    },
+    {
+      "name": "business_failure_not_channel_failure",
+      "message": {
+        "id": 2,
+        "ok": false,
+        "error": {"code": "EXEC_FAILED", "message": "exit code 1"}
+      },
+      "triggersDegradation": false
+    },
+    {
+      "name": "disconnect_triggers_degradation",
+      "message": {
+        "id": 2,
+        "ok": false,
+        "error": {"code": "CHANNEL_DISCONNECTED", "message": "executor disconnected"}
+      },
+      "triggersDegradation": true
+    }
+  ]
+}

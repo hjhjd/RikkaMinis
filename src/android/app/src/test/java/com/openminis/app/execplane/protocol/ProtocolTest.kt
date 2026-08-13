@@ -1,6 +1,7 @@
 package com.openminis.app.execplane.protocol
 
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.decodeFromJsonElement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -36,6 +37,25 @@ class ProtocolTest {
         assertEquals(ValidationResult.Valid, ProtocolValidator.validateExec(ExecParams(listOf("uname", "-a"))))
         val invalid = ProtocolValidator.validateExec(ExecParams(listOf("echo", "bad\u0000arg")))
         assertTrue(invalid is ValidationResult.Invalid)
+    }
+
+    @Test
+    fun shellExecRequiresExplicitShArgv() {
+        assertEquals(
+            ValidationResult.Valid,
+            ProtocolValidator.validateExec(ExecParams(listOf("/bin/sh", "-lc", "echo ok"), shell = true)),
+        )
+        assertTrue(ProtocolValidator.validateExec(ExecParams(listOf("echo", "ok"), shell = true)) is ValidationResult.Invalid)
+    }
+
+    @Test
+    fun outputEventDecodesWithRequestIdentity() {
+        val event = ExecPlaneJson.codec.decodeFromString<RpcEvent>(
+            """{"event":"exec.output","data":{"requestId":2,"sequence":0,"stream":"stdout","data":"ok"}}""",
+        )
+        val output = ExecPlaneJson.codec.decodeFromJsonElement<ExecOutputEvent>(event.data)
+        assertEquals(2L, output.requestId)
+        assertEquals("stdout", output.stream)
     }
 
     @Test

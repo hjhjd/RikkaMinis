@@ -6,7 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
-const val EXECPLANE_PROTOCOL_VERSION = "0.1"
+const val EXECPLANE_PROTOCOL_VERSION = "0.2"
 
 @Serializable
 data class RpcRequest(
@@ -35,6 +35,14 @@ data class RpcError(
 data class RpcEvent(
     val event: String,
     val data: JsonElement,
+)
+
+@Serializable
+data class ExecOutputEvent(
+    val requestId: Long,
+    val sequence: Long,
+    val stream: String,
+    val data: String,
 )
 
 @Serializable

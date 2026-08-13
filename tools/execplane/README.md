@@ -76,7 +76,7 @@ python3 -m venv "$HOME/.local/lib/execplane/venv"
 
 ## 2. 部署文件
 
-三个文件必须来自同一个 Git 提交，避免协议和运行时不匹配。
+三个文件必须来自同一个 Git 提交，避免协议和运行时不匹配。当前协议版本为 **ExecPlane 0.2**；0.1 与 0.2 不做静默兼容，版本或 capability 握手失败的执行端不会进入在线注册表。
 
 ### 正向模式最小文件集
 
@@ -324,11 +324,17 @@ find "$HOME/workspace" /tmp \( -name '*.part' -o -name '*.minis-*.dir' \) -print
 - `exec` 可以运行任意 Shell 命令，不受 `--allow-root` 限制；`--allow-root` 只限制文件 RPC 和 Push/Pull。
 - 命令输出、并发、连接数、活动传输和临时空间均有硬上限；超时、取消或输出超限会终止命令的整个进程组。
 - 同一 WebSocket 连接可并发处理多个请求，响应允许乱序返回并通过 request ID 关联；连接断开会取消该连接尚未完成的任务。
+- 命令统一使用 argv；Shell 工具由 App 显式发送 `["/bin/sh", "-lc", command]`，执行端不再隐式调用 `create_subprocess_shell`。
+- stdout/stderr 通过 `exec.output` 事件实时回传，每块带 request ID、sequence 和 stream；最终响应携带退出码、耗时、输出字节数和截断状态。
+- App 协程取消会发送 `cancel(requestId)`，执行端取消对应任务并终止其完整进程组。
 - App 与执行端必须同步升级错误码。旧 App 遇到新版执行端返回的 `EXEC_OUTPUT_LIMIT`/`EXEC_RESOURCE_LIMIT` 时可能无法解码响应并表现为请求超时。
 - App 显式指定 WS 沙箱失败时不会静默改在 PRoot 执行。
 - Minis 环境变量默认不会自动发送到 WS；只有 App 中明确授权的变量才会随单次 `exec` 注入。
 - 注入变量不会写入远端 profile 或配置文件，子进程结束后失效。
 - 文件 Pull 完成并通过 SHA-256 校验后，才会落入 App 文件空间并成为可预览的 `minis://` 资源。
+- 文件和目录覆盖采用同级 `stage → backup → target` 事务切换；解压、移动或远端确认失败时恢复原目标，并清理 `.stage/.backup/.part`。
+- `transfer.commit` 可幂等重试；响应丢失后客户端通过 `transfer.resume` 查询 `COMMITTED` 状态。
+- 文件 RPC 与目录传输拒绝符号链接；`fs.list` 仅通过 `lstat` 报告 `symlink` 类型，不跟随读取链接目标。
 
 ## 文件说明
 

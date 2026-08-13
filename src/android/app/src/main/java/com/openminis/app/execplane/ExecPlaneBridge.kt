@@ -3,14 +3,18 @@ package com.openminis.app.execplane
 import android.util.Log
 import com.openminis.app.execplane.connection.ConnectionManager
 import com.openminis.app.execplane.connection.ExecutorConnection
+import com.openminis.app.execplane.protocol.CapabilitiesResult
 import com.openminis.app.execplane.protocol.ConnectionDirection
 import com.openminis.app.execplane.protocol.EXECPLANE_PROTOCOL_VERSION
+import com.openminis.app.execplane.protocol.ExecOutputEvent
+import com.openminis.app.execplane.protocol.ExecutorLimits
 import com.openminis.app.execplane.protocol.ExecPlaneErrorCode
 import com.openminis.app.execplane.protocol.ExecPlaneJson
 import com.openminis.app.execplane.protocol.ExecutorTrust
 import com.openminis.app.execplane.protocol.ProtocolValidator
 import com.openminis.app.execplane.protocol.RegisterParams
 import com.openminis.app.execplane.protocol.RpcError
+import com.openminis.app.execplane.protocol.RpcEvent
 import com.openminis.app.execplane.protocol.RpcRequest
 import com.openminis.app.execplane.protocol.RpcResponse
 import com.openminis.app.execplane.protocol.ValidationResult
@@ -33,7 +37,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -115,6 +121,11 @@ class ExecPlaneBridge(
         settings.forwardServers.value.filter { it.enabled && it.token.isNotBlank() }.forEach(::connect)
     }
 
+    fun handshake(name: String): CapabilitiesResult? {
+        val resolved = connections.resolveOnlineName(name) ?: return null
+        return (connections.connection(resolved) as? RemoteCommandConnection)?.handshake
+    }
+
     fun disconnect(name: String): Boolean = connections.disconnectByUser(name)
 
     fun delete(name: String): Boolean {
@@ -148,6 +159,7 @@ class ExecPlaneBridge(
         command: String,
         timeoutMs: Long = 600_000,
         env: Map<String, String> = emptyMap(),
+        outputCallback: ((String, String) -> Unit)? = null,
     ): RemoteExecResult {
         val resolvedName = connections.resolveOnlineName(name)
             ?: throw RemoteChannelException(
@@ -155,7 +167,7 @@ class ExecPlaneBridge(
                 "WebSocket Server is offline",
             )
         return commandLimiter.withPermit(resolvedName) {
-            remoteConnection(resolvedName).exec(command, timeoutMs, env)
+            remoteConnection(resolvedName).exec(command, timeoutMs, env, outputCallback)
         }
     }
 
@@ -233,7 +245,7 @@ class ExecPlaneBridge(
                 return
             }
             val peer = Peer(UUID.randomUUID().toString(), conn)
-            peer.execHandler = { command, timeoutMs, env -> executeReverse(peer, command, timeoutMs, env) }
+            peer.execHandler = { command, timeoutMs, env, callback -> executeReverse(peer, command, timeoutMs, env, callback) }
             peer.requestHandler = { method, params, timeoutMs -> requestReverse(peer, method, params, timeoutMs) }
             peers[conn] = peer
         }
@@ -243,6 +255,14 @@ class ExecPlaneBridge(
             val response = runCatching { ExecPlaneJson.codec.decodeFromString<RpcResponse>(message) }.getOrNull()
             if (response != null) {
                 peer.completePending(response)
+                return
+            }
+            val event = runCatching { ExecPlaneJson.codec.decodeFromString<RpcEvent>(message) }.getOrNull()
+            if (event != null) {
+                if (event.event == "exec.output") runCatching {
+                    val output = ExecPlaneJson.codec.decodeFromJsonElement<ExecOutputEvent>(event.data)
+                    peer.emitOutput(output)
+                }
                 return
             }
             val request = runCatching { ExecPlaneJson.codec.decodeFromString<RpcRequest>(message) }
@@ -298,6 +318,13 @@ class ExecPlaneBridge(
             peer.name?.let { this@ExecPlaneBridge.connections.disconnect(it, peer.id) }
             peer.name = params.name
             peer.capabilities = params.caps
+            peer.handshake = CapabilitiesResult(
+                protocol = params.protocol,
+                serverId = peer.id,
+                name = params.name,
+                caps = params.caps,
+                limits = params.limits,
+            )
             this@ExecPlaneBridge.connections.register(peer, params)
             sendOk(peer.socket, request.id, JsonObject(emptyMap()))
         }
@@ -328,8 +355,9 @@ class ExecPlaneBridge(
             method: String,
             params: JsonObject,
             timeoutMs: Long,
+            fixedRequestId: Long? = null,
         ): RpcResponse {
-            val requestId = REQUEST_IDS.getAndIncrement()
+            val requestId = fixedRequestId ?: REQUEST_IDS.getAndIncrement()
             val waiter = peer.addPending(requestId)
             val request = buildJsonObject {
                 put("id", requestId); put("method", method); put("params", params); put("ts", System.currentTimeMillis())
@@ -354,6 +382,10 @@ class ExecPlaneBridge(
             return try {
                 withTimeout(timeoutMs + 5_000) { waiter.await() }
             } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
+                if (method == "exec") peer.socket.send(buildJsonObject {
+                    put("id", REQUEST_IDS.getAndIncrement()); put("method", "cancel")
+                    put("params", buildJsonObject { put("requestId", requestId) }); put("ts", System.currentTimeMillis())
+                }.toString())
                 throw RemoteChannelException(
                     ExecPlaneErrorCode.CHANNEL_TIMEOUT,
                     "WebSocket request timed out after ${timeoutMs}ms",
@@ -369,14 +401,32 @@ class ExecPlaneBridge(
             command: String,
             timeoutMs: Long,
             env: Map<String, String>,
+            outputCallback: ((String, String) -> Unit)?,
         ): RemoteExecResult {
             val params = buildJsonObject {
-                put("cmd", command)
+                put("cmd", buildJsonArray {
+                    add(kotlinx.serialization.json.JsonPrimitive("/bin/sh"))
+                    add(kotlinx.serialization.json.JsonPrimitive("-lc"))
+                    add(kotlinx.serialization.json.JsonPrimitive(command))
+                })
+                put("shell", true)
                 put("timeoutMs", timeoutMs)
                 put("env", buildJsonObject { env.forEach { (key, value) -> put(key, value) } })
                 put("envMode", "overlay")
             }
-            val response = requestReverse(peer, "exec", params, timeoutMs)
+            val requestId = REQUEST_IDS.getAndIncrement()
+            outputCallback?.let { peer.addOutputCallback(requestId, it) }
+            val response = try {
+                requestReverse(peer, "exec", params, timeoutMs, requestId)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                peer.socket.send(buildJsonObject {
+                    put("id", REQUEST_IDS.getAndIncrement()); put("method", "cancel")
+                    put("params", buildJsonObject { put("requestId", requestId) }); put("ts", System.currentTimeMillis())
+                }.toString())
+                throw cancelled
+            } finally {
+                peer.removeOutputCallback(requestId)
+            }
             if (!response.ok) throw response.remoteFailure("Remote command failed")
             val result = response.result?.jsonObject ?: JsonObject(emptyMap())
             return RemoteExecResult(
@@ -384,6 +434,9 @@ class ExecPlaneBridge(
                 stderr = result["stderr"]?.jsonPrimitive?.content.orEmpty(),
                 exitCode = result["exitCode"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
                 durationMs = result["durationMs"]?.jsonPrimitive?.content?.toLongOrNull(),
+                stdoutBytes = result["stdoutBytes"]?.jsonPrimitive?.content?.toLongOrNull(),
+                stderrBytes = result["stderrBytes"]?.jsonPrimitive?.content?.toLongOrNull(),
+                truncated = result["truncated"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false,
             )
         }
 
@@ -403,10 +456,12 @@ class ExecPlaneBridge(
         val socket: WebSocket,
     ) : RemoteCommandConnection {
         @Volatile var name: String? = null
-        @Volatile override var capabilities: Set<String> = setOf("exec", "status")
-        @Volatile var execHandler: (suspend (String, Long, Map<String, String>) -> RemoteExecResult)? = null
+        @Volatile override var capabilities: Set<String> = emptySet()
+        @Volatile override var handshake: CapabilitiesResult? = null
+        @Volatile var execHandler: (suspend (String, Long, Map<String, String>, ((String, String) -> Unit)?) -> RemoteExecResult)? = null
         @Volatile var requestHandler: (suspend (String, JsonObject, Long) -> RpcResponse)? = null
         private val pending = ConnectionPendingRequests()
+        private val outputCallbacks = ConcurrentHashMap<Long, (String, String) -> Unit>()
         override val direction = ConnectionDirection.REVERSE
 
         fun addPending(requestId: Long): CompletableDeferred<RpcResponse> = pending.add(requestId)
@@ -414,6 +469,9 @@ class ExecPlaneBridge(
         fun removePending(requestId: Long) = pending.remove(requestId)
 
         fun completePending(response: RpcResponse): Boolean = pending.complete(response)
+        fun addOutputCallback(requestId: Long, callback: (String, String) -> Unit) { outputCallbacks[requestId] = callback }
+        fun removeOutputCallback(requestId: Long) { outputCallbacks.remove(requestId) }
+        fun emitOutput(output: ExecOutputEvent) { outputCallbacks[output.requestId]?.invoke(output.stream, output.data) }
 
         fun failPending(reason: String, cause: Throwable? = null) {
             pending.failAll(RemoteChannelException(
@@ -426,8 +484,13 @@ class ExecPlaneBridge(
         internal fun pendingCount(): Int = pending.size()
         override suspend fun request(method: String, params: JsonObject, timeoutMs: Long): RpcResponse =
             requestHandler?.invoke(method, params, timeoutMs) ?: error("RPC channel is not ready")
-        override suspend fun exec(command: String, timeoutMs: Long, env: Map<String, String>): RemoteExecResult =
-            execHandler?.invoke(command, timeoutMs, env) ?: error("Command channel is not ready")
+        override suspend fun exec(
+            command: String,
+            timeoutMs: Long,
+            env: Map<String, String>,
+            outputCallback: ((String, String) -> Unit)?,
+        ): RemoteExecResult = execHandler?.invoke(command, timeoutMs, env, outputCallback)
+            ?: error("Command channel is not ready")
         override fun close(code: Int, reason: String) {
             failPending(reason)
             socket.close(code, reason)

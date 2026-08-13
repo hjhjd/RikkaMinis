@@ -2,12 +2,15 @@ package com.openminis.app.execplane
 
 import com.openminis.app.execplane.connection.ConnectionManager
 import com.openminis.app.execplane.connection.ExecutorConnection
+import com.openminis.app.execplane.protocol.CapabilitiesResult
 import com.openminis.app.execplane.protocol.ConnectionDirection
 import com.openminis.app.execplane.protocol.EXECPLANE_PROTOCOL_VERSION
+import com.openminis.app.execplane.protocol.ExecOutputEvent
 import com.openminis.app.execplane.protocol.ExecPlaneErrorCode
 import com.openminis.app.execplane.protocol.ExecPlaneJson
 import com.openminis.app.execplane.protocol.ExecutorTrust
 import com.openminis.app.execplane.protocol.RegisterParams
+import com.openminis.app.execplane.protocol.RpcEvent
 import com.openminis.app.execplane.protocol.RpcResponse
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -23,6 +26,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -39,6 +44,9 @@ data class RemoteExecResult(
     val stderr: String,
     val exitCode: Int,
     val durationMs: Long? = null,
+    val stdoutBytes: Long? = null,
+    val stderrBytes: Long? = null,
+    val truncated: Boolean = false,
 )
 
 class RemoteChannelException(
@@ -103,8 +111,14 @@ internal class ConnectionPendingRequests {
 
 interface RemoteCommandConnection : ExecutorConnection {
     val capabilities: Set<String>
+    val handshake: CapabilitiesResult?
     suspend fun request(method: String, params: JsonObject, timeoutMs: Long = 600_000): RpcResponse
-    suspend fun exec(command: String, timeoutMs: Long = 600_000, env: Map<String, String> = emptyMap()): RemoteExecResult
+    suspend fun exec(
+        command: String,
+        timeoutMs: Long = 600_000,
+        env: Map<String, String> = emptyMap(),
+        outputCallback: ((String, String) -> Unit)? = null,
+    ): RemoteExecResult
 }
 
 class ForwardConnection(
@@ -114,12 +128,15 @@ class ForwardConnection(
 ) : RemoteCommandConnection {
     override val id: String = "forward:${config.id}"
     override val direction = ConnectionDirection.FORWARD
-    @Volatile override var capabilities: Set<String> = setOf("exec", "status")
+    @Volatile override var capabilities: Set<String> = emptySet()
+        private set
+    @Volatile override var handshake: CapabilitiesResult? = null
         private set
     private val nextId = AtomicLong(1)
     private val generations = AtomicLong(0)
     @Volatile private var activeGeneration = 0L
     private val pending = ConcurrentHashMap<Long, CompletableDeferred<RpcResponse>>()
+    private val outputCallbacks = ConcurrentHashMap<Long, (String, String) -> Unit>()
     private val scope = CoroutineScope(Dispatchers.IO)
     private val stopped = AtomicBoolean(false)
     @Volatile private var socket: WebSocket? = null
@@ -150,10 +167,19 @@ class ForwardConnection(
     private fun isCurrent(webSocket: WebSocket, generation: Long): Boolean =
         socket === webSocket && activeGeneration == generation
 
-    override suspend fun request(method: String, params: JsonObject, timeoutMs: Long): RpcResponse {
+    override suspend fun request(method: String, params: JsonObject, timeoutMs: Long): RpcResponse =
+        requestInternal(method, params, timeoutMs, null)
+
+    private suspend fun requestInternal(
+        method: String,
+        params: JsonObject,
+        timeoutMs: Long,
+        outputCallback: ((String, String) -> Unit)?,
+    ): RpcResponse {
         val requestId = nextId.getAndIncrement()
         val waiter = CompletableDeferred<RpcResponse>()
         pending[requestId] = waiter
+        outputCallback?.let { outputCallbacks[requestId] = it }
         val request = buildJsonObject {
             put("id", requestId)
             put("method", method)
@@ -168,12 +194,14 @@ class ForwardConnection(
             withTimeout(timeoutMs + 5_000) { waiter.await() }
         } catch (e: CancellationException) {
             if (e is TimeoutCancellationException) {
+                if (method == "exec") sendCancel(requestId)
                 throw RemoteChannelException(
                     ExecPlaneErrorCode.CHANNEL_TIMEOUT,
                     "WebSocket request timed out after ${timeoutMs}ms",
                     e,
                 )
             }
+            if (method == "exec") sendCancel(requestId)
             throw e
         } catch (e: Throwable) {
             if (e is RemoteChannelException) throw e
@@ -184,18 +212,29 @@ class ForwardConnection(
             )
         } finally {
             pending.remove(requestId)
+            outputCallbacks.remove(requestId)
         }
     }
 
-    override suspend fun exec(command: String, timeoutMs: Long, env: Map<String, String>): RemoteExecResult {
+    override suspend fun exec(
+        command: String,
+        timeoutMs: Long,
+        env: Map<String, String>,
+        outputCallback: ((String, String) -> Unit)?,
+    ): RemoteExecResult {
         require(command.isNotBlank()) { "Command cannot be empty" }
         val params = buildJsonObject {
-            put("cmd", command)
+            put("cmd", buildJsonArray {
+                add(kotlinx.serialization.json.JsonPrimitive("/bin/sh"))
+                add(kotlinx.serialization.json.JsonPrimitive("-lc"))
+                add(kotlinx.serialization.json.JsonPrimitive(command))
+            })
+            put("shell", true)
             put("timeoutMs", timeoutMs)
             put("env", kotlinx.serialization.json.buildJsonObject { env.forEach { (key, value) -> put(key, value) } })
             put("envMode", "overlay")
         }
-        val response = request("exec", params, timeoutMs)
+        val response = requestInternal("exec", params, timeoutMs, outputCallback)
         if (!response.ok) throw response.remoteFailure("Remote command failed")
         val result = response.result?.jsonObject ?: JsonObject(emptyMap())
         return RemoteExecResult(
@@ -203,7 +242,20 @@ class ForwardConnection(
             stderr = result["stderr"]?.jsonPrimitive?.content.orEmpty(),
             exitCode = result["exitCode"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
             durationMs = result["durationMs"]?.jsonPrimitive?.content?.toLongOrNull(),
+            stdoutBytes = result["stdoutBytes"]?.jsonPrimitive?.content?.toLongOrNull(),
+            stderrBytes = result["stderrBytes"]?.jsonPrimitive?.content?.toLongOrNull(),
+            truncated = result["truncated"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false,
         )
+    }
+
+    private fun sendCancel(requestId: Long) {
+        val cancelId = nextId.getAndIncrement()
+        socket?.send(buildJsonObject {
+            put("id", cancelId)
+            put("method", "cancel")
+            put("params", buildJsonObject { put("requestId", requestId) })
+            put("ts", System.currentTimeMillis())
+        }.toString())
     }
 
     override fun close(code: Int, reason: String) {
@@ -235,12 +287,20 @@ class ForwardConnection(
             retryDelayMs = 1_000L
             scope.launch {
                 val discovered = runCatching {
-                    val reply = request("capabilities", JsonObject(emptyMap()), 10_000)
-                    reply.result?.jsonObject?.get("caps")?.let { element ->
-                        element.jsonArray.map { it.jsonPrimitive.content }.toSet()
-                    }
-                }.getOrNull().orEmpty()
-                capabilities = discovered.ifEmpty { setOf("exec", "status") }
+                    val reply = request("capabilities", buildJsonObject { put("protocol", EXECPLANE_PROTOCOL_VERSION) }, 10_000)
+                    if (!reply.ok) throw reply.remoteFailure("Capability handshake failed")
+                    val result = ExecPlaneJson.codec.decodeFromJsonElement<CapabilitiesResult>(
+                        reply.result ?: error("Capability handshake result is missing"),
+                    )
+                    require(result.protocol == EXECPLANE_PROTOCOL_VERSION) { "Unsupported executor protocol ${result.protocol}" }
+                    require("exec" in result.caps) { "Executor does not support exec" }
+                    result
+                }.getOrElse { error ->
+                    webSocket.close(1002, "Capability handshake failed: ${error.message}")
+                    return@launch
+                }
+                handshake = discovered
+                capabilities = discovered.caps
                 manager.register(
                     this@ForwardConnection,
                     RegisterParams(
@@ -256,9 +316,20 @@ class ForwardConnection(
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             if (!isCurrent(webSocket, generation)) return
-            val response = runCatching { ExecPlaneJson.codec.decodeFromString<RpcResponse>(text) }.getOrNull() ?: return
-            pending[response.id]?.complete(response)
-            manager.markSeen(config.name, id)
+            val response = runCatching { ExecPlaneJson.codec.decodeFromString<RpcResponse>(text) }.getOrNull()
+            if (response != null) {
+                pending[response.id]?.complete(response)
+                manager.markSeen(config.name, id)
+                return
+            }
+            val event = runCatching { ExecPlaneJson.codec.decodeFromString<RpcEvent>(text) }.getOrNull() ?: return
+            if (event.event == "exec.output") {
+                val output = runCatching {
+                    ExecPlaneJson.codec.decodeFromJsonElement<ExecOutputEvent>(event.data)
+                }.getOrNull() ?: return
+                outputCallbacks[output.requestId]?.invoke(output.stream, output.data)
+                manager.markSeen(config.name, id)
+            }
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {

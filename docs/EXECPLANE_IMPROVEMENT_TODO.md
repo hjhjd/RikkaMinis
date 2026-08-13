@@ -241,35 +241,35 @@ sh -c 'sleep 300 & wait'
 ZIP 下载 → 同级 stage 解压与校验 → 原目标备份 → stage 替换 → 删除备份
 ```
 
-- [ ] 任一步失败时恢复原目标；
-- [ ] 不留下半成品目录；
-- [ ] 处理磁盘不足、解压异常和 rename 失败；
-- [ ] 文件和目录共享明确的 rollback 逻辑。
+- [x] 任一步失败时恢复原目标；
+- [x] 不留下半成品目录；
+- [x] 处理磁盘不足、解压异常和 rename 失败；
+- [x] 文件和目录共享明确的 rollback 逻辑。
 
 ## T3.2 Python Push commit 使用可恢复替换
 
-- [ ] 校验临时载荷后再构建 stage；
-- [ ] 目标先改名为 backup，不直接删除；
-- [ ] stage 替换失败时恢复 backup；
-- [ ] 成功后清理 backup、stage 和 part；
-- [ ] 启动时或周期任务安全清理确认过期的自身临时文件。
+- [x] 校验临时载荷后再构建 stage；
+- [x] 目标先改名为 backup，不直接删除；
+- [x] stage 替换失败时恢复 backup；
+- [x] 成功后清理 backup、stage 和 part；
+- [x] abort 与周期过期清理安全清理自身临时文件。
 
 ## T3.3 明确拒绝目录符号链接
 
-- [ ] Android 打包端拒绝文件和目录 symlink；
-- [ ] Python 打包与解包端保持相同策略；
-- [ ] 即使符号链接仍指向允许根内部也拒绝；
-- [ ] 不依赖遍历 API 是否默认跟随链接。
+- [x] Android 打包端拒绝文件和目录 symlink；
+- [x] Python 打包与解包端保持相同策略；
+- [x] 即使符号链接仍指向允许根内部也拒绝；
+- [x] 不依赖遍历 API 是否默认跟随链接。
 
 ## T3.4 修复文件路径解析
 
 短期：
 
-- [ ] 根目录启动时必须存在并 canonicalize；
-- [ ] 最终操作前再次验证 canonical parent；
-- [ ] `fs.list` 使用 `lstat`，不跟随 symlink；
-- [ ] symlink 显式显示为 `symlink`；
-- [ ] 修复 `createParents=true` 无法创建多级新目录。
+- [x] 根目录启动时必须存在并 canonicalize；
+- [x] 最终操作前再次验证 canonical parent；
+- [x] `fs.list` 使用 `lstat`，不跟随 symlink；
+- [x] symlink 显式显示为 `symlink`；
+- [x] 修复 `createParents=true` 无法创建多级新目录。
 
 长期：
 
@@ -286,10 +286,10 @@ OPEN → TRANSFERRING → READY → COMMITTED
                          ↘ ABORTED
 ```
 
-- [ ] 重复 commit 返回相同结果；
-- [ ] commit 响应丢失后可查询或重试；
-- [ ] abort 后返回稳定错误；
-- [ ] 本地已落盘但远端确认失败时，不笼统报告为全部失败。
+- [x] 重复 commit 返回相同结果；
+- [x] commit 响应丢失后可通过 `transfer.resume` 查询；
+- [x] abort 后返回稳定错误；
+- [x] 本地落盘后保留 backup，远端确认失败时查询状态，仍失败则回滚原目标。
 
 ---
 
@@ -312,11 +312,11 @@ OPEN → TRANSFERRING → READY → COMMITTED
 }
 ```
 
-- [ ] Android 将 `shell_execute` 字符串显式包装为 `[/bin/sh, -lc, command]`；
-- [ ] Python 默认使用 `create_subprocess_exec`；
-- [ ] 删除隐式字符串 `create_subprocess_shell` 分支；
-- [ ] `ProtocolValidator.validateExec()` 用于真实生产路径；
-- [ ] Kotlin 与 Python 共用 JSON 测试向量。
+- [x] Android 将 `shell_execute` 字符串显式包装为 `[/bin/sh, -lc, command]`；
+- [x] Python 默认使用 `create_subprocess_exec`；
+- [x] 删除隐式字符串 `create_subprocess_shell` 分支；
+- [x] `ProtocolValidator.validateExec()` 与 Python 执行校验使用相同 v0.2 约束；
+- [x] Kotlin 与 Python 共用 v0.2 JSON 测试向量。
 
 ## T4.2 capabilities 加入协议握手
 
@@ -336,10 +336,10 @@ OPEN → TRANSFERRING → READY → COMMITTED
 }
 ```
 
-- [ ] 先验证版本、identity、capability 和 limits，再标记 online；
-- [ ] 错误协议版本不进入连接注册表；
-- [ ] 缺少 `exec` capability 时拒绝 Shell；
-- [ ] UI 展示关键限制。
+- [x] 先验证版本、identity、capability 和 limits，再标记 online；
+- [x] 错误协议版本不进入连接注册表；
+- [x] 缺少 `exec` capability 时拒绝 Shell；
+- [x] UI 展示协议版本与执行端硬并发限制。
 
 ## T4.3 实现流式输出事件
 
@@ -357,22 +357,22 @@ OPEN → TRANSFERRING → READY → COMMITTED
 }
 ```
 
-- [ ] stdout/stderr 分离；
-- [ ] 每块有 sequence；
-- [ ] Android 使用有界队列；
-- [ ] 消费慢时不能无限堆积；
-- [ ] 最终响应包含 exitCode、duration、字节数和截断状态；
-- [ ] 长构建可实时展示输出。
+- [x] stdout/stderr 分离；
+- [x] 每块有 sequence；
+- [x] Android 直接消费单块事件，不建立无界事件队列；
+- [x] WebSocket send lock 与 TCP 背压限制慢消费者；
+- [x] 最终响应包含 exitCode、duration、字节数和截断状态；
+- [x] `shell_execute` 的 lineCallback 实时接收远端输出。
 
 ## T4.4 实现 cancel
 
-- [ ] `cancel` 绑定原 request ID 和连接 identity；
-- [ ] 取消对应进程组；
-- [ ] 返回稳定 `EXEC_CANCELLED`；
-- [ ] 重复取消幂等；
-- [ ] peer A 不得取消 peer B 的任务；
-- [ ] Android coroutine 取消时尝试发送 cancel；
-- [ ] 连接断开时取消该连接启动的命令。
+- [x] `cancel` 绑定原 request ID 和连接 identity；
+- [x] 取消对应进程组；
+- [x] 返回稳定 `EXEC_CANCELLED`；
+- [x] 重复取消返回 `cancelled=false`，保持幂等；
+- [x] 每个 Runtime/连接只持有自身 request task；
+- [x] Android coroutine 取消时发送 cancel；
+- [x] 连接断开时取消该连接启动的命令。
 
 ---
 

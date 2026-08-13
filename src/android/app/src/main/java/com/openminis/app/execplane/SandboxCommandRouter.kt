@@ -57,7 +57,11 @@ class SandboxCommandRouter(
                     "'$targetName' does not support environment injection",
                 )
             }
-            val remote = bridge.exec(targetName, command, timeoutMs, env)
+            val streamed = StringBuilder()
+            val remote = bridge.exec(targetName, command, timeoutMs, env) { _, data ->
+                streamed.append(data)
+                data.lineSequence().filter { it.isNotEmpty() }.forEach { lineCallback?.invoke(it) }
+            }
             val combined = buildString {
                 append(remote.stdout)
                 if (remote.stderr.isNotEmpty()) {
@@ -65,7 +69,7 @@ class SandboxCommandRouter(
                     append(remote.stderr)
                 }
             }.trimEnd()
-            combined.lineSequence().forEach { lineCallback?.invoke(it) }
+            if (streamed.isEmpty()) combined.lineSequence().forEach { lineCallback?.invoke(it) }
             ExecutionCoordinator.CommandResult(
                 output = combined,
                 exitCode = remote.exitCode,

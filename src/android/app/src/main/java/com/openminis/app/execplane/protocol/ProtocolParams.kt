@@ -23,6 +23,14 @@ data class RegisterParams(
     val name: String,
     val caps: Set<String>,
     val resources: ExecutorResources = ExecutorResources(),
+    val limits: ExecutorLimits = ExecutorLimits(
+        maxStdoutBytes = 16L * 1024 * 1024,
+        maxStderrBytes = 8L * 1024 * 1024,
+        maxTotalOutputBytes = 20L * 1024 * 1024,
+        maxTransferBytes = 512L * 1024 * 1024,
+        maxConcurrentCommands = 4,
+        maxTimeoutMs = 3_600_000,
+    ),
     val trust: ExecutorTrust,
     val tags: Set<String> = emptySet(),
     val identityPublicKey: String? = null,
@@ -37,6 +45,26 @@ data class ExecParams(
     val env: Map<String, String> = emptyMap(),
     val timeoutMs: Long = 600_000,
     val shell: Boolean = false,
+    val envMode: String = "overlay",
+)
+
+@Serializable
+data class ExecutorLimits(
+    val maxStdoutBytes: Long,
+    val maxStderrBytes: Long,
+    val maxTotalOutputBytes: Long,
+    val maxTransferBytes: Long,
+    val maxConcurrentCommands: Int,
+    val maxTimeoutMs: Long,
+)
+
+@Serializable
+data class CapabilitiesResult(
+    val protocol: String,
+    val serverId: String,
+    val name: String,
+    val caps: Set<String>,
+    val limits: ExecutorLimits,
 )
 
 sealed interface ValidationResult {
@@ -64,6 +92,11 @@ object ProtocolValidator {
         if ((params.resources.memoryMb ?: 0) < 0 || (params.resources.diskFreeMb ?: 0) < 0) {
             return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Resource values cannot be negative")
         }
+        if (params.limits.maxConcurrentCommands !in 1..4096 || params.limits.maxTimeoutMs !in 1_000..3_600_000 ||
+            minOf(params.limits.maxStdoutBytes, params.limits.maxStderrBytes, params.limits.maxTotalOutputBytes, params.limits.maxTransferBytes) < 1
+        ) {
+            return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Invalid executor limits")
+        }
         if (params.tags.any { !safeCapability.matches(it) }) {
             return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Invalid tags")
         }
@@ -88,6 +121,12 @@ object ProtocolValidator {
         }
         if (params.timeoutMs !in 1_000..3_600_000) {
             return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Timeout is outside allowed range")
+        }
+        if (params.envMode != "overlay") {
+            return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Unsupported environment mode")
+        }
+        if (params.shell && params.cmd.take(2) != listOf("/bin/sh", "-lc")) {
+            return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Shell commands must use /bin/sh -lc")
         }
         return ValidationResult.Valid
     }
