@@ -60,6 +60,7 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
     val bridge = app.execPlaneBridge
     val enabled by settings.enabled.collectAsState()
     val savedPort by settings.port.collectAsState()
+    val allowLanPlaintextWs by settings.allowLanPlaintextWs.collectAsState()
     val sandboxMode by settings.sandboxMode.collectAsState()
     val defaultWsId by settings.defaultWsId.collectAsState()
     val savedServers by settings.forwardServers.collectAsState()
@@ -212,6 +213,26 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
             }
 
             Text(stringResource(R.string.sandbox_executors_section), style = MaterialTheme.typography.titleMedium)
+            Row(
+                Modifier.fillMaxWidth().background(
+                    MaterialTheme.colorScheme.surfaceContainerLow,
+                    RoundedCornerShape(12.dp),
+                ).padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.sandbox_allow_lan_plaintext_ws))
+                    Text(
+                        stringResource(R.string.sandbox_allow_lan_plaintext_ws_footer),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = allowLanPlaintextWs,
+                    onCheckedChange = settings::setAllowLanPlaintextWs,
+                )
+            }
             OutlinedButton(onClick = { addServer = true }) {
                 Text(stringResource(R.string.sandbox_add_server))
             }

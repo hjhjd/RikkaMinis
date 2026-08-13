@@ -180,8 +180,10 @@
     <string name="sandbox_server_name">服务端名称</string>
     <string name="sandbox_server_url">WebSocket 地址</string>
     <string name="sandbox_server_token">访问令牌</string>
-    <string name="sandbox_invalid_server">请输入名称、令牌及 wss:// 地址。ws:// 仅允许本机地址。</string>
-    <string name="sandbox_forward_security">远程连接必须使用 wss://；ws:// 只允许 127.0.0.1 或 localhost。</string>
+    <string name="sandbox_invalid_server">请输入名称、令牌和允许的 WebSocket 地址。公网使用 wss://；局域网 ws:// 需要先开启安全开关。</string>
+    <string name="sandbox_forward_security">默认仅允许本机使用 ws://；开启“允许局域网明文 WS”后，也可连接私有、链路本地和 IPv6 ULA 字面 IP。公网地址仍必须使用 wss://。</string>
+    <string name="sandbox_allow_lan_plaintext_ws">允许局域网明文 WS</string>
+    <string name="sandbox_allow_lan_plaintext_ws_footer">高风险：令牌和命令将在局域网内明文传输。仅允许 RFC1918、链路本地和 IPv6 ULA 字面 IP，不允许公网地址或域名。</string>
     <string name="sandbox_connect">连接</string>
     <string name="sandbox_disconnect">断开</string>
     <string name="sandbox_reconnect">重新连接</string>

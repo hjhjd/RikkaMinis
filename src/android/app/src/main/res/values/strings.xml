@@ -282,8 +282,10 @@
     <string name="sandbox_server_name">Server name</string>
     <string name="sandbox_server_url">WebSocket URL</string>
     <string name="sandbox_server_token">Access token</string>
-    <string name="sandbox_invalid_server">Enter a name, token, and a wss:// URL. Plain ws:// is allowed only for localhost.</string>
-    <string name="sandbox_forward_security">Remote connections require wss://. Plain ws:// is accepted only for 127.0.0.1 or localhost.</string>
+    <string name="sandbox_invalid_server">Enter a name, token, and an allowed WebSocket URL. Public hosts require wss://; LAN ws:// requires the security switch.</string>
+    <string name="sandbox_forward_security">Plain ws:// is local-only by default. Enable “Allow plaintext LAN WS” for private, link-local, and IPv6 ULA literal addresses. Public addresses still require wss://.</string>
+    <string name="sandbox_allow_lan_plaintext_ws">Allow plaintext LAN WS</string>
+    <string name="sandbox_allow_lan_plaintext_ws_footer">High risk: tokens and commands travel unencrypted on the LAN. Only RFC1918, link-local, and IPv6 ULA literal addresses are allowed; public addresses and hostnames are rejected.</string>
     <string name="sandbox_connect">Connect</string>
     <string name="sandbox_disconnect">Disconnect</string>
     <string name="sandbox_reconnect">Reconnect</string>

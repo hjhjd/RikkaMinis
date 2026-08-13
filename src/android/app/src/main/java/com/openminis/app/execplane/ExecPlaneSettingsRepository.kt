@@ -4,6 +4,7 @@ import android.content.Context
 import com.openminis.app.execplane.protocol.ExecPlaneJson
 import com.openminis.app.util.EncryptedPrefsFactory
 import org.json.JSONObject
+import java.net.URI
 import java.security.SecureRandom
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,9 +17,11 @@ class ExecPlaneSettingsRepository(context: Context) {
     private val prefs = EncryptedPrefsFactory.safeCreate(context.applicationContext, PREFS)
     private val _enabled = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, false))
     private val _port = MutableStateFlow(prefs.getInt(KEY_PORT, DEFAULT_PORT))
+    private val _allowLanPlaintextWs = MutableStateFlow(prefs.getBoolean(KEY_ALLOW_LAN_PLAINTEXT_WS, false))
 
     val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
     val port: StateFlow<Int> = _port.asStateFlow()
+    val allowLanPlaintextWs: StateFlow<Boolean> = _allowLanPlaintextWs.asStateFlow()
     private val _forwardServers = MutableStateFlow(loadForwardServers())
     val forwardServers: StateFlow<List<ForwardServerConfig>> = _forwardServers.asStateFlow()
     private val legacyDefault = prefs.getString(KEY_DEFAULT_SANDBOX, SANDBOX_PROOT) ?: SANDBOX_PROOT
@@ -60,6 +63,11 @@ class ExecPlaneSettingsRepository(context: Context) {
         return true
     }
 
+    fun setAllowLanPlaintextWs(value: Boolean) {
+        prefs.edit().putBoolean(KEY_ALLOW_LAN_PLAINTEXT_WS, value).apply()
+        _allowLanPlaintextWs.value = value
+    }
+
     fun token(): String = prefs.getString(KEY_TOKEN, null)?.takeIf { it.length >= 32 }
         ?: generateToken().also { prefs.edit().putString(KEY_TOKEN, it).commit() }
 
@@ -69,7 +77,7 @@ class ExecPlaneSettingsRepository(context: Context) {
 
     fun saveForwardServer(name: String, url: String, token: String): ForwardServerConfig? {
         val normalized = url.trim()
-        if (!isAllowedUrl(normalized) || name.isBlank() || token.isBlank()) return null
+        if (!isAllowedUrl(normalized, _allowLanPlaintextWs.value) || name.isBlank() || token.isBlank()) return null
         val trimmedName = name.trim()
         val existing = _forwardServers.value.firstOrNull { it.name.equals(trimmedName, ignoreCase = true) }
         val config = existing?.copy(name = trimmedName, url = normalized, token = token)
@@ -138,6 +146,7 @@ class ExecPlaneSettingsRepository(context: Context) {
         put("port", _port.value)
         put("sandboxMode", _sandboxMode.value)
         put("defaultWsSandbox", _defaultWsId.value)
+        put("allowLanPlaintextWs", _allowLanPlaintextWs.value)
         put("forwardServers", ExecPlaneJson.codec.encodeToString(
             _forwardServers.value.map { if (includeSecrets) it else it.copy(token = "") },
         ))
@@ -155,12 +164,16 @@ class ExecPlaneSettingsRepository(context: Context) {
             setSandboxMode(it)
             applied++
         }
+        if (value.has("allowLanPlaintextWs")) {
+            setAllowLanPlaintextWs(value.optBoolean("allowLanPlaintextWs", false))
+            applied++
+        }
         val importedServers = runCatching {
             ExecPlaneJson.codec.decodeFromString<List<ForwardServerConfig>>(
                 value.optString("forwardServers", "[]"),
             )
         }.getOrDefault(emptyList()).filter { server ->
-            server.name.isNotBlank() && isAllowedUrl(server.url)
+            server.name.isNotBlank() && isAllowedUrl(server.url, _allowLanPlaintextWs.value)
         }.map { server ->
             val bounded = server.copy(maxConcurrentCommands = server.maxConcurrentCommands.coerceIn(
                 SandboxConcurrencyLimiter.MIN_LIMIT,
@@ -197,8 +210,8 @@ class ExecPlaneSettingsRepository(context: Context) {
         _forwardServers.value = value
     }
 
-    private fun isAllowedUrl(url: String): Boolean =
-        url.startsWith("wss://") || url.startsWith("ws://127.0.0.1:") || url.startsWith("ws://localhost:")
+    private fun isAllowedUrl(url: String, allowLanPlaintext: Boolean): Boolean =
+        isAllowedForwardUrl(url, allowLanPlaintext)
 
     private fun generateToken(): String = ByteArray(24).also(SecureRandom()::nextBytes)
         .joinToString("") { "%02x".format(it) }
@@ -207,6 +220,37 @@ class ExecPlaneSettingsRepository(context: Context) {
         "$KEY_CONCURRENCY_PREFIX${SandboxConcurrencyLimiter.normalize(name)}"
 
     companion object {
+        internal fun isAllowedForwardUrl(url: String, allowLanPlaintext: Boolean): Boolean {
+            val uri = runCatching { URI(url) }.getOrNull() ?: return false
+            if (uri.userInfo != null || uri.fragment != null || uri.host.isNullOrBlank() || uri.port == 0) return false
+            return when (uri.scheme?.lowercase()) {
+                "wss" -> true
+                "ws" -> isLoopbackHost(uri.host) || allowLanPlaintext && isPrivateLanLiteral(uri.host)
+                else -> false
+            }
+        }
+
+        private fun isLoopbackHost(host: String): Boolean {
+            val normalized = host.removePrefix("[").removeSuffix("]")
+            return normalized.equals("localhost", ignoreCase = true) || normalized == "127.0.0.1" || normalized == "::1"
+        }
+
+        internal fun isPrivateLanLiteral(host: String): Boolean {
+            val normalized = host.removePrefix("[").removeSuffix("]").lowercase()
+            val parts = normalized.split('.')
+            if (parts.size == 4) {
+                val octets = parts.map { it.toIntOrNull() ?: return false }
+                if (octets.any { it !in 0..255 }) return false
+                return octets[0] == 10 ||
+                    octets[0] == 172 && octets[1] in 16..31 ||
+                    octets[0] == 192 && octets[1] == 168 ||
+                    octets[0] == 169 && octets[1] == 254
+            }
+            return normalized.startsWith("fc") || normalized.startsWith("fd") ||
+                normalized.startsWith("fe8") || normalized.startsWith("fe9") ||
+                normalized.startsWith("fea") || normalized.startsWith("feb")
+        }
+
         internal fun selectEnabledForwardServer(
             servers: List<ForwardServerConfig>,
             defaultId: String?,
@@ -225,6 +269,7 @@ class ExecPlaneSettingsRepository(context: Context) {
         private const val KEY_DEFAULT_SANDBOX = "defaultSandbox"
         private const val KEY_SANDBOX_MODE = "sandboxMode"
         private const val KEY_DEFAULT_WS = "defaultWsSandbox"
+        private const val KEY_ALLOW_LAN_PLAINTEXT_WS = "allowLanPlaintextWs"
         private const val KEY_CONCURRENCY_PREFIX = "concurrency."
         private val ENV_KEY = Regex("[A-Za-z_][A-Za-z0-9_]*")
         private val RESERVED_ENV = setOf(
