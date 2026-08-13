@@ -212,14 +212,14 @@ capabilities / dispatch / cancel
 
 ### P0
 
-- [ ] **超时后立即终止本地执行**：回收对应 PRoot Shell，确保命令不再继续修改文件或占用资源。
-- [ ] **限制远端输出内存**：
-  - [ ] 单个 WebSocket 输出事件硬上限；
-  - [ ] 流式累计输出硬上限；
-  - [ ] 最终 stdout/stderr 合计硬上限；
-  - [ ] 超限后继续排空但不继续累计；
-  - [ ] 正确返回 `truncated=true`。
-- [ ] 移除 `SandboxCommandRouter` 中无界 `StringBuilder streamed`，只保留“是否收到流事件”或有界缓冲。
+- [x] **超时后立即终止本地执行**：超时时强制停止对应 PersistentShell，确保命令不再继续修改文件或占用资源。
+- [x] **限制远端输出内存**：
+  - [x] 单个 WebSocket 输出事件硬上限；
+  - [x] 流式累计输出硬上限；
+  - [x] 最终 stdout/stderr 合计硬上限；
+  - [x] 超限后继续排空但不继续累计；
+  - [x] 正确返回 `truncated=true`。
+- [x] 移除 `SandboxCommandRouter` 中无界 `StringBuilder streamed`，只保留“是否收到流事件”。
 
 ### P1
 
@@ -227,7 +227,7 @@ capabilities / dispatch / cancel
 - [ ] 拒绝 NUL、绝对 relative tail、`..` 逃逸及不允许的符号链接。
 - [ ] 文件读写编辑、图片、媒体、调试接口和 transfer 共用同一 resolver。
 - [ ] 对 sessionId 使用安全格式或不可伪造的内部目录键。
-- [ ] 空闲回收必须检查 `isExecuting=false`，命令开始和结束都更新活动时间。
+- [x] 空闲回收检查 `isExecuting=false`，避免回收正在执行的 Shell；活动时间在命令结束更新。
 - [ ] 修复执行中回收导致同 session 两把 mutex 的竞态。
 - [ ] marker 解析改为跨 chunk 增量状态机。
 - [ ] 使用 `CharsetDecoder` 正确处理跨 chunk UTF-8。

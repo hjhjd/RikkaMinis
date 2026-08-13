@@ -67,6 +67,9 @@ class PersistentShell(
     val isAlive: Boolean
         get() = process?.isAlive == true
 
+    val isExecuting: Boolean
+        get() = pendingCallback != null
+
     /**
      * [P2-app-native-oom] Number of commands executed on this shell instance.
      * Reset to 0 by [stop]. ExecutionCoordinator uses this to recycle the
@@ -419,6 +422,9 @@ class PersistentShell(
 
                     cont.invokeOnCancellation {
                         pendingCallback = null
+                        // Cancellation has the same safety requirement as a
+                        // timeout: the guest command may still mutate state.
+                        stop()
                     }
 
                     try {
@@ -436,8 +442,11 @@ class PersistentShell(
             monitorJob?.cancel()
 
             if (result == null) {
-                // Timeout — cancel pending, but don't kill the shell
+                // P0: a persistent shell cannot safely continue after timeout.
+                // The command may still be running behind the marker, so kill
+                // the whole PRoot process before returning to the coordinator.
                 pendingCallback = null
+                stop()
                 CommandResult("[Command timed out after ${timeout / 1000}s]", 124)
             } else {
                 result

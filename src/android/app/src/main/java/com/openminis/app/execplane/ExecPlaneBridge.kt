@@ -210,7 +210,11 @@ class ExecPlaneBridge(
                 "WebSocket Server is offline",
             )
         return commandLimiter.withPermit(resolvedName) {
-            remoteConnection(resolvedName).exec(command, timeoutMs, env, outputCallback)
+            val guard = RemoteOutputLimits.StreamGuard()
+            val result = remoteConnection(resolvedName).exec(command, timeoutMs, env) { stream, data ->
+                if (guard.accept(data)) outputCallback?.invoke(stream, data)
+            }
+            RemoteOutputLimits.bound(result, guard.truncated)
         }
     }
 

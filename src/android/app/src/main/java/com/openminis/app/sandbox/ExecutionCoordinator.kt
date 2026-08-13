@@ -398,7 +398,8 @@ object ExecutionCoordinator {
         val now = SystemClock.elapsedRealtime()
         for (sessionId in shells.keys) {
             val last = lastActiveMs[sessionId] ?: 0L
-            if (last != 0L && (now - last) > SHELL_IDLE_TIMEOUT_MS) {
+            val shell = shells[sessionId] ?: continue
+            if (!shell.isExecuting && last != 0L && (now - last) > SHELL_IDLE_TIMEOUT_MS) {
                 Log.w(TAG, "[$sessionId] shell idle ${(now - last) / 1000}s — recycling")
                 sessionDidTerminate(sessionId)
             }

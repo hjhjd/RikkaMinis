@@ -8514,7 +8514,8 @@ class ChatViewModel(
                 if (result.degraded) append(" · fallback")
                 append("]")
             }
-            val finalOutput = "$sandboxHeader\n$output$exitInfo"
+            val truncationInfo = if (result.truncated) "\n[output truncated]" else ""
+            val finalOutput = "$sandboxHeader\n$output$exitInfo$truncationInfo"
             val (redactedOut, redactHits) = com.openminis.app.data.EnvVarRedactor.redactIfEnabled(finalOutput)
             if (redactHits > 0) {
                 android.util.Log.i("EnvVarRedact", "shell_execute: masked $redactHits env-var value(s) in tool result")
