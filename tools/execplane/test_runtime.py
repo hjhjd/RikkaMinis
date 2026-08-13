@@ -11,6 +11,11 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
  async def test_capabilities_complete(self):
   result=await self.r.dispatch("capabilities",{"protocol":"0.2"})
   self.assertEqual(set(result["caps"]),CAPS); self.assertEqual(result['protocol'],'0.2'); self.assertGreaterEqual(result['limits']['maxConcurrentCommands'],1)
+ async def test_server_id_is_stable_for_name_and_can_be_overridden(self):
+  first=Runtime([self.root],name='box')
+  second=Runtime([self.root],name='box')
+  self.assertEqual(first.server_id,second.server_id)
+  self.assertEqual(Runtime([self.root],name='box',server_id='configured').server_id,'configured')
  async def test_opaque_dispatch_and_instruction_set(self):
   async def handler(payload,emit):
    await emit('stream:'+payload);return {'output':'final:'+payload}

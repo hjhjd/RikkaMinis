@@ -47,7 +47,7 @@ object AgentTools {
             (sandboxPrompt?.let { "$it " } ?: ""),
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary shown to the user. Use the same language as the user."),
-            "sandbox" to AgentToolParam("string", "Exact saved or online WebSocket sandbox name. PRoot is not accepted."),
+            "sandbox" to AgentToolParam("string", "Stable saved or online WebSocket sandbox ID shown in the runtime context. PRoot is not accepted. Display names are accepted only for legacy compatibility."),
             "payload" to AgentToolParam("string", "Opaque instruction text copied or composed according to that sandbox's user-provided instruction set. It is forwarded byte-for-byte as UTF-8."),
             "timeout" to AgentToolParam("integer", "Timeout in seconds (default 900, maximum 3600)."),
             "delay" to AgentToolParam("integer", "Delay in seconds before sending without occupying the sandbox."),

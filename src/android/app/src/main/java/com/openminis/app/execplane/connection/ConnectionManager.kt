@@ -17,6 +17,7 @@ interface ExecutorConnection {
 
 data class ExecutorSnapshot(
     val name: String,
+    val sandboxId: String,
     val connectionId: String,
     val direction: ConnectionDirection,
     val caps: Set<String>,
@@ -47,6 +48,7 @@ class ConnectionManager(
         val timestamp = nowMs()
         val snapshot = ExecutorSnapshot(
             name = params.name,
+            sandboxId = params.serverId ?: connection.id,
             connectionId = connection.id,
             direction = connection.direction,
             caps = params.caps.toSet(),
@@ -96,6 +98,7 @@ class ConnectionManager(
         val previous = mutableSnapshots.value[name]
         mutableSnapshots.value = mutableSnapshots.value + (name to ExecutorSnapshot(
             name = name,
+            sandboxId = previous?.sandboxId ?: connectionId,
             connectionId = connectionId,
             direction = direction,
             caps = caps,
@@ -111,17 +114,25 @@ class ConnectionManager(
     fun online(name: String): ExecutorSnapshot? =
         entries[name]?.snapshot?.takeIf { it.online }
 
-    /** Resolves a user-facing executor name without silently picking an ambiguous case variant. */
+    /** Resolves stable sandbox ID first, then an unambiguous legacy display name. */
     fun resolveOnlineName(requested: String): String? {
+        val idMatches = entries.values.asSequence()
+            .map { it.snapshot }
+            .filter { it.online && it.sandboxId == requested }
+            .map { it.name }
+            .distinct()
+            .take(2)
+            .toList()
+        if (idMatches.size == 1) return idMatches.single()
         entries[requested]?.snapshot?.takeIf { it.online }?.let { return it.name }
-        val matches = entries.values.asSequence()
+        val nameMatches = entries.values.asSequence()
             .map { it.snapshot }
             .filter { it.online && it.name.equals(requested, ignoreCase = true) }
             .map { it.name }
             .distinct()
             .take(2)
             .toList()
-        return matches.singleOrNull()
+        return nameMatches.singleOrNull()
     }
 
     fun connection(name: String): ExecutorConnection? = entries[name]?.connection

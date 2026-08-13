@@ -25,9 +25,11 @@ class SandboxDispatchService(private val bridge: ExecPlaneBridge) {
         require(payload.toByteArray(Charsets.UTF_8).size <= MAX_PAYLOAD_BYTES) {
             "Payload exceeds $MAX_PAYLOAD_BYTES bytes"
         }
-        val caps = bridge.connections.online(sandbox)?.caps.orEmpty()
+        val resolved = bridge.connections.resolveOnlineName(sandbox)
+            ?: error("Unknown or offline sandbox ID: $sandbox")
+        val caps = bridge.connections.online(resolved)?.caps.orEmpty()
         require(ExecPlaneCapabilities.DISPATCH in caps) { "Sandbox '$sandbox' does not support opaque dispatch" }
-        val response = bridge.dispatch(sandbox, payload, timeoutMs, outputCallback)
+        val response = bridge.dispatch(resolved, payload, timeoutMs, outputCallback)
         return Result(response.output, response.durationMs, response.truncated)
     }
 

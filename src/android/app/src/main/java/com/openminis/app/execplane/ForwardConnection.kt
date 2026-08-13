@@ -330,6 +330,7 @@ class ForwardConnection(
                     RegisterParams(
                         protocol = EXECPLANE_PROTOCOL_VERSION,
                         name = config.name,
+                        serverId = config.id,
                         caps = capabilities,
                         trust = ExecutorTrust.STANDARD,
                         tags = setOf("forward", "remote"),

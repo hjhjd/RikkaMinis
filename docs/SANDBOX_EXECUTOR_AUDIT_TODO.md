@@ -132,7 +132,7 @@ capabilities / dispatch / cancel
 ### 2.3 单一模型工具
 
 - [x] 增加固定 `sandbox_dispatch` 工具定义：sandbox、payload、timeout、delay、tool_title。
-- [ ] 将工具参数从名称解析升级为稳定 server/sandbox ID；当前兼容层仍接受精确名称或连接解析名。
+- [x] 将 `sandbox_dispatch` 参数路由升级为稳定 server/sandbox ID；兼容层仍接受精确名称或连接解析名。
 - [ ] 允许会话/Agent 决定是否暴露 `sandbox_dispatch` 以及允许访问哪些沙箱。
 - [x] Android 不对 payload 做业务级权限判断；WS 服务端插件负责 DSL 权限和执行限制。
 - [x] 接通正向/反向流式输出与协程超时/取消；后续再迁入统一 Provider event Flow。

@@ -60,6 +60,16 @@ class ConnectionManagerTest {
     }
 
     @Test
+    fun stableSandboxIdResolvesBeforeLegacyDisplayName() {
+        val manager = ConnectionManager { 1L }
+        manager.register(FakeConnection("socket"), registration("Friendly").copy(serverId = "stable-123"))
+
+        assertEquals("Friendly", manager.resolveOnlineName("stable-123"))
+        assertEquals("Friendly", manager.resolveOnlineName("friendly"))
+        assertEquals("stable-123", manager.online("Friendly")?.sandboxId)
+    }
+
+    @Test
     fun onlineNameResolutionSupportsExplicitCaseInsensitiveRouting() {
         val manager = ConnectionManager { 1L }
         manager.register(FakeConnection("reverse"), registration("VCPMinis"))

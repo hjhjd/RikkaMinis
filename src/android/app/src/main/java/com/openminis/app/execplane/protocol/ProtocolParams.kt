@@ -37,6 +37,8 @@ data class RegisterParams(
     val identitySignature: String? = null,
     val identityChallenge: String? = null,
     val instructionSet: SandboxInstructionSet? = null,
+    /** Stable server identity; omitted only by legacy peers. */
+    val serverId: String? = null,
 )
 
 @Serializable
@@ -86,6 +88,7 @@ object ProtocolValidator {
     const val MAX_INSTRUCTION_SET_BYTES = 256 * 1024
     private val safeName = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
     private val safeCapability = Regex("[a-z][a-z0-9._-]{0,63}")
+    private val safeServerId = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 
     fun validateRegister(params: RegisterParams): ValidationResult {
         if (params.protocol != EXECPLANE_PROTOCOL_VERSION) {
@@ -107,6 +110,9 @@ object ProtocolValidator {
             minOf(params.limits.maxStdoutBytes, params.limits.maxStderrBytes, params.limits.maxTotalOutputBytes, params.limits.maxTransferBytes) < 1
         ) {
             return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Invalid executor limits")
+        }
+        if (params.serverId != null && !safeServerId.matches(params.serverId)) {
+            return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Invalid server ID")
         }
         if (params.tags.any { !safeCapability.matches(it) }) {
             return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Invalid tags")

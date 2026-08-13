@@ -9218,18 +9218,18 @@ class ChatViewModel(
         val preferred = selected?.name ?: "proot"
         val online = bridge.connections.snapshots.value.values
             .filter { it.online }
-            .map { it.name }
-            .distinct()
-            .sorted()
+            .sortedBy { it.name }
+            .map { "${it.name}(id=${it.sandboxId})" }
         val onlineText = online.joinToString("、").ifEmpty { "无" }
+        val preferredId = selected?.id ?: "proot"
         val rule = if (selected == null) {
             "当前应默认使用 proot。"
         } else {
             "当前应默认使用 WebSocket 沙箱“$preferred”；不要为了省事主动改用 proot。仅当系统报告通道故障并自动容灾时，实际结果才可能是 proot。"
         }
         return SandboxRuntimeSnapshot(
-            promptSection = "- 当前沙箱模式：$mode\n- 默认 WebSocket 沙箱：${selected?.name ?: "未选择"}\n- 首选沙箱：$preferred\n- 当前在线 WebSocket 沙箱：$onlineText\n- 路由要求：$rule",
-            toolDescription = "当前沙箱模式：$mode；默认 WebSocket 沙箱：${selected?.name ?: "未选择"}；首选沙箱：$preferred；在线 WebSocket 沙箱：$onlineText。$rule",
+            promptSection = "- 当前沙箱模式：$mode\n- 默认 WebSocket 沙箱：${selected?.name ?: "未选择"}\n- 首选沙箱：$preferred（ID：$preferredId）\n- 当前在线 WebSocket 沙箱：$onlineText\n- 路由要求：调用 sandbox_dispatch 时使用稳定 ID。$rule",
+            toolDescription = "当前沙箱模式：$mode；默认 WebSocket 沙箱：${selected?.name ?: "未选择"}（ID：$preferredId）；首选沙箱：$preferred；在线 WebSocket 沙箱：$onlineText。调用 `sandbox_dispatch` 时优先填写稳定 ID，不要填写显示名称。$rule",
         )
     }
 

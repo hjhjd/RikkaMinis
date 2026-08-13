@@ -346,7 +346,10 @@ class ExecPlaneBridge(
                 return
             }
             // Trust is assigned by the brain, never accepted from an executor.
-            val params = decoded.copy(trust = ExecutorTrust.LOCAL)
+            val params = decoded.copy(
+                trust = ExecutorTrust.LOCAL,
+                serverId = decoded.serverId ?: peer.id,
+            )
             val validation = ProtocolValidator.validateRegister(params)
             if (validation is ValidationResult.Invalid) {
                 send(peer.socket, RpcResponse(request.id, false, error = validation.error))
@@ -366,7 +369,7 @@ class ExecPlaneBridge(
             peer.capabilities = params.caps
             peer.handshake = CapabilitiesResult(
                 protocol = params.protocol,
-                serverId = peer.id,
+                serverId = params.serverId ?: peer.id,
                 name = params.name,
                 caps = params.caps,
                 limits = params.limits,

@@ -24,11 +24,11 @@ class RpcFault(Exception):
 class OutputLimitExceeded(Exception): pass
 
 class Runtime:
- def __init__(self,roots,stdout_limit=DEFAULT_STDOUT_LIMIT,stderr_limit=DEFAULT_STDERR_LIMIT,total_output_limit=DEFAULT_TOTAL_OUTPUT_LIMIT,max_exec=DEFAULT_MAX_EXEC,transfer_options=None,name=None,instruction_set=None,dispatch_handler=None):
+ def __init__(self,roots,stdout_limit=DEFAULT_STDOUT_LIMIT,stderr_limit=DEFAULT_STDERR_LIMIT,total_output_limit=DEFAULT_TOTAL_OUTPUT_LIMIT,max_exec=DEFAULT_MAX_EXEC,transfer_options=None,name=None,instruction_set=None,dispatch_handler=None,server_id=None):
   self.roots=[pathlib.Path(r).expanduser().resolve(strict=True) for r in roots]
   if not self.roots: raise ValueError('at least one --allow-root is required')
   if min(stdout_limit,stderr_limit,total_output_limit,max_exec)<1: raise ValueError('runtime limits must be positive')
-  self.stdout_limit=stdout_limit; self.stderr_limit=stderr_limit; self.total_output_limit=total_output_limit; self.max_exec=max_exec; self.name=name or os.uname().nodename; self.server_id=str(uuid.uuid4()); self.exec_slots=asyncio.Semaphore(max_exec); self.active={}; self.transfers=TransferManager(self,**(transfer_options or {})); self.instruction_set=instruction_set; self.dispatch_handler=dispatch_handler
+  self.stdout_limit=stdout_limit; self.stderr_limit=stderr_limit; self.total_output_limit=total_output_limit; self.max_exec=max_exec; self.name=name or os.uname().nodename; self.server_id=server_id or str(uuid.uuid5(uuid.NAMESPACE_URL,'execplane:'+self.name)); self.exec_slots=asyncio.Semaphore(max_exec); self.active={}; self.transfers=TransferManager(self,**(transfer_options or {})); self.instruction_set=instruction_set; self.dispatch_handler=dispatch_handler
  def capabilities(self):
   caps=set(CAPS);caps.update({'dispatch'} if self.dispatch_handler else set());out={'protocol':PROTOCOL_VERSION,'serverId':self.server_id,'name':self.name,'caps':sorted(caps),'limits':{'maxStdoutBytes':self.stdout_limit,'maxStderrBytes':self.stderr_limit,'maxTotalOutputBytes':self.total_output_limit,'maxTransferBytes':DIR_LIMIT,'maxConcurrentCommands':self.max_exec,'maxTimeoutMs':3600000}}
   if self.instruction_set:out['instructionSet']=self.instruction_set
