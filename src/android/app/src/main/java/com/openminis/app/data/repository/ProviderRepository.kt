@@ -816,13 +816,15 @@ class ProviderRepository(private val context: Context) {
         }
 
     /**
-     * Resolve [lastUsedEntryId] to a still-valid, visible, enabled-provider
-     * entry — or null when the recorded id was deleted / hidden / its provider
-     * disabled. Callers treat null as "fall through to the next tier".
+     * Resolve [lastUsedEntryId] to a still-valid text-output entry on a visible,
+     * enabled provider. This method is specifically the no-source New Chat
+     * fallback: image/audio/video-only entries remain selectable explicitly and
+     * can still be inherited from the current chat, but are never chosen
+     * autonomously for a fresh Agent conversation.
      */
     fun lastUsedVisibleEntry(): ModelEntry? {
         val id = lastUsedEntryId ?: return null
-        return allVisibleEntries().firstOrNull { it.id == id }
+        return allVisibleEntries().firstOrNull { it.id == id && it.model.isTextOutput }
     }
 
     /**
@@ -838,19 +840,20 @@ class ProviderRepository(private val context: Context) {
      * no text model (all image/audio), we still land on the newest text model
      * from the next provider rather than returning null.
      */
-    fun newestProviderNewestTextEntry(): ModelEntry? {
+    fun newestProviderNewestTextEntries(): List<ModelEntry> {
         val config = _config.value
-        val enabledProviders = config.instances
+        return config.instances
             .filter { it.isEnabled }
             .sortedByDescending { it.createdAt }
-        for (instance in enabledProviders) {
-            val textEntry = config.modelEntries
-                .filter { it.providerInstanceId == instance.id && !it.isHidden && it.model.isTextOutput }
-                .lastOrNull()
-            if (textEntry != null) return textEntry
-        }
-        return null
+            .flatMap { instance ->
+                config.modelEntries
+                    .filter { it.providerInstanceId == instance.id && !it.isHidden && it.model.isTextOutput }
+                    .asReversed()
+            }
     }
+
+    fun newestProviderNewestTextEntry(): ModelEntry? =
+        newestProviderNewestTextEntries().firstOrNull()
 
     /**
      * [T-disabled-provider-via-group-android] Members of [group] whose

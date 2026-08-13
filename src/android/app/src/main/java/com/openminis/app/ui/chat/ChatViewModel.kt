@@ -86,6 +86,8 @@ import java.io.ByteArrayOutputStream
 class ChatViewModel(
     internal val sessionId: String,
     private val draftAgentId: String? = null,
+    /** Exact provider/model entry inherited from the chat that opened this draft. */
+    initialEntryId: String? = null,
     private val chatRepository: ChatRepository,
     private val agentRepository: com.openminis.app.data.repository.AgentRepository,
     private val providerRepository: ProviderRepository,
@@ -313,6 +315,7 @@ class ChatViewModel(
         fun factory(
             sessionId: String,
             draftAgentId: String? = null,
+            initialEntryId: String? = null,
             chatRepository: ChatRepository,
             agentRepository: com.openminis.app.data.repository.AgentRepository,
             providerRepository: ProviderRepository,
@@ -327,6 +330,7 @@ class ChatViewModel(
                 return ChatViewModel(
                     sessionId = sessionId,
                     draftAgentId = draftAgentId,
+                    initialEntryId = initialEntryId,
                     chatRepository = chatRepository,
                     agentRepository = agentRepository,
                     providerRepository = providerRepository,
@@ -681,6 +685,8 @@ class ChatViewModel(
      *  default model name for one frame before the persisted binding settles. */
     private val sessionLoaded = MutableStateFlow(false)
 
+    private var inheritedEntryId: String? = initialEntryId?.takeIf { it.isNotBlank() }
+
     private val _activeAgentId = MutableStateFlow(
         draftAgentId?.takeIf { it.isNotBlank() }
             ?: com.openminis.app.data.db.AgentIds.DEFAULT,
@@ -715,21 +721,40 @@ class ChatViewModel(
      * insufficient. Persisted sessions remain immutable: their stored agent is always
      * authoritative.
      */
-    suspend fun switchDraftAgent(agentId: String) {
-        if (!isDraft || agentId.isBlank() || agentId == _activeAgentId.value) return
+    suspend fun switchDraftAgent(agentId: String, preferredEntryId: String? = null) {
+        if (!isDraft || agentId.isBlank()) return
+        preferredEntryId?.takeIf { it.isNotBlank() }?.let { inheritedEntryId = it }
+        val agentChanged = agentId != _activeAgentId.value
+        val entryChanged = preferredEntryId != null && preferredEntryId != _activeEntryId.value
+        if (!agentChanged && !entryChanged) return
         loadActiveAgent(agentId)
+        // Do not let a failed resolution for the new Agent leave the previous
+        // Agent's provider callable behind a newly-updated model label.
+        currentModel = null
+        currentProvider = null
+        _modelName.value = ""
+        _providerName.value = ""
+        _activeEntryId.value = null
+        _selectedGroupId.value = null
+        _selectedGroupName.value = ""
 
         // A newly selected Agent must also receive its own default model binding,
         // rather than retaining the previous Agent's resolved provider/group.
-        val effectiveGroupId = initialGroupId ?: agentDefaultGroupId() ?: providerRepository.defaultPrimaryGroupId
-        val resolved = effectiveGroupId?.let { groupId ->
-            resolveProviderFromGroup(groupId).also { success ->
-                if (success) {
-                    _selectedGroupId.value = groupId
-                    applyGroupSessionDefaults(groupId)
+        // A New Chat opened from another chat inherits that chat's exact entry
+        // before consulting this Agent's/global defaults. If the inherited entry
+        // became unusable while navigating, continue through the normal chain.
+        var resolved = inheritedEntryId?.let { applyEntryById(it, clearGroup = true) } ?: false
+        if (!resolved) {
+            val effectiveGroupId = initialGroupId ?: agentDefaultGroupId() ?: providerRepository.defaultPrimaryGroupId
+            resolved = effectiveGroupId?.let { groupId ->
+                resolveProviderFromGroup(groupId).also { success ->
+                    if (success) {
+                        _selectedGroupId.value = groupId
+                        applyGroupSessionDefaults(groupId)
+                    }
                 }
-            }
-        } ?: false
+            } ?: false
+        }
         if (!resolved) applyNewChatDefaultModel()
     }
 
@@ -2892,9 +2917,11 @@ class ChatViewModel(
                             return@collect
                         }
                     }
+                    var resolved = if (isDraft) {
+                        inheritedEntryId?.let { applyEntryById(it, clearGroup = true) } ?: false
+                    } else false
                     val effectiveGroupId = initialGroupId ?: agentDefaultGroupId() ?: providerRepository.defaultPrimaryGroupId
-                    var resolved = false
-                    if (effectiveGroupId != null) {
+                    if (!resolved && effectiveGroupId != null) {
                         resolved = resolveProviderFromGroup(effectiveGroupId)
                         if (resolved) {
                             _selectedGroupId.value = effectiveGroupId
@@ -2949,35 +2976,36 @@ class ChatViewModel(
     }
 
     /**
-     * [promote-draft-on-new-chat] If the user is on a draft with unsent text
-     * and taps "New Chat", promote the current draft to a real session so the
-     * typed text isn't silently lost. The slot is freed synchronously so the
-     * next `ComposerDraftStore.nextDraftId` returns a fresh id for the new
-     * draft; the DB row + title write happens asynchronously in viewModelScope
-     * (local DB, ~50ms — no need to block the UI).
+     * Prepare the current draft for a New Chat navigation.
      *
-     * Returns true when promotion was triggered — the caller should let
-     * onNewChat proceed (the slot is already freed either way).
+     * [ComposerDraftStore] owns one durable slot, so the slot is always released
+     * synchronously to guarantee a fresh route id. Any unsent text/attachments
+     * are transferred to that fresh draft instead of being dropped or converted
+     * into a sent message. No empty session row is materialised.
+     *
+     * Returns true when composer content was transferred.
      */
     fun promoteDraftIfNeeded(): Boolean {
         if (!isDraft || realSessionId.isNotEmpty()) return false
         val text = _inputText.value
-        if (text.isBlank()) return false
+        val attachments = _attachments.value
 
-        // Free the draft slot synchronously — the text is captured in `text`,
-        // and nextDraftId must return a fresh ID before the navigation fires.
-        _inputText.value = ""
+        // nextDraftId reuses the active slot even when its composer is blank.
+        // Always release it before navigation; otherwise tapping New Chat on an
+        // empty draft navigates straight back to the same cached ViewModel.
         com.openminis.app.data.ComposerDraftStore.clearDraft(context, sessionId)
+        if (text.isBlank() && attachments.isEmpty()) return false
 
-        // Create a real session row + set its title asynchronously.
-        viewModelScope.launch {
-            val sid = ensureSession()
-            if (sid.isNotEmpty()) {
-                val title = text.take(50).trim()
-                chatRepository.updateSessionTitleAndCategory(sid, title, null)
-                _sessionTitle.value = title
-            }
-        }
+        // There is only one durable draft slot, so preserving this as a second
+        // unsent draft is impossible. Move the whole composer payload into the
+        // fresh draft that navigation is about to open. The target ChatScreen
+        // drains this one-shot transfer, preserving both text and attachments
+        // without fabricating a sent user message or a message-less DB session.
+        ChatViewModelStore.stashPendingTransfer(
+            ChatViewModelStore.PendingTransfer(text, attachments),
+        )
+        _inputText.value = ""
+        _attachments.value = emptyList()
         return true
     }
 
@@ -3156,9 +3184,11 @@ class ChatViewModel(
                 // Draft session: just set up provider using default group or first entry
                 _sessionTitle.value = "New Chat"
                 _sessionCategory.value = null
+                // New Chat from an existing chat inherits the exact active entry
+                // (including provider instance) ahead of Agent/global defaults.
+                var resolved = inheritedEntryId?.let { applyEntryById(it, clearGroup = true) } ?: false
                 val effectiveGroupId = initialGroupId ?: agentDefaultGroupId() ?: providerRepository.defaultPrimaryGroupId
-                var resolved = false
-                if (effectiveGroupId != null) {
+                if (!resolved && effectiveGroupId != null) {
                     resolved = resolveProviderFromGroup(effectiveGroupId)
                     if (resolved) {
                         _selectedGroupId.value = effectiveGroupId
@@ -3733,6 +3763,31 @@ class ChatViewModel(
             ?.takeIf { it.isNotBlank() && providerRepository.group(it) != null }
     }
 
+    /**
+     * Resolve one exact entry atomically. No UI/model field is changed unless the
+     * provider is enabled, credentials exist, and ProviderFactory succeeds.
+     */
+    private fun applyEntryById(entryId: String, clearGroup: Boolean): Boolean {
+        val entry = providerRepository.config.value.modelEntries.find { it.id == entryId } ?: return false
+        val instance = providerRepository.instance(entry.providerInstanceId)
+            ?.takeIf { it.isEnabled } ?: return false
+        val apiKey = providerRepository.loadApiKey(instance.id) ?: return false
+        val provider = runCatching {
+            ProviderFactory.create(instance, apiKey, entry.model, context)
+        }.getOrNull() ?: return false
+
+        currentModel = entry.model
+        currentProvider = provider
+        _modelName.value = entry.model.displayName
+        _providerName.value = instance.label.ifEmpty { entry.model.provider }
+        _activeEntryId.value = entry.id
+        if (clearGroup) {
+            _selectedGroupId.value = null
+            _selectedGroupName.value = ""
+        }
+        return true
+    }
+
     /** Restore provider state from a JSON binding string. Returns true if successfully resolved. */
     private fun restoreFromBinding(bindingJson: String?): Boolean {
         bindingJson ?: return false
@@ -3748,17 +3803,7 @@ class ChatViewModel(
                 }
                 "entry" -> {
                     val entryId = obj.optString("entryId").takeIf { it.isNotEmpty() } ?: return false
-                    val entry = providerRepository.config.value.modelEntries.find { it.id == entryId } ?: return false
-                    val instance = providerRepository.instance(entry.providerInstanceId) ?: return false
-                    val apiKey = providerRepository.loadApiKey(instance.id) ?: return false
-                    currentModel = entry.model
-                    _modelName.value = entry.model.displayName
-                    _providerName.value = instance.label.ifEmpty { entry.model.provider }
-                    _selectedGroupId.value = null
-                    _selectedGroupName.value = ""
-                    _activeEntryId.value = entry.id
-                    currentProvider = ProviderFactory.create(instance, apiKey, entry.model, context)
-                    true
+                    applyEntryById(entryId, clearGroup = true)
                 }
                 else -> false
             }
@@ -3869,16 +3914,27 @@ class ChatViewModel(
                 }
             }
         }
-        val instance = providerRepository.instance(targetEntry.providerInstanceId) ?: return false
-        val apiKey = providerRepository.loadApiKey(instance.id) ?: return false
+        // A provider can remain enabled after its OAuth token/API key disappears.
+        // Do not fail the whole group at that member: walk the remaining members
+        // in group order and commit state only after a provider is constructible.
+        val candidates = listOf(targetEntry) + enabledMembers.filterNot { it.id == targetEntry.id }
+        for (candidate in candidates) {
+            val instance = providerRepository.instance(candidate.providerInstanceId)
+                ?.takeIf { it.isEnabled } ?: continue
+            val apiKey = providerRepository.loadApiKey(instance.id) ?: continue
+            val provider = runCatching {
+                ProviderFactory.create(instance, apiKey, candidate.model, context)
+            }.getOrNull() ?: continue
 
-        currentModel = targetEntry.model
-        _modelName.value = targetEntry.model.displayName
-        _providerName.value = instance.label.ifEmpty { targetEntry.model.provider }
-        _selectedGroupName.value = group.name
-        _activeEntryId.value = targetEntry.id
-        currentProvider = ProviderFactory.create(instance, apiKey, targetEntry.model, context)
-        return true
+            currentModel = candidate.model
+            currentProvider = provider
+            _modelName.value = candidate.model.displayName
+            _providerName.value = instance.label.ifEmpty { candidate.model.provider }
+            _selectedGroupName.value = group.name
+            _activeEntryId.value = candidate.id
+            return true
+        }
+        return false
     }
 
     fun selectGroup(groupId: String) {
@@ -3965,19 +4021,14 @@ class ChatViewModel(
      * which ignored both last-used and add-order — replaced by this chain.
      */
     private fun applyNewChatDefaultModel(): Boolean {
-        val entry = providerRepository.lastUsedVisibleEntry()
-            ?: providerRepository.newestProviderNewestTextEntry()
-            ?: return false
-        val instance = providerRepository.instance(entry.providerInstanceId) ?: return false
-        currentModel = entry.model
-        _modelName.value = entry.model.displayName
-        _activeEntryId.value = entry.id
-        _providerName.value = instance.label.ifEmpty { entry.model.provider }
-        val apiKey = providerRepository.loadApiKey(instance.id)
-        if (apiKey != null) {
-            currentProvider = ProviderFactory.create(instance, apiKey, entry.model, context)
+        val candidates = buildList {
+            providerRepository.lastUsedVisibleEntry()?.let { add(it) }
+            addAll(providerRepository.newestProviderNewestTextEntries())
+        }.distinctBy { it.id }
+        for (entry in candidates) {
+            if (applyEntryById(entry.id, clearGroup = true)) return true
         }
-        return true
+        return false
     }
 
     /** Select a specific model entry (bypasses group selection). */
@@ -5165,11 +5216,14 @@ class ChatViewModel(
         }
         prepared.imageParts.forEachIndexed { idx, part ->
             val path = prepared.imageUploadPaths.getOrNull(idx)
-            if (path != null) combinedParts.add(AgentContentPart.Text("[Image path: $path]"))
+            if (path != null) {
+                val fileName = prepared.attachmentNames.getOrNull(idx) ?: path.substringAfterLast('/')
+                combinedParts.add(AgentContentPart.Text("[附加图片: $path] (文件名: $fileName)"))
+            }
             combinedParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path))
         }
         prepared.fileParts.forEach { file ->
-            combinedParts.add(AgentContentPart.Text("[Attachment path: ${file.linuxPath}]"))
+            combinedParts.add(AgentContentPart.Text("[附加文件: ${file.linuxPath}] (文件名: ${file.fileName})"))
             combinedParts.add(file)
         }
 
@@ -5322,11 +5376,14 @@ class ChatViewModel(
             }
             prepared.imageParts.forEachIndexed { idx, part ->
                 val path = prepared.imageUploadPaths.getOrNull(idx)
-                if (path != null) combinedParts.add(AgentContentPart.Text("[Image path: $path]"))
+                if (path != null) {
+                val fileName = prepared.attachmentNames.getOrNull(idx) ?: path.substringAfterLast('/')
+                combinedParts.add(AgentContentPart.Text("[附加图片: $path] (文件名: $fileName)"))
+            }
                 combinedParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path))
             }
             prepared.fileParts.forEach { file ->
-                combinedParts.add(AgentContentPart.Text("[Attachment path: ${file.linuxPath}]"))
+                combinedParts.add(AgentContentPart.Text("[附加文件: ${file.linuxPath}] (文件名: ${file.fileName})"))
                 combinedParts.add(file)
             }
 
@@ -5516,11 +5573,14 @@ class ChatViewModel(
             if (trimmed.isNotEmpty()) userContentParts.add(AgentContentPart.Text(trimmed))
             imageParts.forEachIndexed { idx, part ->
                 val path = prepared.imageUploadPaths.getOrNull(idx)
-                if (path != null) userContentParts.add(AgentContentPart.Text("[Image path: $path]"))
+                if (path != null) {
+                    val fileName = prepared.attachmentNames.getOrNull(idx) ?: path.substringAfterLast('/')
+                    userContentParts.add(AgentContentPart.Text("[附加图片: $path] (文件名: $fileName)"))
+                }
                 userContentParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path))
             }
             prepared.fileParts.forEach { file ->
-                userContentParts.add(AgentContentPart.Text("[Attachment path: ${file.linuxPath}]"))
+                userContentParts.add(AgentContentPart.Text("[附加文件: ${file.linuxPath}] (文件名: ${file.fileName})"))
                 userContentParts.add(file)
             }
 
@@ -6849,6 +6909,12 @@ class ChatViewModel(
                         systemPrompt = systemPrompt,
                         messages = effectiveAgentHistory(),
                     )
+                    // Record "last used" at the actual provider-call boundary,
+                    // not when a session is merely opened/restored. Fallback updates
+                    // _activeEntryId before re-entering this loop, so the recorded
+                    // id is the precise provider/model entry that receives this
+                    // request (including same-model, different-endpoint recovery).
+                    _activeEntryId.value?.let { providerRepository.lastUsedEntryId = it }
                     currentProvider.streamMessage(
                         applyRequestImageBudget(tarvenRequest.messages),
                         tarvenRequest.systemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
@@ -10770,10 +10836,12 @@ class ChatViewModel(
                         if (mime.startsWith("image/")) {
                             val bytes = try { file.readBytes() } catch (_: Exception) { continue }
                             imageParts.add(LLMMessage.ImagePart(bytes, mime, linuxPath = part.linuxPath))
-                            contentParts.add(AgentContentPart.Text("[Image path: ${part.linuxPath}]"))
+                            val fileName = part.originalFileName.ifEmpty { file.name }
+                            contentParts.add(AgentContentPart.Text("[附加图片: ${part.linuxPath}] (文件名: $fileName)"))
                             contentParts.add(AgentContentPart.ImageData(bytes, mime, linuxPath = part.linuxPath))
                         } else {
-                            contentParts.add(AgentContentPart.Text("[Attachment path: ${part.linuxPath}]"))
+                            val fileName = part.originalFileName.ifEmpty { file.name }
+                            contentParts.add(AgentContentPart.Text("[附加文件: ${part.linuxPath}] (文件名: $fileName)"))
                             contentParts.add(
                                 AgentContentPart.FileData(
                                     fileName = part.originalFileName.ifEmpty { file.name },

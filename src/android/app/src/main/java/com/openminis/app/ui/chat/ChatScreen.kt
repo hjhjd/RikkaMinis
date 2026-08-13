@@ -390,6 +390,8 @@ fun ChatScreen(
     sessionId: String,
     /** Agent selected when this route represents an unpersisted draft. */
     draftAgentId: String? = null,
+    /** Exact provider/model entry inherited when New Chat is tapped in another chat. */
+    initialEntryId: String? = null,
     /**
      * [P0-0] When non-null, scroll to this message once after the list is
      * populated and briefly highlight it. Null (the default) reproduces the
@@ -411,7 +413,7 @@ fun ChatScreen(
     /** [T-new-chat-menu-entry] "New Chat" from the chat "..." menu: caller
      *  navigates to a fresh draft chat (same funnel as the session list's
      *  new-chat button), replacing this chat on the back stack. */
-    onNewChat: (String) -> Unit = {},
+    onNewChat: (agentId: String, entryId: String?) -> Unit = { _, _ -> },
     onOpenTerminal: () -> Unit = {},
     /** Open the in-app terminal with [command] pre-filled at the prompt
      *  (no trailing newline — the user reviews and presses Enter manually).
@@ -457,6 +459,7 @@ fun ChatScreen(
         factory = ChatViewModel.factory(
             sessionId = sessionId,
             draftAgentId = draftAgentId,
+            initialEntryId = initialEntryId,
             chatRepository = chatRepository,
             agentRepository = agentRepository,
             providerRepository = providerRepository,
@@ -473,8 +476,8 @@ fun ChatScreen(
     // the already-created ViewModel and its original constructor argument. Apply
     // the route's Agent explicitly on every draft-agent navigation; the VM guards
     // persisted sessions and no-op repetitions.
-    LaunchedEffect(viewModel, draftAgentId) {
-        draftAgentId?.let { viewModel.switchDraftAgent(it) }
+    LaunchedEffect(viewModel, draftAgentId, initialEntryId) {
+        draftAgentId?.let { viewModel.switchDraftAgent(it, initialEntryId) }
     }
     // [T-android-larky-longsession-followup] Consume the tail-windowed
     // view instead of the canonical full list. For sessions with ≤300
@@ -2001,10 +2004,9 @@ fun ChatScreen(
                         }
                 },
                 onNewChat = {
-                    // [promote-draft-on-new-chat] Free the draft slot before
-                    // closing the drawer + navigating, so onNewChat opens a
-                    // genuinely fresh draft (the typed text is promoted to a
-                    // real session instead of lost).
+                    // Free the one durable draft slot before navigating. Any
+                    // unsent text/attachments are transferred into the fresh
+                    // draft instead of being lost or creating an empty DB row.
                     viewModel.promoteDraftIfNeeded()
                     // [history-drawer-auto-close] Same ordering: close first,
                     // navigate after the animation settles.
@@ -2012,7 +2014,7 @@ fun ChatScreen(
                         try {
                             historyDrawerState.close()
                         } catch (_: kotlinx.coroutines.CancellationException) {}
-                        onNewChat(viewModel.activeAgentId.value)
+                        onNewChat(viewModel.activeAgentId.value, viewModel.activeEntryId.value)
                     }
                 },
                 // [bottom-toolbar-customizable] Footer: resolved action list +
@@ -2379,7 +2381,7 @@ fun ChatScreen(
                     IconButton(
                         onClick = {
                             viewModel.promoteDraftIfNeeded()
-                            onNewChat(viewModel.activeAgentId.value)
+                            onNewChat(viewModel.activeAgentId.value, viewModel.activeEntryId.value)
                         },
                         modifier = Modifier.size(40.dp),
                     ) {

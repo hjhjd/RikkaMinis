@@ -100,7 +100,7 @@ object Routes {
      * working, and so all 20+ existing `Routes.chat(id)` call sites compile
      * untouched.
      */
-    const val CHAT = "chat/{sessionId}?focusMessageId={focusMessageId}&agentId={agentId}"
+    const val CHAT = "chat/{sessionId}?focusMessageId={focusMessageId}&agentId={agentId}&initialEntryId={initialEntryId}"
     const val SETTINGS = "settings"
     const val PROVIDER_LIST = "providers"
     const val ADD_PROVIDER = "add_provider"
@@ -216,11 +216,13 @@ object Routes {
         sessionId: String,
         focusMessageId: String? = null,
         agentId: String? = null,
+        initialEntryId: String? = null,
     ): String {
         fun enc(value: String) = java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
         val params = buildList {
             focusMessageId?.takeIf { it.isNotBlank() }?.let { add("focusMessageId=${enc(it)}") }
             agentId?.takeIf { it.isNotBlank() }?.let { add("agentId=${enc(it)}") }
+            initialEntryId?.takeIf { it.isNotBlank() }?.let { add("initialEntryId=${enc(it)}") }
         }
         val base = "chat/$sessionId"
         return if (params.isEmpty()) base else "$base?${params.joinToString("&")}"
@@ -534,6 +536,11 @@ fun AppNavigation(
                     nullable = true
                     defaultValue = null
                 },
+                navArgument("initialEntryId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
             ),
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
@@ -543,9 +550,13 @@ fun AppNavigation(
             val draftAgentId = backStackEntry.arguments
                 ?.getString("agentId")
                 ?.takeIf { it.isNotBlank() }
+            val initialEntryId = backStackEntry.arguments
+                ?.getString("initialEntryId")
+                ?.takeIf { it.isNotBlank() }
             ChatScreen(
                 sessionId = sessionId,
                 draftAgentId = draftAgentId,
+                initialEntryId = initialEntryId,
                 focusMessageId = focusMessageId,
                 chatRepository = chatRepository,
                 agentRepository = agentRepository,
@@ -561,8 +572,14 @@ fun AppNavigation(
                 // removes the current chat from the stack (back → the stack
                 // root) and a double-fire just replaces one unpersisted
                 // draft with another instead of stacking two chats.
-                onNewChat = { agentId ->
-                    navController.safeNavigate(Routes.chat(com.openminis.app.data.ComposerDraftStore.nextDraftId(context), agentId = agentId)) {
+                onNewChat = { agentId, entryId ->
+                    navController.safeNavigate(
+                        Routes.chat(
+                            com.openminis.app.data.ComposerDraftStore.nextDraftId(context),
+                            agentId = agentId,
+                            initialEntryId = entryId,
+                        ),
+                    ) {
                         popUpTo(navController.graph.startDestinationId) { inclusive = true }
                         launchSingleTop = true
                     }
