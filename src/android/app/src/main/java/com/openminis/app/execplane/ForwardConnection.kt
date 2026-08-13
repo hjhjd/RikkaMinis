@@ -39,6 +39,12 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
+data class RemoteDispatchResult(
+    val output: String,
+    val durationMs: Long? = null,
+    val truncated: Boolean = false,
+)
+
 data class RemoteExecResult(
     val stdout: String,
     val stderr: String,
@@ -113,6 +119,12 @@ interface RemoteCommandConnection : ExecutorConnection {
     val capabilities: Set<String>
     val handshake: CapabilitiesResult?
     suspend fun request(method: String, params: JsonObject, timeoutMs: Long = 600_000): RpcResponse
+    suspend fun requestWithOutput(
+        method: String,
+        params: JsonObject,
+        timeoutMs: Long = 600_000,
+        outputCallback: ((String, String) -> Unit)? = null,
+    ): RpcResponse = request(method, params, timeoutMs)
     suspend fun exec(
         command: String,
         timeoutMs: Long = 600_000,
@@ -170,6 +182,13 @@ class ForwardConnection(
     override suspend fun request(method: String, params: JsonObject, timeoutMs: Long): RpcResponse =
         requestInternal(method, params, timeoutMs, null)
 
+    override suspend fun requestWithOutput(
+        method: String,
+        params: JsonObject,
+        timeoutMs: Long,
+        outputCallback: ((String, String) -> Unit)?,
+    ): RpcResponse = requestInternal(method, params, timeoutMs, outputCallback)
+
     private suspend fun requestInternal(
         method: String,
         params: JsonObject,
@@ -194,14 +213,14 @@ class ForwardConnection(
             withTimeout(timeoutMs + 5_000) { waiter.await() }
         } catch (e: CancellationException) {
             if (e is TimeoutCancellationException) {
-                if (method == "exec") sendCancel(requestId)
+                if (method == "exec" || method == "dispatch") sendCancel(requestId)
                 throw RemoteChannelException(
                     ExecPlaneErrorCode.CHANNEL_TIMEOUT,
                     "WebSocket request timed out after ${timeoutMs}ms",
                     e,
                 )
             }
-            if (method == "exec") sendCancel(requestId)
+            if (method == "exec" || method == "dispatch") sendCancel(requestId)
             throw e
         } catch (e: Throwable) {
             if (e is RemoteChannelException) throw e
@@ -293,7 +312,12 @@ class ForwardConnection(
                         reply.result ?: error("Capability handshake result is missing"),
                     )
                     require(result.protocol == EXECPLANE_PROTOCOL_VERSION) { "Unsupported executor protocol ${result.protocol}" }
-                    require("exec" in result.caps) { "Executor does not support exec" }
+                    require("dispatch" in result.caps || "exec" in result.caps) {
+                        "Executor supports neither dispatch nor legacy exec"
+                    }
+                    require(com.openminis.app.execplane.protocol.ProtocolValidator.isValidInstructionSet(result.instructionSet)) {
+                        "Executor instruction set is invalid or too large"
+                    }
                     result
                 }.getOrElse { error ->
                     webSocket.close(1002, "Capability handshake failed: ${error.message}")
@@ -323,7 +347,7 @@ class ForwardConnection(
                 return
             }
             val event = runCatching { ExecPlaneJson.codec.decodeFromString<RpcEvent>(text) }.getOrNull() ?: return
-            if (event.event == "exec.output") {
+            if (event.event == "exec.output" || event.event == "dispatch.output") {
                 val output = runCatching {
                     ExecPlaneJson.codec.decodeFromJsonElement<ExecOutputEvent>(event.data)
                 }.getOrNull() ?: return

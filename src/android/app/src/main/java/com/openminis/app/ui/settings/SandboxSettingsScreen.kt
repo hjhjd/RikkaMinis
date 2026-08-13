@@ -71,6 +71,7 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
     var resetToken by remember { mutableStateOf(false) }
     var addServer by remember { mutableStateOf(false) }
     var commandTarget by remember { mutableStateOf<String?>(null) }
+    var instructionTarget by remember { mutableStateOf<String?>(null) }
     var concurrencyTarget by remember { mutableStateOf<String?>(null) }
     var command by remember { mutableStateOf("uname -a") }
     var commandOutput by remember { mutableStateOf("") }
@@ -265,9 +266,14 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                             TextButton(onClick = { concurrencyTarget = server.name }) {
                                 Text(stringResource(R.string.sandbox_concurrency_edit))
                             }
+                            bridge.handshake(server.name)?.instructionSet?.let {
+                                TextButton(onClick = { instructionTarget = server.name }) {
+                                    Text(stringResource(R.string.sandbox_instruction_set))
+                                }
+                            }
                             if (server.online) {
                                 TextButton(onClick = { commandTarget = server.name }) {
-                                    Text(stringResource(R.string.sandbox_run_command))
+                                    Text(stringResource(R.string.sandbox_dispatch_test))
                                 }
                                 TextButton(onClick = { bridge.disconnect(server.name) }) {
                                     Text(stringResource(R.string.sandbox_disconnect))
@@ -339,16 +345,48 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
         )
     }
 
+    instructionTarget?.let { target ->
+        val instructions = bridge.handshake(target)?.instructionSet
+        if (instructions == null) {
+            instructionTarget = null
+        } else AlertDialog(
+            onDismissRequest = { instructionTarget = null },
+            title = { Text(instructions.title) },
+            text = {
+                Column(
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.sandbox_instruction_revision, instructions.revision),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(instructions.content, fontFamily = FontFamily.Monospace)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    copyInstructionSet(context, target, instructions.content)
+                    instructionTarget = null
+                }) { Text(stringResource(R.string.sandbox_copy_all_instructions)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { instructionTarget = null }) { Text(stringResource(android.R.string.cancel)) }
+            },
+        )
+    }
+
     commandTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { if (!commandRunning) commandTarget = null },
-            title = { Text(stringResource(R.string.sandbox_run_command_on, target)) },
+            title = { Text(stringResource(R.string.sandbox_dispatch_on, target)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = command,
                         onValueChange = { command = it },
-                        label = { Text(stringResource(R.string.sandbox_command)) },
+                        label = { Text(stringResource(R.string.sandbox_payload)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     if (commandOutput.isNotEmpty()) Text(commandOutput, fontFamily = FontFamily.Monospace)
@@ -359,15 +397,11 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                     commandRunning = true
                     commandOutput = ""
                     scope.launch {
-                        commandOutput = runCatching { bridge.exec(target, command) }
+                        commandOutput = runCatching {
+                            app.sandboxDispatchService.dispatch(target, command, 600_000).output
+                        }
                             .fold(
-                                onSuccess = { result ->
-                                    buildString {
-                                        append(result.stdout)
-                                        if (result.stderr.isNotBlank()) append("\nstderr:\n${result.stderr}")
-                                        append("\nexit: ${result.exitCode}")
-                                    }
-                                },
+                                onSuccess = { result -> result },
                                 onFailure = { "Error: ${it.message}" },
                             )
                         commandRunning = false
@@ -412,6 +446,12 @@ private fun copyToken(context: Context, token: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("ExecPlane token", token))
     Toast.makeText(context, R.string.sandbox_token_copied, Toast.LENGTH_SHORT).show()
+}
+
+private fun copyInstructionSet(context: Context, sandbox: String, content: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("$sandbox AI instructions", content))
+    Toast.makeText(context, R.string.sandbox_instructions_copied, Toast.LENGTH_SHORT).show()
 }
 
 @Composable

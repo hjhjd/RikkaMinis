@@ -345,3 +345,33 @@ runtime.py            公共命令、文件 RPC 和环境注入运行时
 transfer_runtime.py   公共文件/目录传输状态机
 test_runtime.py       Python 单元和安全回归测试
 ```
+
+
+## 不透明 Dispatch（新架构）
+
+Android 新路径只发送 `dispatch` RPC：
+
+```json
+{"id":12,"method":"dispatch","params":{"payload":"任意服务端 DSL","timeoutMs":600000}}
+```
+
+Android 不解析、不 trim、不补前缀，也不知道 payload 中是否存在 `exec`、`push`、`pull`。业务语法完全由执行端插件负责。启用方式：
+
+```sh
+python3 ws-server.py \
+  --allow-root "$HOME/workspace" \
+  --instructions ./instructions-example.md \
+  --dispatch-plugin ./dispatch-plugin-example.py
+```
+
+反向入口使用相同的 `--instructions` 与 `--dispatch-plugin` 参数。插件必须导出：
+
+```python
+async def dispatch(payload: str, emit):
+    await emit("流式文本")
+    return {"output": "最终文本", "truncated": False}
+```
+
+`--instructions` 文件在握手中作为 `instructionSet` 返回。Android 只展示并在用户主动点击时原样复制，不会自动注入任何 AI 提示词。未配置插件时执行端不会声明 `dispatch` capability。
+
+当前限制：payload 256 KiB、单个流式事件 1 MiB、最终文本 1 MiB。旧 `exec`、`fs.*`、`transfer.*` 暂留作兼容路径，新业务不应继续依赖 Android 为具体 method 编写分支。

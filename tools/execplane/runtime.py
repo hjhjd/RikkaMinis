@@ -1,24 +1,38 @@
 #!/usr/bin/env python3
 """ExecPlane v0.2 runtime: argv execution, streaming, cancellation and safe file RPC."""
-import asyncio, base64, hashlib, os, pathlib, shutil, signal, stat, time, uuid
+import asyncio, base64, hashlib, importlib.util, json, os, pathlib, shutil, signal, stat, time, uuid
 from transfer_runtime import TransferManager, DIR_LIMIT
 
 PROTOCOL_VERSION='0.2'
 CAPS={"exec","cancel","status","fs.stat","fs.list","fs.read","fs.write","fs.mkdir","fs.remove","fs.move","transfer.push","transfer.pull","env.inject"}
-MAX_RPC=1024*1024; DEFAULT_STDOUT_LIMIT=16*1024*1024; DEFAULT_STDERR_LIMIT=8*1024*1024; DEFAULT_TOTAL_OUTPUT_LIMIT=20*1024*1024; DEFAULT_MAX_EXEC=256; TERMINATE_GRACE_SECONDS=1.0
+MAX_RPC=1024*1024; MAX_PAYLOAD=256*1024; DEFAULT_STDOUT_LIMIT=16*1024*1024; DEFAULT_STDERR_LIMIT=8*1024*1024; DEFAULT_TOTAL_OUTPUT_LIMIT=20*1024*1024; DEFAULT_MAX_EXEC=256; TERMINATE_GRACE_SECONDS=1.0
+
+def load_instruction_set(path):
+ if not path:return None
+ p=pathlib.Path(path);content=p.read_text(encoding='utf-8')
+ if not content or len(content.encode())>MAX_PAYLOAD:raise ValueError('instruction set must be 1..262144 UTF-8 bytes')
+ return {'title':p.stem,'revision':hashlib.sha256(content.encode()).hexdigest()[:16],'content':content,'updatedAt':int(p.stat().st_mtime*1000)}
+def load_dispatch_handler(path):
+ if not path:return None
+ spec=importlib.util.spec_from_file_location('execplane_dispatch_plugin',path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ handler=getattr(module,'dispatch',None)
+ if not asyncio.iscoroutinefunction(handler):raise ValueError('dispatch plugin must export async def dispatch(payload, emit)')
+ return handler
 
 class RpcFault(Exception):
  def __init__(self,code,message): self.code,self.message=code,message; super().__init__(message)
 class OutputLimitExceeded(Exception): pass
 
 class Runtime:
- def __init__(self,roots,stdout_limit=DEFAULT_STDOUT_LIMIT,stderr_limit=DEFAULT_STDERR_LIMIT,total_output_limit=DEFAULT_TOTAL_OUTPUT_LIMIT,max_exec=DEFAULT_MAX_EXEC,transfer_options=None,name=None):
+ def __init__(self,roots,stdout_limit=DEFAULT_STDOUT_LIMIT,stderr_limit=DEFAULT_STDERR_LIMIT,total_output_limit=DEFAULT_TOTAL_OUTPUT_LIMIT,max_exec=DEFAULT_MAX_EXEC,transfer_options=None,name=None,instruction_set=None,dispatch_handler=None):
   self.roots=[pathlib.Path(r).expanduser().resolve(strict=True) for r in roots]
   if not self.roots: raise ValueError('at least one --allow-root is required')
   if min(stdout_limit,stderr_limit,total_output_limit,max_exec)<1: raise ValueError('runtime limits must be positive')
-  self.stdout_limit=stdout_limit; self.stderr_limit=stderr_limit; self.total_output_limit=total_output_limit; self.max_exec=max_exec; self.name=name or os.uname().nodename; self.server_id=str(uuid.uuid4()); self.exec_slots=asyncio.Semaphore(max_exec); self.active={}; self.transfers=TransferManager(self,**(transfer_options or {}))
+  self.stdout_limit=stdout_limit; self.stderr_limit=stderr_limit; self.total_output_limit=total_output_limit; self.max_exec=max_exec; self.name=name or os.uname().nodename; self.server_id=str(uuid.uuid4()); self.exec_slots=asyncio.Semaphore(max_exec); self.active={}; self.transfers=TransferManager(self,**(transfer_options or {})); self.instruction_set=instruction_set; self.dispatch_handler=dispatch_handler
  def capabilities(self):
-  return {'protocol':PROTOCOL_VERSION,'serverId':self.server_id,'name':self.name,'caps':sorted(CAPS),'limits':{'maxStdoutBytes':self.stdout_limit,'maxStderrBytes':self.stderr_limit,'maxTotalOutputBytes':self.total_output_limit,'maxTransferBytes':DIR_LIMIT,'maxConcurrentCommands':self.max_exec,'maxTimeoutMs':3600000}}
+  caps=set(CAPS);caps.update({'dispatch'} if self.dispatch_handler else set());out={'protocol':PROTOCOL_VERSION,'serverId':self.server_id,'name':self.name,'caps':sorted(caps),'limits':{'maxStdoutBytes':self.stdout_limit,'maxStderrBytes':self.stderr_limit,'maxTotalOutputBytes':self.total_output_limit,'maxTransferBytes':DIR_LIMIT,'maxConcurrentCommands':self.max_exec,'maxTimeoutMs':3600000}}
+  if self.instruction_set:out['instructionSet']=self.instruction_set
+  return out
  def inside_roots(self,resolved): return any(resolved==r or r in resolved.parents for r in self.roots)
  def lexical_root(self,path):
   absolute=pathlib.Path(os.path.abspath(path)); matches=[r for r in self.roots if absolute==r or r in absolute.parents]
@@ -99,6 +113,27 @@ class Runtime:
     if not task.done():task.cancel()
    await asyncio.gather(out,err,wait,return_exceptions=True)
   return {'stdout':''.join(out_tail),'stderr':''.join(err_tail),'exitCode':proc.returncode,'durationMs':int((time.monotonic()-started)*1000),'stdoutBytes':stdout_bytes,'stderrBytes':stderr_bytes,'truncated':False}
+ async def opaque_dispatch(self,owner,request_id,p,emit=None):
+  if not self.dispatch_handler:raise RpcFault('CAPABILITY_UNSUPPORTED','No dispatch handler is configured')
+  payload=p.get('payload');timeout=min(max(int(p.get('timeoutMs',600000)),1000),3600000)
+  if not isinstance(payload,str) or not payload or '\0' in payload or len(payload.encode())>MAX_PAYLOAD:raise RpcFault('EXEC_INVALID_PARAMS','Invalid dispatch payload')
+  key=(owner,request_id);task=asyncio.current_task();self.active[key]=task;started=time.monotonic();state={'sequence':0,'bytes':0}
+  async def output(data,stream='output'):
+   if not isinstance(data,str):raise RpcFault('EXEC_INTERNAL','Dispatch handler emitted non-text output')
+   size=len(data.encode());state['bytes']+=size
+   if size>MAX_RPC or state['bytes']>self.total_output_limit:raise RpcFault('EXEC_OUTPUT_LIMIT','Dispatch output exceeded limit')
+   if emit:await emit({'event':'dispatch.output','data':{'requestId':request_id,'sequence':state['sequence'],'stream':stream,'data':data}})
+   state['sequence']+=1
+  try:
+   result=await asyncio.wait_for(self.dispatch_handler(payload,output),timeout/1000)
+   if isinstance(result,str):result={'output':result}
+   if not isinstance(result,dict):raise RpcFault('EXEC_INTERNAL','Dispatch handler returned invalid result')
+   text=result.get('output','')
+   if not isinstance(text,str) or len(text.encode())>MAX_RPC:raise RpcFault('EXEC_OUTPUT_LIMIT','Dispatch result exceeded limit')
+   return {'output':text,'durationMs':int((time.monotonic()-started)*1000),'truncated':bool(result.get('truncated',False))}
+  except asyncio.TimeoutError:raise RpcFault('EXEC_TIMEOUT','Dispatch timed out')
+  except asyncio.CancelledError:raise RpcFault('EXEC_CANCELLED','Dispatch was cancelled')
+  finally:self.active.pop(key,None)
  async def cancel(self,owner,request_id):
   task=self.active.get((owner,request_id))
   if not task:return {'requestId':request_id,'cancelled':False}
@@ -109,6 +144,7 @@ class Runtime:
   if method=='capabilities':
    if p.get('protocol') not in (None,PROTOCOL_VERSION): raise RpcFault('EXEC_UNSUPPORTED_VERSION','Unsupported protocol version')
    return self.capabilities()
+  if method=='dispatch':return await self.opaque_dispatch(owner,request_id,p,emit)
   if method=='exec':return await self.exec(owner,request_id,p,emit)
   if method=='cancel':return await self.cancel(owner,int(p.get('requestId',-1)))
   if method in ('ping','status'):return {}

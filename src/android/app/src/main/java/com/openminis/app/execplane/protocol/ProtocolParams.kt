@@ -36,6 +36,7 @@ data class RegisterParams(
     val identityPublicKey: String? = null,
     val identitySignature: String? = null,
     val identityChallenge: String? = null,
+    val instructionSet: SandboxInstructionSet? = null,
 )
 
 @Serializable
@@ -59,12 +60,21 @@ data class ExecutorLimits(
 )
 
 @Serializable
+data class SandboxInstructionSet(
+    val title: String,
+    val revision: String,
+    val content: String,
+    val updatedAt: Long? = null,
+)
+
+@Serializable
 data class CapabilitiesResult(
     val protocol: String,
     val serverId: String,
     val name: String,
     val caps: Set<String>,
     val limits: ExecutorLimits,
+    val instructionSet: SandboxInstructionSet? = null,
 )
 
 sealed interface ValidationResult {
@@ -73,6 +83,7 @@ sealed interface ValidationResult {
 }
 
 object ProtocolValidator {
+    const val MAX_INSTRUCTION_SET_BYTES = 256 * 1024
     private val safeName = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
     private val safeCapability = Regex("[a-z][a-z0-9._-]{0,63}")
 
@@ -100,7 +111,18 @@ object ProtocolValidator {
         if (params.tags.any { !safeCapability.matches(it) }) {
             return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Invalid tags")
         }
+        if (!isValidInstructionSet(params.instructionSet)) {
+            return invalid(ExecPlaneErrorCode.EXEC_INVALID_PARAMS, "Invalid instruction set")
+        }
         return ValidationResult.Valid
+    }
+
+    fun isValidInstructionSet(instructions: SandboxInstructionSet?): Boolean {
+        if (instructions == null) return true
+        return instructions.title.isNotBlank() && instructions.title.length <= 128 &&
+            instructions.revision.isNotBlank() && instructions.revision.length <= 128 &&
+            instructions.content.toByteArray(Charsets.UTF_8).size <= MAX_INSTRUCTION_SET_BYTES &&
+            instructions.content.indexOf('\u0000') < 0
     }
 
     fun validateExec(params: ExecParams): ValidationResult {

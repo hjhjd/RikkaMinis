@@ -23,6 +23,7 @@ object AgentTools {
         sandboxPrompt: String? = null,
     ): List<AgentToolDefinition> = buildList {
         add(shellExecuteDefinition(sandboxPrompt))
+        add(sandboxDispatchDefinition(sandboxPrompt))
         add(FileReadTool.definition())
         add(FileWriteTool.definition())
         add(FileEditTool.definition())
@@ -37,6 +38,23 @@ object AgentTools {
             add(memoryGetDefinition())
         }
     }
+
+    private fun sandboxDispatchDefinition(sandboxPrompt: String?): AgentToolDefinition = AgentToolDefinition(
+        name = "sandbox_dispatch",
+        description = "Send an opaque UTF-8 instruction payload to an explicitly named WebSocket sandbox. " +
+            "Android does not parse, rewrite, or interpret payload verbs; use only syntax the user supplied from that sandbox's copied instruction set. " +
+            "This tool never falls back to PRoot or another sandbox. " +
+            (sandboxPrompt?.let { "$it " } ?: ""),
+        parameters = mapOf(
+            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary shown to the user. Use the same language as the user."),
+            "sandbox" to AgentToolParam("string", "Exact saved or online WebSocket sandbox name. PRoot is not accepted."),
+            "payload" to AgentToolParam("string", "Opaque instruction text copied or composed according to that sandbox's user-provided instruction set. It is forwarded byte-for-byte as UTF-8."),
+            "timeout" to AgentToolParam("integer", "Timeout in seconds (default 900, maximum 3600)."),
+            "delay" to AgentToolParam("integer", "Delay in seconds before sending without occupying the sandbox."),
+        ),
+        required = listOf("tool_title", "sandbox", "payload"),
+        propertyOrdering = listOf("tool_title", "sandbox", "payload", "timeout", "delay"),
+    )
 
     // Aligned with iOS AIChatViewModel.swift:4982-4993
     private fun shellExecuteDefinition(sandboxPrompt: String?): AgentToolDefinition = AgentToolDefinition(

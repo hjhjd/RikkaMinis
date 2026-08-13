@@ -293,6 +293,13 @@
     <string name="sandbox_run_command">Command</string>
     <string name="sandbox_run_command_on">Run command on %1$s</string>
     <string name="sandbox_command">Command</string>
+    <string name="sandbox_dispatch_test">Dispatch</string>
+    <string name="sandbox_dispatch_on">Dispatch opaque payload to %1$s</string>
+    <string name="sandbox_payload">Opaque payload</string>
+    <string name="sandbox_instruction_set">AI instructions</string>
+    <string name="sandbox_instruction_revision">Revision: %1$s · copied only when you explicitly choose Copy all</string>
+    <string name="sandbox_copy_all_instructions">Copy all</string>
+    <string name="sandbox_instructions_copied">AI instructions copied</string>
     <string name="sandbox_run">Run</string>
     <string name="sandbox_running">Running…</string>
     <string name="sandbox_stopped">Stopped</string>

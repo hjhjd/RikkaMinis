@@ -57,6 +57,8 @@ import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.SandboxFilePullTool
 import com.openminis.app.tools.SandboxFilePushTool
 import com.openminis.app.tools.ToolExecutionResult
+import com.openminis.app.tools.registry.LegacyAgentToolProvider
+import com.openminis.app.tools.registry.ToolRegistry
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
@@ -895,17 +897,22 @@ class ChatViewModel(
     private val agentHistory = mutableListOf<LLMMessage>()
 
     /**
-     * All agent tool definitions, recomputed on each read so the memory
-     * toggle gate (see [_memoryEnabled]) takes effect immediately when
-     * the user flips /memory mid-session without forcing a VM rebuild.
-     * The cost is negligible — [AgentTools.makeAgentTools] just builds a
-     * fixed list of definition objects, no I/O.
+     * Transitional provider registry. Discovery is provider-based now while
+     * invocation still uses the legacy dispatcher below; tools can migrate one
+     * provider at a time without changing the model-facing aggregation path.
      */
+    private val toolRegistry = ToolRegistry(listOf(
+        LegacyAgentToolProvider {
+            AgentTools.makeAgentTools(
+                memoryEnabled = _memoryEnabled.value,
+                sandboxPrompt = sandboxRuntimeSnapshot().toolDescription,
+            )
+        },
+    ))
+
+    /** Recomputed from provider manifests so runtime gates apply immediately. */
     private val agentTools: List<AgentToolDefinition>
-        get() = AgentTools.makeAgentTools(
-            memoryEnabled = _memoryEnabled.value,
-            sandboxPrompt = sandboxRuntimeSnapshot().toolDescription,
-        )
+        get() = toolRegistry.definitions()
 
     /**
      * Per-session loop detector. Reset alongside [agentHistory] whenever the
@@ -8120,11 +8127,53 @@ class ChatViewModel(
                 } else ReadImageTool.execute(argsJson, activeSessionId, context)
             }
             "shell_execute" -> executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText)
+            "sandbox_dispatch" -> executeSandboxDispatch(argsJson, toolId, toolBlocks, assistantId, currentText)
             "browser_use" -> executeBrowserUseTool(argsJson)
             "memory_write" -> executeMemoryWriteTool(argsJson)
             "memory_get" -> executeMemoryGetTool(argsJson)
             else -> ToolExecutionResult("Unknown tool: $name", false)
         }
+    }
+
+    private suspend fun executeSandboxDispatch(
+        argsJson: String,
+        toolId: String,
+        toolBlocks: MutableList<AssistantBlock>,
+        assistantId: String,
+        currentText: String,
+    ): ToolExecutionResult = runCatching {
+        val args = JSONObject(argsJson)
+        val sandbox = args.getString("sandbox").trim()
+        val payload = args.getString("payload")
+        val timeoutMs = args.optLong("timeout", 900L).coerceIn(1L, 3600L) * 1000L
+        val delaySec = args.optLong("delay", 0L).coerceIn(0L, 86_400L)
+        val toolTitle = args.optString("tool_title", "sandbox_dispatch")
+        require(sandbox.isNotEmpty() && !sandbox.equals("proot", true)) { "An explicit WebSocket sandbox is required" }
+        require(payload.isNotEmpty()) { "Payload cannot be empty" }
+        if (delaySec > 0) kotlinx.coroutines.delay(delaySec * 1000L)
+        val result = (context.applicationContext as com.openminis.app.MinisApp).sandboxDispatchService.dispatch(
+            sandbox = sandbox,
+            payload = payload,
+            timeoutMs = timeoutMs,
+        ) { chunk ->
+            val idx = toolBlocks.indexOfFirst { it.id == toolId }
+            if (idx >= 0) {
+                val combined = toolBlocks[idx].content + chunk
+                toolBlocks[idx] = toolBlocks[idx].copy(content = combined.takeLast(50_000))
+                viewModelScope.launch(Dispatchers.Main) {
+                    updateAssistantMessage(assistantId, currentText, true, toolBlocks)
+                }
+            }
+        }
+        ToolExecutionResult(
+            output = "[sandbox: $sandbox]\n${result.output.ifBlank { "(no output)" }}",
+            success = true,
+            toolTitle = toolTitle,
+        )
+    }.getOrElse { error ->
+        val title = runCatching { JSONObject(argsJson).optString("tool_title", "sandbox_dispatch") }
+            .getOrDefault("sandbox_dispatch")
+        ToolExecutionResult("Dispatch failed: ${error.message}", false, toolTitle = title)
     }
 
     private suspend fun executeRemoteReadImage(args: JSONObject, sandbox: String, toolTitle: String): ToolExecutionResult = runCatching {

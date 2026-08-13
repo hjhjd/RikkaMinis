@@ -1,7 +1,8 @@
 package com.openminis.app.execplane.protocol
 
 object ExecPlaneCapabilities {
-    const val EXEC = "exec"
+    const val DISPATCH = "dispatch"
+    const val EXEC = "exec" // Legacy compatibility only.
     const val STATUS = "status"
     const val FS_STAT = "fs.stat"
     const val FS_LIST = "fs.list"
@@ -16,7 +17,7 @@ object ExecPlaneCapabilities {
 
     val FILE = setOf(FS_STAT, FS_LIST, FS_READ, FS_WRITE, FS_MKDIR, FS_REMOVE, FS_MOVE)
     val TRANSFER = setOf(TRANSFER_PUSH, TRANSFER_PULL)
-    val ALL = setOf(EXEC, STATUS) + FILE + TRANSFER + ENV_INJECT
+    val ALL = setOf(DISPATCH, EXEC, STATUS) + FILE + TRANSFER + ENV_INJECT
 }
 
 enum class CapabilityGroup { COMMAND, FILES, TRANSFER, ENVIRONMENT }

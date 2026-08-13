@@ -154,6 +154,49 @@ class ExecPlaneBridge(
         else -> method in caps
     }
 
+    suspend fun dispatch(
+        name: String,
+        payload: String,
+        timeoutMs: Long = 600_000,
+        outputCallback: ((String) -> Unit)? = null,
+    ): RemoteDispatchResult {
+        val resolvedName = connections.resolveOnlineName(name)
+            ?: throw RemoteChannelException(
+                ExecPlaneErrorCode.CHANNEL_EXECUTOR_OFFLINE,
+                "WebSocket Server is offline",
+            )
+        return commandLimiter.withPermit(resolvedName) {
+            val connection = remoteConnection(resolvedName)
+            val streamedBytes = AtomicLong(0L)
+            val outputExceeded = java.util.concurrent.atomic.AtomicBoolean(false)
+            val response = connection.requestWithOutput(
+                method = "dispatch",
+                params = buildJsonObject {
+                    put("payload", payload)
+                    put("timeoutMs", timeoutMs)
+                },
+                timeoutMs = timeoutMs,
+            ) { _, data ->
+                val size = data.toByteArray(Charsets.UTF_8).size
+                if (size > SandboxDispatchService.MAX_EVENT_BYTES ||
+                    streamedBytes.addAndGet(size.toLong()) > SandboxDispatchService.MAX_FINAL_OUTPUT_BYTES
+                ) {
+                    outputExceeded.set(true)
+                } else if (!outputExceeded.get()) {
+                    outputCallback?.invoke(data)
+                }
+            }
+            if (outputExceeded.get()) throw RemoteExecutionException(
+                ExecPlaneErrorCode.EXEC_OUTPUT_LIMIT,
+                "Dispatch output exceeded Android limit",
+            )
+            if (!response.ok) throw response.remoteFailure("Remote dispatch failed")
+            SandboxDispatchService(this).decodeResult(response.result).let {
+                RemoteDispatchResult(it.output, it.durationMs, it.truncated)
+            }
+        }
+    }
+
     suspend fun exec(
         name: String,
         command: String,
@@ -247,6 +290,9 @@ class ExecPlaneBridge(
             val peer = Peer(UUID.randomUUID().toString(), conn)
             peer.execHandler = { command, timeoutMs, env, callback -> executeReverse(peer, command, timeoutMs, env, callback) }
             peer.requestHandler = { method, params, timeoutMs -> requestReverse(peer, method, params, timeoutMs) }
+            peer.requestHandlerWithId = { method, params, timeoutMs, requestId ->
+                requestReverse(peer, method, params, timeoutMs, requestId)
+            }
             peers[conn] = peer
         }
 
@@ -259,7 +305,7 @@ class ExecPlaneBridge(
             }
             val event = runCatching { ExecPlaneJson.codec.decodeFromString<RpcEvent>(message) }.getOrNull()
             if (event != null) {
-                if (event.event == "exec.output") runCatching {
+                if (event.event == "exec.output" || event.event == "dispatch.output") runCatching {
                     val output = ExecPlaneJson.codec.decodeFromJsonElement<ExecOutputEvent>(event.data)
                     peer.emitOutput(output)
                 }
@@ -324,6 +370,7 @@ class ExecPlaneBridge(
                 name = params.name,
                 caps = params.caps,
                 limits = params.limits,
+                instructionSet = params.instructionSet,
             )
             this@ExecPlaneBridge.connections.register(peer, params)
             sendOk(peer.socket, request.id, JsonObject(emptyMap()))
@@ -382,7 +429,7 @@ class ExecPlaneBridge(
             return try {
                 withTimeout(timeoutMs + 5_000) { waiter.await() }
             } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
-                if (method == "exec") peer.socket.send(buildJsonObject {
+                if (method == "exec" || method == "dispatch") peer.socket.send(buildJsonObject {
                     put("id", REQUEST_IDS.getAndIncrement()); put("method", "cancel")
                     put("params", buildJsonObject { put("requestId", requestId) }); put("ts", System.currentTimeMillis())
                 }.toString())
@@ -391,6 +438,12 @@ class ExecPlaneBridge(
                     "WebSocket request timed out after ${timeoutMs}ms",
                     error,
                 )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                if (method == "exec" || method == "dispatch") peer.socket.send(buildJsonObject {
+                    put("id", REQUEST_IDS.getAndIncrement()); put("method", "cancel")
+                    put("params", buildJsonObject { put("requestId", requestId) }); put("ts", System.currentTimeMillis())
+                }.toString())
+                throw cancelled
             } finally {
                 peer.removePending(requestId)
             }
@@ -460,6 +513,7 @@ class ExecPlaneBridge(
         @Volatile override var handshake: CapabilitiesResult? = null
         @Volatile var execHandler: (suspend (String, Long, Map<String, String>, ((String, String) -> Unit)?) -> RemoteExecResult)? = null
         @Volatile var requestHandler: (suspend (String, JsonObject, Long) -> RpcResponse)? = null
+        @Volatile var requestHandlerWithId: (suspend (String, JsonObject, Long, Long) -> RpcResponse)? = null
         private val pending = ConnectionPendingRequests()
         private val outputCallbacks = ConcurrentHashMap<Long, (String, String) -> Unit>()
         override val direction = ConnectionDirection.REVERSE
@@ -484,6 +538,21 @@ class ExecPlaneBridge(
         internal fun pendingCount(): Int = pending.size()
         override suspend fun request(method: String, params: JsonObject, timeoutMs: Long): RpcResponse =
             requestHandler?.invoke(method, params, timeoutMs) ?: error("RPC channel is not ready")
+        override suspend fun requestWithOutput(
+            method: String,
+            params: JsonObject,
+            timeoutMs: Long,
+            outputCallback: ((String, String) -> Unit)?,
+        ): RpcResponse {
+            val requestId = REQUEST_IDS.getAndIncrement()
+            outputCallback?.let { addOutputCallback(requestId, it) }
+            return try {
+                requestHandlerWithId?.invoke(method, params, timeoutMs, requestId)
+                    ?: error("RPC channel is not ready")
+            } finally {
+                removeOutputCallback(requestId)
+            }
+        }
         override suspend fun exec(
             command: String,
             timeoutMs: Long,

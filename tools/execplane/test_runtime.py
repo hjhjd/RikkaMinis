@@ -11,6 +11,20 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
  async def test_capabilities_complete(self):
   result=await self.r.dispatch("capabilities",{"protocol":"0.2"})
   self.assertEqual(set(result["caps"]),CAPS); self.assertEqual(result['protocol'],'0.2'); self.assertGreaterEqual(result['limits']['maxConcurrentCommands'],1)
+ async def test_opaque_dispatch_and_instruction_set(self):
+  async def handler(payload,emit):
+   await emit('stream:'+payload);return {'output':'final:'+payload}
+  instructions={'title':'Box AI','revision':'r1','content':'use echo'}
+  runtime=Runtime([self.root],instruction_set=instructions,dispatch_handler=handler)
+  caps=await runtime.dispatch('capabilities',{'protocol':'0.2'});self.assertIn('dispatch',caps['caps']);self.assertEqual(caps['instructionSet'],instructions)
+  events=[]
+  async def collect(event):events.append(event)
+  result=await runtime.dispatch('dispatch',{'payload':'echo hello'},42,collect)
+  self.assertEqual(result['output'],'final:echo hello');self.assertEqual(events[0]['event'],'dispatch.output');self.assertEqual(events[0]['data']['data'],'stream:echo hello')
+ async def test_dispatch_not_advertised_without_plugin(self):
+  caps=await self.r.dispatch('capabilities',{'protocol':'0.2'});self.assertNotIn('dispatch',caps['caps'])
+  with self.assertRaises(RpcFault) as cm:await self.r.dispatch('dispatch',{'payload':'anything'})
+  self.assertEqual(cm.exception.code,'CAPABILITY_UNSUPPORTED')
  async def test_write_read_revision_conflict(self):
   p=str(self.root/"a.txt"); data=base64.b64encode(b"hello").decode()
   w=await self.r.dispatch("fs.write",{"path":p,"data":data,"createParents":True})
