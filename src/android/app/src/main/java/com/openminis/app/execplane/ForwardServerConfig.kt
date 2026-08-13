@@ -12,6 +12,7 @@ data class ForwardServerConfig(
     val envPolicy: EnvironmentPolicy = EnvironmentPolicy.NONE,
     val authorizedEnvKeys: Set<String> = emptySet(),
     val allowRoots: Set<String> = emptySet(),
+    val maxConcurrentCommands: Int = SandboxConcurrencyLimiter.DEFAULT_LIMIT,
 )
 
 @Serializable

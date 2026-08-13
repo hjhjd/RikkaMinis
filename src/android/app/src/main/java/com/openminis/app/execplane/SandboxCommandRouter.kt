@@ -1,6 +1,7 @@
 package com.openminis.app.execplane
 
 import android.util.Log
+import com.openminis.app.execplane.protocol.ExecPlaneErrorCode
 import com.openminis.app.sandbox.ExecutionCoordinator
 
 /** Routes the existing shell interface to an explicit/default sandbox. */
@@ -17,21 +18,46 @@ class SandboxCommandRouter(
         requestedSandbox: String?,
     ): ExecutionCoordinator.CommandResult? {
         val explicit = requestedSandbox?.trim()?.takeIf { it.isNotEmpty() }
-        val server = if (explicit != null) {
+        val configured = explicit?.let { requested ->
             settings.forwardServers.value.firstOrNull {
-                it.name.equals(explicit, ignoreCase = true) || it.id == explicit
-            } ?: throw IllegalArgumentException("Unknown sandbox: $explicit")
+                it.name.equals(requested, ignoreCase = true) || it.id == requested
+            }
+        }
+        val targetName: String
+        val environmentConfig: ForwardServerConfig?
+        if (explicit != null) {
+            if (configured != null && !configured.enabled) {
+                throw IllegalStateException("Sandbox '$explicit' is disabled")
+            }
+            val lookupName = configured?.name ?: explicit
+            val knownExecutor = bridge.connections.snapshots.value.keys.any {
+                it.equals(lookupName, ignoreCase = true)
+            }
+            targetName = bridge.connections.resolveOnlineName(lookupName)
+                ?: if (configured != null || knownExecutor) {
+                    throw IllegalStateException("Sandbox '$explicit' unavailable")
+                } else {
+                    throw IllegalArgumentException("Unknown sandbox: $explicit")
+                }
+            environmentConfig = configured
         } else {
-            settings.selectedForwardServer() ?: return null
+            val server = settings.selectedForwardServer() ?: return null
+            targetName = server.name
+            environmentConfig = server
         }
 
         return try {
-            val env = settings.environmentFor(server, environmentProvider())
-            val caps = bridge.connections.online(server.name)?.caps.orEmpty()
+            // Reverse executors have no persisted environment authorization yet,
+            // so their explicit route receives no App environment variables.
+            val env = environmentConfig?.let { settings.environmentFor(it, environmentProvider()) }.orEmpty()
+            val caps = bridge.connections.online(targetName)?.caps.orEmpty()
             if (env.isNotEmpty() && "env.inject" !in caps) {
-                throw RemoteExecutionException("ENV_NOT_AUTHORIZED: '${server.name}' does not support environment injection")
+                throw RemoteExecutionException(
+                    ExecPlaneErrorCode.ENV_NOT_AUTHORIZED,
+                    "'$targetName' does not support environment injection",
+                )
             }
-            val remote = bridge.exec(server.name, command, timeoutMs, env)
+            val remote = bridge.exec(targetName, command, timeoutMs, env)
             val combined = buildString {
                 append(remote.stdout)
                 if (remote.stderr.isNotEmpty()) {
@@ -44,14 +70,14 @@ class SandboxCommandRouter(
                 output = combined,
                 exitCode = remote.exitCode,
                 durationMs = remote.durationMs ?: 0L,
-                sandboxName = server.name,
+                sandboxName = targetName,
             )
         } catch (error: RemoteChannelException) {
             if (explicit != null) {
                 // Explicit targeting must be truthful: never execute elsewhere.
                 throw IllegalStateException("Sandbox '$explicit' unavailable: ${error.message}", error)
             }
-            Log.w(TAG, "[$sessionId] ${server.name} unavailable; falling back to PRoot: ${error.message}")
+            Log.w(TAG, "[$sessionId] $targetName unavailable; falling back to PRoot: ${error.message}")
             ExecutionCoordinator.executeLocal(sessionId, command, timeoutMs, lineCallback)
                 .copy(degraded = true)
         } catch (error: RemoteExecutionException) {
@@ -59,7 +85,7 @@ class SandboxCommandRouter(
                 output = error.message ?: "Remote command failed",
                 exitCode = 1,
                 durationMs = 0L,
-                sandboxName = server.name,
+                sandboxName = targetName,
             )
         }
     }

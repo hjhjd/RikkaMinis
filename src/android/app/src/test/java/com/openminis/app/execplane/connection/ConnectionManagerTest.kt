@@ -58,4 +58,15 @@ class ConnectionManagerTest {
 
         assertEquals(listOf("build"), manager.onlineMatching(setOf("exec", "android-build")).map { it.name })
     }
+
+    @Test
+    fun onlineNameResolutionSupportsExplicitCaseInsensitiveRouting() {
+        val manager = ConnectionManager { 1L }
+        manager.register(FakeConnection("reverse"), registration("VCPMinis"))
+
+        assertEquals("VCPMinis", manager.resolveOnlineName("vcpminis"))
+        assertNull(manager.resolveOnlineName("missing"))
+        manager.disconnect("VCPMinis", "reverse")
+        assertNull(manager.resolveOnlineName("VCPMinis"))
+    }
 }

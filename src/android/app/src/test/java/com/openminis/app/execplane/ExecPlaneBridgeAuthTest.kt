@@ -19,4 +19,12 @@ class ExecPlaneBridgeAuthTest {
         assertFalse(ExecPlaneBridge.constantTimeEquals(token.dropLast(1) + "0", token))
         assertFalse(ExecPlaneBridge.constantTimeEquals("", ""))
     }
+
+    @Test
+    fun reverseNameCannotConflictWithSavedForwardServer() {
+        val saved = ForwardServerConfig("id", "VCPMinis", "wss://example.invalid", token)
+
+        assertTrue(ExecPlaneBridge.conflictsWithForwardServer("vcpminis", listOf(saved)))
+        assertFalse(ExecPlaneBridge.conflictsWithForwardServer("VCPMinis-Reverse", listOf(saved)))
+    }
 }

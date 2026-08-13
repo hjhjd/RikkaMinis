@@ -19,6 +19,13 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,19 +50,22 @@ data class WsBridgeStatus(
     val error: String? = null,
 )
 
-/** Reverse WS connection manager. It intentionally exposes no exec dispatch yet. */
+/** Application-scoped WS execution bridge for forward servers and reverse executors. */
 class ExecPlaneBridge(
     private val settings: ExecPlaneSettingsRepository,
     val connections: ConnectionManager = ConnectionManager(),
 ) {
     private val lock = Any()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _status = MutableStateFlow(WsBridgeStatus())
     val status: StateFlow<WsBridgeStatus> = _status.asStateFlow()
     private var server: ReverseServer? = null
+    private var listenerRetryJob: Job? = null
     private val forwardClient = OkHttpClient.Builder()
         .pingInterval(20, java.util.concurrent.TimeUnit.SECONDS)
         .build()
     private val forwardConnections = ConcurrentHashMap<String, ForwardConnection>()
+    private val commandLimiter = SandboxConcurrencyLimiter(settings::concurrencyLimit)
 
     fun apply(enabled: Boolean = settings.enabled.value, port: Int = settings.port.value) {
         if (!enabled) stop() else start(port)
@@ -63,17 +73,32 @@ class ExecPlaneBridge(
 
     fun start(port: Int = settings.port.value) {
         synchronized(lock) {
-            if (server?.listenPort == port && _status.value.state == WsBridgeState.LISTENING) return
-            stopLocked()
-            _status.value = WsBridgeStatus(WsBridgeState.STARTING, port)
-            ReverseServer(port, settings.token()).also {
-                server = it
-                runCatching { it.start() }.onFailure { error -> reportError(port, error) }
-            }
+            listenerRetryJob?.cancel()
+            listenerRetryJob = null
+            startLocked(port)
         }
     }
 
-    fun stop() = synchronized(lock) { stopLocked() }
+    private fun startLocked(port: Int) {
+        if (server?.listenPort == port && _status.value.state == WsBridgeState.LISTENING) return
+        stopServerLocked()
+        _status.value = WsBridgeStatus(WsBridgeState.STARTING, port)
+        ReverseServer(port, settings.token()).also {
+            server = it
+            runCatching { it.start() }.onFailure { error ->
+                reportError(port, error)
+                scheduleListenerRetryLocked(port)
+            }
+        }
+        // Java-WebSocket starts asynchronously. If bind/start fails later,
+        // onError(null, ...) schedules the same self-healing retry loop.
+    }
+
+    fun stop() = synchronized(lock) {
+        listenerRetryJob?.cancel()
+        listenerRetryJob = null
+        stopLocked()
+    }
 
     fun connect(config: ForwardServerConfig) {
         forwardConnections.remove(config.id)?.close(1000, "Reconnecting")
@@ -102,10 +127,12 @@ class ExecPlaneBridge(
     }
 
     suspend fun request(name: String, method: String, params: JsonObject, timeoutMs: Long = 600_000): RpcResponse {
-        val connection = connections.connection(name) as? RemoteCommandConnection
-            ?: throw RemoteChannelException("WebSocket Server is offline")
+        val connection = remoteConnection(name)
         if (method != "capabilities" && !supports(connection.capabilities, method)) {
-            throw RemoteExecutionException("CAPABILITY_UNSUPPORTED: $method is not supported by '$name'")
+            throw RemoteExecutionException(
+                ExecPlaneErrorCode.CAPABILITY_UNSUPPORTED,
+                "$method is not supported by '$name'",
+            )
         }
         return connection.request(method, params, timeoutMs)
     }
@@ -122,17 +149,39 @@ class ExecPlaneBridge(
         timeoutMs: Long = 600_000,
         env: Map<String, String> = emptyMap(),
     ): RemoteExecResult {
-        val connection = connections.connection(name) as? RemoteCommandConnection
-            ?: throw RemoteChannelException("WebSocket Server is offline")
-        return connection.exec(command, timeoutMs, env)
+        val resolvedName = connections.resolveOnlineName(name)
+            ?: throw RemoteChannelException(
+                ExecPlaneErrorCode.CHANNEL_EXECUTOR_OFFLINE,
+                "WebSocket Server is offline",
+            )
+        return commandLimiter.withPermit(resolvedName) {
+            remoteConnection(resolvedName).exec(command, timeoutMs, env)
+        }
+    }
+
+    private fun remoteConnection(name: String): RemoteCommandConnection {
+        val resolvedName = connections.resolveOnlineName(name)
+            ?: throw RemoteChannelException(
+                ExecPlaneErrorCode.CHANNEL_EXECUTOR_OFFLINE,
+                "WebSocket Server is offline",
+            )
+        return connections.connection(resolvedName) as? RemoteCommandConnection
+            ?: throw RemoteChannelException(
+                ExecPlaneErrorCode.CHANNEL_EXECUTOR_OFFLINE,
+                "WebSocket Server is offline",
+            )
     }
 
     private fun stopLocked() {
+        stopServerLocked()
+        _status.value = WsBridgeStatus()
+    }
+
+    private fun stopServerLocked() {
         val active = server
         server = null
         runCatching { active?.closePeers() }
         runCatching { active?.stop(1_000) }
-        _status.value = WsBridgeStatus()
     }
 
     private fun reportError(port: Int, error: Throwable) {
@@ -140,15 +189,33 @@ class ExecPlaneBridge(
         _status.value = WsBridgeStatus(WsBridgeState.ERROR, port, error.message ?: error.javaClass.simpleName)
     }
 
+    private fun scheduleListenerRetryLocked(port: Int) {
+        if (!settings.enabled.value || listenerRetryJob?.isActive == true) return
+        listenerRetryJob = scope.launch {
+            var waitMs = LISTENER_RETRY_INITIAL_MS
+            while (isActive && settings.enabled.value) {
+                delay(waitMs)
+                synchronized(lock) {
+                    if (!settings.enabled.value || _status.value.state == WsBridgeState.LISTENING) return@launch
+                    Log.i(TAG, "Retrying WS bridge on 127.0.0.1:$port")
+                    startLocked(port)
+                }
+                waitMs = (waitMs * 2).coerceAtMost(LISTENER_RETRY_MAX_MS)
+            }
+        }
+    }
+
     private inner class ReverseServer(
         val listenPort: Int,
         private val expectedToken: String,
     ) : WebSocketServer(InetSocketAddress("127.0.0.1", listenPort)) {
         private val peers = ConcurrentHashMap<WebSocket, Peer>()
-        private val pending = ConcurrentHashMap<Long, CompletableDeferred<RpcResponse>>()
 
         fun closePeers() {
-            peers.keys.forEach { it.close(1001, "Bridge stopped") }
+            peers.values.forEach { peer ->
+                peer.failPending("WebSocket bridge stopped")
+                peer.socket.close(1001, "Bridge stopped")
+            }
         }
 
         override fun onStart() {
@@ -175,7 +242,7 @@ class ExecPlaneBridge(
             val peer = peers[conn] ?: return
             val response = runCatching { ExecPlaneJson.codec.decodeFromString<RpcResponse>(message) }.getOrNull()
             if (response != null) {
-                pending[response.id]?.complete(response)
+                peer.completePending(response)
                 return
             }
             val request = runCatching { ExecPlaneJson.codec.decodeFromString<RpcRequest>(message) }
@@ -197,7 +264,8 @@ class ExecPlaneBridge(
                     peer.name?.let { this@ExecPlaneBridge.connections.markSeen(it, peer.id) }
                     sendOk(conn, request.id, JsonObject(emptyMap()))
                 }
-                // No remote shell until Guard + audit are implemented.
+                // Executors may receive outbound exec/file RPC from the App, but
+                // they cannot ask the App to execute inbound shell/file methods.
                 "exec", "cancel", "file_get", "file_put" ->
                     sendError(conn, request.id, ExecPlaneErrorCode.EXEC_FORBIDDEN, "Method is not enabled")
                 else -> sendError(conn, request.id, ExecPlaneErrorCode.EXEC_METHOD_NOT_FOUND, "Unknown method")
@@ -218,6 +286,15 @@ class ExecPlaneBridge(
                 send(peer.socket, RpcResponse(request.id, false, error = validation.error))
                 return
             }
+            if (conflictsWithForwardServer(params.name, settings.forwardServers.value)) {
+                sendError(
+                    peer.socket,
+                    request.id,
+                    ExecPlaneErrorCode.EXEC_FORBIDDEN,
+                    "Executor name conflicts with a saved forward server",
+                )
+                return
+            }
             peer.name?.let { this@ExecPlaneBridge.connections.disconnect(it, peer.id) }
             peer.name = params.name
             peer.capabilities = params.caps
@@ -226,11 +303,24 @@ class ExecPlaneBridge(
         }
 
         override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
-            peers.remove(conn)?.let { peer -> peer.name?.let { this@ExecPlaneBridge.connections.disconnect(it, peer.id) } }
+            peers.remove(conn)?.let { peer ->
+                peer.failPending(reason.ifBlank { "WebSocket connection was closed" })
+                peer.name?.let { this@ExecPlaneBridge.connections.disconnect(it, peer.id) }
+            }
         }
 
         override fun onError(conn: WebSocket?, ex: Exception) {
-            if (conn == null) reportError(listenPort, ex) else Log.w(TAG, "WS peer error: ${ex.message}")
+            if (conn == null) {
+                synchronized(lock) {
+                    if (server === this) {
+                        reportError(listenPort, ex)
+                        scheduleListenerRetryLocked(listenPort)
+                    }
+                }
+            } else {
+                peers[conn]?.failPending("WebSocket connection failed: ${ex.message ?: ex.javaClass.simpleName}", ex)
+                Log.w(TAG, "WS peer error: ${ex.message}")
+            }
         }
 
         private suspend fun requestReverse(
@@ -240,18 +330,38 @@ class ExecPlaneBridge(
             timeoutMs: Long,
         ): RpcResponse {
             val requestId = REQUEST_IDS.getAndIncrement()
-            val waiter = CompletableDeferred<RpcResponse>()
-            pending[requestId] = waiter
+            val waiter = peer.addPending(requestId)
             val request = buildJsonObject {
                 put("id", requestId); put("method", method); put("params", params); put("ts", System.currentTimeMillis())
             }
             if (!peer.socket.isOpen) {
-                pending.remove(requestId)
-                throw RemoteChannelException("WebSocket Server is offline")
+                peer.removePending(requestId)
+                throw RemoteChannelException(
+                    ExecPlaneErrorCode.CHANNEL_EXECUTOR_OFFLINE,
+                    "WebSocket Server is offline",
+                )
             }
-            peer.socket.send(request.toString())
-            return try { withTimeout(timeoutMs + 5_000) { waiter.await() } }
-                finally { pending.remove(requestId) }
+            try {
+                peer.socket.send(request.toString())
+            } catch (error: Throwable) {
+                peer.removePending(requestId)
+                throw RemoteChannelException(
+                    ExecPlaneErrorCode.CHANNEL_DISCONNECTED,
+                    "WebSocket request could not be sent",
+                    error,
+                )
+            }
+            return try {
+                withTimeout(timeoutMs + 5_000) { waiter.await() }
+            } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
+                throw RemoteChannelException(
+                    ExecPlaneErrorCode.CHANNEL_TIMEOUT,
+                    "WebSocket request timed out after ${timeoutMs}ms",
+                    error,
+                )
+            } finally {
+                peer.removePending(requestId)
+            }
         }
 
         private suspend fun executeReverse(
@@ -267,7 +377,7 @@ class ExecPlaneBridge(
                 put("envMode", "overlay")
             }
             val response = requestReverse(peer, "exec", params, timeoutMs)
-            if (!response.ok) error(response.error?.message ?: "Remote command failed")
+            if (!response.ok) throw response.remoteFailure("Remote command failed")
             val result = response.result?.jsonObject ?: JsonObject(emptyMap())
             return RemoteExecResult(
                 stdout = result["stdout"]?.jsonPrimitive?.content.orEmpty(),
@@ -296,17 +406,42 @@ class ExecPlaneBridge(
         @Volatile override var capabilities: Set<String> = setOf("exec", "status")
         @Volatile var execHandler: (suspend (String, Long, Map<String, String>) -> RemoteExecResult)? = null
         @Volatile var requestHandler: (suspend (String, JsonObject, Long) -> RpcResponse)? = null
+        private val pending = ConnectionPendingRequests()
         override val direction = ConnectionDirection.REVERSE
+
+        fun addPending(requestId: Long): CompletableDeferred<RpcResponse> = pending.add(requestId)
+
+        fun removePending(requestId: Long) = pending.remove(requestId)
+
+        fun completePending(response: RpcResponse): Boolean = pending.complete(response)
+
+        fun failPending(reason: String, cause: Throwable? = null) {
+            pending.failAll(RemoteChannelException(
+                ExecPlaneErrorCode.CHANNEL_DISCONNECTED,
+                reason.ifBlank { "WebSocket connection was closed" },
+                cause,
+            ))
+        }
+
+        internal fun pendingCount(): Int = pending.size()
         override suspend fun request(method: String, params: JsonObject, timeoutMs: Long): RpcResponse =
             requestHandler?.invoke(method, params, timeoutMs) ?: error("RPC channel is not ready")
         override suspend fun exec(command: String, timeoutMs: Long, env: Map<String, String>): RemoteExecResult =
             execHandler?.invoke(command, timeoutMs, env) ?: error("Command channel is not ready")
-        override fun close(code: Int, reason: String) = socket.close(code, reason)
+        override fun close(code: Int, reason: String) {
+            failPending(reason)
+            socket.close(code, reason)
+        }
     }
 
     companion object {
         private const val TAG = "ExecPlaneBridge"
+        private const val LISTENER_RETRY_INITIAL_MS = 1_000L
+        private const val LISTENER_RETRY_MAX_MS = 30_000L
         private val REQUEST_IDS = AtomicLong(1_000_000)
+
+        internal fun conflictsWithForwardServer(name: String, servers: List<ForwardServerConfig>): Boolean =
+            servers.any { it.name.equals(name, ignoreCase = true) }
 
         fun constantTimeEquals(provided: String?, expected: String): Boolean {
             if (provided == null || provided.length != expected.length || expected.isEmpty()) return false

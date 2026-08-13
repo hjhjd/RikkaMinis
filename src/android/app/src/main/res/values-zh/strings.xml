@@ -150,6 +150,7 @@
     <string name="sandbox_mode_ws">WebSocket 模式</string>
     <string name="sandbox_mode_ws_subtitle">使用已选择的默认 WebSocket 服务端</string>
     <string name="sandbox_default_ws_section">默认 WebSocket 沙箱</string>
+    <string name="sandbox_no_enabled_ws">WebSocket 模式下没有启用的服务端；启用服务端前，命令将使用内置 PRoot。</string>
     <string name="sandbox_builtin_proot_subtitle">本地 Alpine 沙箱</string>
     <string name="sandbox_fallback_footer">Shell 命令优先使用所选沙箱。当所选 WebSocket 服务端离线或通道失败时，命令会自动回退到内置 PRoot 执行一次；远程命令非零退出不会触发回退。</string>
     <string name="sandbox_ws_enabled">接受 WebSocket 服务端连接</string>
@@ -167,8 +168,14 @@
     <string name="sandbox_no_executors">尚无 WebSocket 服务端连接。</string>
     <string name="sandbox_online">在线</string>
     <string name="sandbox_offline">离线</string>
-    <string name="sandbox_exec_disabled_footer">连接管理已可用。在 Guard 和审计完成前，远程命令与文件方法仍保持禁用。</string>
+    <string name="sandbox_exec_disabled_footer">WebSocket 执行端可以运行命令和文件 RPC；每个访问令牌都应视为远程 Shell 凭据。</string>
     <string name="sandbox_exec_enabled_footer">只有用户明确点击运行后才会发送远程命令。连接远程服务端时请使用独立的低权限账户和令牌。</string>
+    <string name="sandbox_concurrency_value">并发 %1$d</string>
+    <string name="sandbox_concurrency_edit">并发</string>
+    <string name="sandbox_concurrency_title">配置 %1$s 的命令并发</string>
+    <string name="sandbox_concurrency_label">最大并发命令数</string>
+    <string name="sandbox_concurrency_range">1–256，默认 4</string>
+    <string name="sandbox_concurrency_help">这是 App 针对此沙箱的并发上限。执行端自身仍可设置更低或更高的硬上限；实际并发取两端允许值的较小者。配置在重连和应用重启后保留。</string>
     <string name="sandbox_add_server">添加 WebSocket 服务端</string>
     <string name="sandbox_server_name">服务端名称</string>
     <string name="sandbox_server_url">WebSocket 地址</string>

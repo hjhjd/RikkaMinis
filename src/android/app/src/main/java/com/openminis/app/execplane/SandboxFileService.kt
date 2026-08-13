@@ -67,8 +67,6 @@ class SandboxFileService(private val bridge: ExecPlaneBridge) {
 
     private suspend fun checked(sandbox: String, method: String, params: JsonObject) =
         bridge.request(sandbox, method, params).also { response ->
-            if (!response.ok) throw RemoteExecutionException(
-                "${response.error?.code ?: "EXEC_FAILED"}: ${response.error?.message ?: "Remote request failed"}",
-            )
+            if (!response.ok) throw response.remoteFailure("Remote request failed")
         }
 }

@@ -274,9 +274,17 @@ export no_proxy="$NO_PROXY"
 | 单个文件 Push/Pull | 256 MiB |
 | 目录 Push/Pull | 512 MiB |
 | 分块大小 | 256 KiB |
-| WS 消息上限 | 2 MiB |
-| 单命令最长超时 | 1 小时 |
-| 未完成传输状态清理时间 | 30 分钟 |
+| WS 入站消息上限 | 2 MiB |
+| stdout 上限 | 16 MiB |
+| stderr 上限 | 8 MiB |
+| 单命令总输出上限 | 20 MiB，超限终止整个进程组 |
+| 单命令最长超时 | 1 小时，超时终止整个进程组 |
+| App 每沙箱并发 | 默认 4，可在“沙箱配置”中为每个正向/反向执行端独立设置 1–256 |
+| 执行端全局硬并发 | 默认 256，`--max-exec` 可调；实际并发取 App 与执行端限制的较小者 |
+| 正向 WS 连接数 | 默认 8，`--max-connections` 可调 |
+| 活动传输数 | 默认 8，`--max-transfers` 可调 |
+| 传输临时空间 | 默认 1 GiB，`--temp-limit-mb` 可调 |
+| 未完成传输状态清理时间 | 30 分钟，后台每 5 分钟扫描 |
 
 目录传输保留嵌套目录、空目录、Unicode 文件名和普通文件。目录内出现符号链接时会拒绝传输。
 
@@ -314,6 +322,9 @@ find "$HOME/workspace" /tmp \( -name '*.part' -o -name '*.minis-*.dir' \) -print
 ## 安全边界
 
 - `exec` 可以运行任意 Shell 命令，不受 `--allow-root` 限制；`--allow-root` 只限制文件 RPC 和 Push/Pull。
+- 命令输出、并发、连接数、活动传输和临时空间均有硬上限；超时、取消或输出超限会终止命令的整个进程组。
+- 同一 WebSocket 连接可并发处理多个请求，响应允许乱序返回并通过 request ID 关联；连接断开会取消该连接尚未完成的任务。
+- App 与执行端必须同步升级错误码。旧 App 遇到新版执行端返回的 `EXEC_OUTPUT_LIMIT`/`EXEC_RESOURCE_LIMIT` 时可能无法解码响应并表现为请求超时。
 - App 显式指定 WS 沙箱失败时不会静默改在 PRoot 执行。
 - Minis 环境变量默认不会自动发送到 WS；只有 App 中明确授权的变量才会随单次 `exec` 注入。
 - 注入变量不会写入远端 profile 或配置文件，子进程结束后失效。

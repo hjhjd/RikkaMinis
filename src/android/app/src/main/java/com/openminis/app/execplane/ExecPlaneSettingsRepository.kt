@@ -45,8 +45,7 @@ class ExecPlaneSettingsRepository(context: Context) {
 
     fun selectedForwardServer(): ForwardServerConfig? {
         if (_sandboxMode.value != MODE_WS) return null
-        return _forwardServers.value.firstOrNull { it.id == _defaultWsId.value }
-            ?: _forwardServers.value.firstOrNull()
+        return selectEnabledForwardServer(_forwardServers.value, _defaultWsId.value)
     }
 
     fun setEnabled(value: Boolean) {
@@ -73,10 +72,30 @@ class ExecPlaneSettingsRepository(context: Context) {
         if (!isAllowedUrl(normalized) || name.isBlank() || token.isBlank()) return null
         val trimmedName = name.trim()
         val existing = _forwardServers.value.firstOrNull { it.name.equals(trimmedName, ignoreCase = true) }
-        val config = ForwardServerConfig(existing?.id ?: UUID.randomUUID().toString(), trimmedName, normalized, token)
+        val config = existing?.copy(name = trimmedName, url = normalized, token = token)
+            ?: ForwardServerConfig(UUID.randomUUID().toString(), trimmedName, normalized, token)
         persistForwardServers(_forwardServers.value.filterNot { it.id == config.id } + config)
         if (_defaultWsId.value == null) setDefaultWsSandbox(config.id)
         return config
+    }
+
+    fun concurrencyLimit(name: String): Int {
+        val forward = _forwardServers.value.firstOrNull { it.name.equals(name, ignoreCase = true) }
+        val saved = forward?.maxConcurrentCommands ?: prefs.getInt(concurrencyKey(name), SandboxConcurrencyLimiter.DEFAULT_LIMIT)
+        return saved.coerceIn(SandboxConcurrencyLimiter.MIN_LIMIT, SandboxConcurrencyLimiter.MAX_LIMIT)
+    }
+
+    fun setConcurrencyLimit(name: String, value: Int): Boolean {
+        if (value !in SandboxConcurrencyLimiter.MIN_LIMIT..SandboxConcurrencyLimiter.MAX_LIMIT) return false
+        val forward = _forwardServers.value.firstOrNull { it.name.equals(name, ignoreCase = true) }
+        if (forward != null) {
+            persistForwardServers(_forwardServers.value.map {
+                if (it.id == forward.id) it.copy(maxConcurrentCommands = value) else it
+            })
+        } else {
+            prefs.edit().putInt(concurrencyKey(name), value).apply()
+        }
+        return true
     }
 
     fun updateForwardServerPolicy(
@@ -143,9 +162,13 @@ class ExecPlaneSettingsRepository(context: Context) {
         }.getOrDefault(emptyList()).filter { server ->
             server.name.isNotBlank() && isAllowedUrl(server.url)
         }.map { server ->
-            if (includesSecrets) server else {
+            val bounded = server.copy(maxConcurrentCommands = server.maxConcurrentCommands.coerceIn(
+                SandboxConcurrencyLimiter.MIN_LIMIT,
+                SandboxConcurrencyLimiter.MAX_LIMIT,
+            ))
+            if (includesSecrets) bounded else {
                 val existingToken = _forwardServers.value.firstOrNull { it.id == server.id }?.token.orEmpty()
-                server.copy(token = existingToken, enabled = server.enabled && existingToken.isNotBlank())
+                bounded.copy(token = existingToken, enabled = bounded.enabled && existingToken.isNotBlank())
             }
         }
         if (value.has("forwardServers")) {
@@ -180,7 +203,16 @@ class ExecPlaneSettingsRepository(context: Context) {
     private fun generateToken(): String = ByteArray(24).also(SecureRandom()::nextBytes)
         .joinToString("") { "%02x".format(it) }
 
+    private fun concurrencyKey(name: String): String =
+        "$KEY_CONCURRENCY_PREFIX${SandboxConcurrencyLimiter.normalize(name)}"
+
     companion object {
+        internal fun selectEnabledForwardServer(
+            servers: List<ForwardServerConfig>,
+            defaultId: String?,
+        ): ForwardServerConfig? = servers.firstOrNull { it.enabled && it.id == defaultId }
+            ?: servers.firstOrNull { it.enabled }
+
         const val DEFAULT_PORT = 8765
         const val SANDBOX_PROOT = "proot"
         const val MODE_PROOT = "proot"
@@ -193,6 +225,7 @@ class ExecPlaneSettingsRepository(context: Context) {
         private const val KEY_DEFAULT_SANDBOX = "defaultSandbox"
         private const val KEY_SANDBOX_MODE = "sandboxMode"
         private const val KEY_DEFAULT_WS = "defaultWsSandbox"
+        private const val KEY_CONCURRENCY_PREFIX = "concurrency."
         private val ENV_KEY = Regex("[A-Za-z_][A-Za-z0-9_]*")
         private val RESERVED_ENV = setOf(
             "EXECPLANE_TOKEN", "MINIS_EXECPLANE_TOKEN", "ANDROID_HOME", "ANDROID_DATA",

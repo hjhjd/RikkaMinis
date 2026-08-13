@@ -116,7 +116,7 @@ class SandboxTransferService(private val bridge: ExecPlaneBridge) {
 
     private suspend fun checked(sandbox: String, method: String, params: JsonObject): JsonObject {
         val response = bridge.request(sandbox, method, params, 1_800_000)
-        if (!response.ok) error("${response.error?.code}: ${response.error?.message}")
+        if (!response.ok) throw response.remoteFailure("Remote transfer failed")
         return response.result?.jsonObject ?: JsonObject(emptyMap())
     }
     private fun sha256(file: File): String {

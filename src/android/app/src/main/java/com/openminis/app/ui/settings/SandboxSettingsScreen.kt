@@ -70,6 +70,7 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
     var resetToken by remember { mutableStateOf(false) }
     var addServer by remember { mutableStateOf(false) }
     var commandTarget by remember { mutableStateOf<String?>(null) }
+    var concurrencyTarget by remember { mutableStateOf<String?>(null) }
     var command by remember { mutableStateOf("uname -a") }
     var commandOutput by remember { mutableStateOf("") }
     var commandRunning by remember { mutableStateOf(false) }
@@ -112,7 +113,8 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                     onClick = { settings.setSandboxMode(com.openminis.app.execplane.ExecPlaneSettingsRepository.MODE_WS) },
                 )
             }
-            if (savedServers.isNotEmpty()) {
+            val enabledServers = savedServers.filter { it.enabled }
+            if (enabledServers.isNotEmpty()) {
                 Text(stringResource(R.string.sandbox_default_ws_section), style = MaterialTheme.typography.titleMedium)
                 Column(
                     Modifier.fillMaxWidth().background(
@@ -120,7 +122,7 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                         RoundedCornerShape(12.dp),
                     ),
                 ) {
-                    savedServers.sortedBy { it.name }.forEach { saved ->
+                    enabledServers.sortedBy { it.name }.forEach { saved ->
                         SandboxChoiceRow(
                             title = saved.name,
                             subtitle = saved.url,
@@ -129,6 +131,12 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                         )
                     }
                 }
+            } else if (sandboxMode == com.openminis.app.execplane.ExecPlaneSettingsRepository.MODE_WS) {
+                Text(
+                    stringResource(R.string.sandbox_no_enabled_ws),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
             Text(
                 stringResource(R.string.sandbox_fallback_footer),
@@ -226,11 +234,15 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                         Text(server.name)
                         Text(
                             "${if (server.online) stringResource(R.string.sandbox_online) else stringResource(R.string.sandbox_offline)} · " +
+                                stringResource(R.string.sandbox_concurrency_value, settings.concurrencyLimit(server.name)) + " · " +
                                 server.caps.sorted().joinToString(", "),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { concurrencyTarget = server.name }) {
+                                Text(stringResource(R.string.sandbox_concurrency_edit))
+                            }
                             if (server.online) {
                                 TextButton(onClick = { commandTarget = server.name }) {
                                     Text(stringResource(R.string.sandbox_run_command))
@@ -268,6 +280,42 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
             settings.saveForwardServer(name, url, token)?.also(bridge::connect) != null
         },
     )
+
+    concurrencyTarget?.let { target ->
+        var value by remember(target) { mutableStateOf(settings.concurrencyLimit(target).toString()) }
+        val parsed = value.toIntOrNull()
+        AlertDialog(
+            onDismissRequest = { concurrencyTarget = null },
+            title = { Text(stringResource(R.string.sandbox_concurrency_title, target)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = value,
+                        onValueChange = { value = it.filter(Char::isDigit).take(3) },
+                        label = { Text(stringResource(R.string.sandbox_concurrency_label)) },
+                        supportingText = { Text(stringResource(R.string.sandbox_concurrency_range)) },
+                        singleLine = true,
+                    )
+                    Text(
+                        stringResource(R.string.sandbox_concurrency_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = parsed != null && parsed in com.openminis.app.execplane.SandboxConcurrencyLimiter.MIN_LIMIT..com.openminis.app.execplane.SandboxConcurrencyLimiter.MAX_LIMIT,
+                    onClick = {
+                        if (parsed != null && settings.setConcurrencyLimit(target, parsed)) concurrencyTarget = null
+                    },
+                ) { Text(stringResource(R.string.sandbox_apply)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { concurrencyTarget = null }) { Text(stringResource(android.R.string.cancel)) }
+            },
+        )
+    }
 
     commandTarget?.let { target ->
         AlertDialog(

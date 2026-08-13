@@ -2,6 +2,8 @@
 
 > 依据：`PLAN.md` v0.3（2026-08-09）  
 > 原则：先打通 Droidspaces 反向 `exec` 最小闭环，再扩展文件、正向连接、调度和降级；优先复用项目现有实现。
+>
+> **历史说明（2026-08-13）**：本文是最初实现清单，部分勾选状态已落后于代码。正向/反向命令、文件 RPC、传输和默认 PRoot 降级现已接通；后续加固与实时状态以 [`EXECPLANE_IMPROVEMENT_TODO.md`](./EXECPLANE_IMPROVEMENT_TODO.md) 为准。当前 WS Token 等价于执行端运行用户的远程 Shell 凭据，`--allow-root` 只限制文件 RPC 和传输，不限制 Shell。
 
 ## 可复用资产盘点
 

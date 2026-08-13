@@ -524,9 +524,10 @@ class MinisApp : Application(), ImageLoaderFactory {
         vcpLogConnectionManager.reconcile()
         vcpLogLifecycleObserver = com.openminis.app.vcplog.VcpLogLifecycleObserver(vcpLogConnectionManager)
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(vcpLogLifecycleObserver)
-        // ExecPlane reverse WS manager is application-scoped so connections
-        // survive Settings navigation. It binds loopback only and currently
-        // accepts register/ping/status; remote exec stays disabled.
+        // ExecPlane is application-scoped so forward and reverse executor
+        // connections survive Settings navigation. The reverse listener binds
+        // loopback only; authenticated executors can register and receive
+        // outbound command/file RPC, but cannot execute inbound methods on App.
         execPlaneSettingsRepository = com.openminis.app.execplane.ExecPlaneSettingsRepository(this)
         execPlaneBridge = com.openminis.app.execplane.ExecPlaneBridge(execPlaneSettingsRepository)
         sandboxFileService = com.openminis.app.execplane.SandboxFileService(execPlaneBridge)

@@ -4,6 +4,7 @@ import com.openminis.app.execplane.connection.ConnectionManager
 import com.openminis.app.execplane.connection.ExecutorConnection
 import com.openminis.app.execplane.protocol.ConnectionDirection
 import com.openminis.app.execplane.protocol.EXECPLANE_PROTOCOL_VERSION
+import com.openminis.app.execplane.protocol.ExecPlaneErrorCode
 import com.openminis.app.execplane.protocol.ExecPlaneJson
 import com.openminis.app.execplane.protocol.ExecutorTrust
 import com.openminis.app.execplane.protocol.RegisterParams
@@ -40,8 +41,65 @@ data class RemoteExecResult(
     val durationMs: Long? = null,
 )
 
-class RemoteChannelException(message: String, cause: Throwable? = null) : Exception(message, cause)
-class RemoteExecutionException(message: String) : Exception(message)
+class RemoteChannelException(
+    val code: ExecPlaneErrorCode,
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause) {
+    init { require(code.isChannelError) { "$code is not a channel error" } }
+}
+
+class RemoteExecutionException(
+    val code: ExecPlaneErrorCode,
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause) {
+    init { require(!code.isChannelError) { "$code is a channel error" } }
+}
+
+internal fun RpcResponse.remoteFailure(defaultMessage: String): Exception {
+    val rpcError = error
+    val code = rpcError?.code ?: ExecPlaneErrorCode.EXEC_FAILED
+    val message = rpcError?.message ?: defaultMessage
+    return if (code.isChannelError) {
+        RemoteChannelException(code, message)
+    } else {
+        RemoteExecutionException(code, message)
+    }
+}
+
+internal class ConnectionPendingRequests {
+    private val lock = Any()
+    private val items = mutableMapOf<Long, CompletableDeferred<RpcResponse>>()
+    private var closedFailure: Throwable? = null
+
+    fun add(requestId: Long): CompletableDeferred<RpcResponse> = synchronized(lock) {
+        CompletableDeferred<RpcResponse>().also { waiter ->
+            val failure = closedFailure
+            if (failure == null) items[requestId] = waiter
+            else waiter.completeExceptionally(failure)
+        }
+    }
+
+    fun remove(requestId: Long) = synchronized(lock) {
+        items.remove(requestId)
+        Unit
+    }
+
+    fun complete(response: RpcResponse): Boolean = synchronized(lock) {
+        items[response.id]?.complete(response) == true
+    }
+
+    fun failAll(error: Throwable) {
+        val waiters = synchronized(lock) {
+            if (closedFailure == null) closedFailure = error
+            items.values.toList().also { items.clear() }
+        }
+        waiters.forEach { it.completeExceptionally(error) }
+    }
+
+    fun size(): Int = synchronized(lock) { items.size }
+}
 
 interface RemoteCommandConnection : ExecutorConnection {
     val capabilities: Set<String>
@@ -104,17 +162,26 @@ class ForwardConnection(
         }
         if (socket?.send(request.toString()) != true) {
             pending.remove(requestId)
-            throw RemoteChannelException("WebSocket Server is offline")
+            throw RemoteChannelException(ExecPlaneErrorCode.CHANNEL_EXECUTOR_OFFLINE, "WebSocket Server is offline")
         }
         return try {
             withTimeout(timeoutMs + 5_000) { waiter.await() }
         } catch (e: CancellationException) {
             if (e is TimeoutCancellationException) {
-                throw RemoteChannelException("WebSocket request timed out after ${timeoutMs}ms", e)
+                throw RemoteChannelException(
+                    ExecPlaneErrorCode.CHANNEL_TIMEOUT,
+                    "WebSocket request timed out after ${timeoutMs}ms",
+                    e,
+                )
             }
             throw e
         } catch (e: Throwable) {
-            throw RemoteChannelException("WebSocket request channel failed: ${e.message ?: e.javaClass.simpleName}", e)
+            if (e is RemoteChannelException) throw e
+            throw RemoteChannelException(
+                ExecPlaneErrorCode.CHANNEL_DISCONNECTED,
+                "WebSocket request channel failed: ${e.message ?: e.javaClass.simpleName}",
+                e,
+            )
         } finally {
             pending.remove(requestId)
         }
@@ -129,7 +196,7 @@ class ForwardConnection(
             put("envMode", "overlay")
         }
         val response = request("exec", params, timeoutMs)
-        if (!response.ok) throw RemoteExecutionException(response.error?.message ?: "Remote command failed")
+        if (!response.ok) throw response.remoteFailure("Remote command failed")
         val result = response.result?.jsonObject ?: JsonObject(emptyMap())
         return RemoteExecResult(
             stdout = result["stdout"]?.jsonPrimitive?.content.orEmpty(),
@@ -145,7 +212,16 @@ class ForwardConnection(
         retryJob = null
         socket?.close(code, reason)
         socket = null
-        pending.values.forEach { it.completeExceptionally(IllegalStateException(reason)) }
+        failPending(reason)
+    }
+
+    private fun failPending(reason: String, cause: Throwable? = null) {
+        val failure = RemoteChannelException(
+            ExecPlaneErrorCode.CHANNEL_DISCONNECTED,
+            reason.ifBlank { "WebSocket connection was closed" },
+            cause,
+        )
+        pending.values.forEach { it.completeExceptionally(failure) }
         pending.clear()
     }
 
@@ -188,6 +264,7 @@ class ForwardConnection(
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             if (!isCurrent(webSocket, generation)) return
             socket = null
+            failPending(reason.ifBlank { "WebSocket connection was closed" })
             manager.disconnect(config.name, id)
             scheduleReconnect()
         }
@@ -195,8 +272,7 @@ class ForwardConnection(
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             if (!isCurrent(webSocket, generation)) return
             socket = null
-            pending.values.forEach { it.completeExceptionally(t) }
-            pending.clear()
+            failPending("WebSocket connection failed: ${t.message ?: t.javaClass.simpleName}", t)
             manager.disconnect(config.name, id)
             manager.rememberOffline(
                 config.name, id, direction, setOf("exec", "status"), ExecutorTrust.STANDARD,

@@ -111,6 +111,19 @@ class ConnectionManager(
     fun online(name: String): ExecutorSnapshot? =
         entries[name]?.snapshot?.takeIf { it.online }
 
+    /** Resolves a user-facing executor name without silently picking an ambiguous case variant. */
+    fun resolveOnlineName(requested: String): String? {
+        entries[requested]?.snapshot?.takeIf { it.online }?.let { return it.name }
+        val matches = entries.values.asSequence()
+            .map { it.snapshot }
+            .filter { it.online && it.name.equals(requested, ignoreCase = true) }
+            .map { it.name }
+            .distinct()
+            .take(2)
+            .toList()
+        return matches.singleOrNull()
+    }
+
     fun connection(name: String): ExecutorConnection? = entries[name]?.connection
 
     /** User-initiated disconnect. Keeps an offline row for later inspection/deletion. */

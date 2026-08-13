@@ -252,6 +252,7 @@
     <string name="sandbox_mode_ws">WebSocket mode</string>
     <string name="sandbox_mode_ws_subtitle">Use the selected default WebSocket Server</string>
     <string name="sandbox_default_ws_section">Default WebSocket sandbox</string>
+    <string name="sandbox_no_enabled_ws">WebSocket mode has no enabled server. Commands will use built-in PRoot until a server is enabled.</string>
     <string name="sandbox_builtin_proot_subtitle">Local Alpine sandbox</string>
     <string name="sandbox_fallback_footer">Shell commands use the selected sandbox. If the selected WebSocket Server is offline or its channel fails, the command falls back once to built-in PRoot. A remote non-zero exit does not trigger fallback.</string>
     <string name="sandbox_ws_enabled">Accept WebSocket Server connections</string>
@@ -269,8 +270,14 @@
     <string name="sandbox_no_executors">No WebSocket Servers have connected yet.</string>
     <string name="sandbox_online">Online</string>
     <string name="sandbox_offline">Offline</string>
-    <string name="sandbox_exec_disabled_footer">Connection management is available. Remote command and file methods remain disabled until Guard and auditing are implemented.</string>
+    <string name="sandbox_exec_disabled_footer">WebSocket executors can run commands and file RPC. Treat each access token as a remote-shell credential.</string>
     <string name="sandbox_exec_enabled_footer">Remote commands run only after you explicitly tap Run. Use a dedicated low-privilege account and token for remote servers.</string>
+    <string name="sandbox_concurrency_value">Concurrency %1$d</string>
+    <string name="sandbox_concurrency_edit">Concurrency</string>
+    <string name="sandbox_concurrency_title">Configure command concurrency for %1$s</string>
+    <string name="sandbox_concurrency_label">Maximum concurrent commands</string>
+    <string name="sandbox_concurrency_range">1–256, default 4</string>
+    <string name="sandbox_concurrency_help">This is the App-side limit for this sandbox. The executor keeps its own hard limit; effective concurrency is the lower value allowed by both sides. The setting survives reconnects and App restarts.</string>
     <string name="sandbox_add_server">Add WebSocket Server</string>
     <string name="sandbox_server_name">Server name</string>
     <string name="sandbox_server_url">WebSocket URL</string>
