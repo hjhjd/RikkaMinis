@@ -196,6 +196,8 @@
     <string name="sandbox_payload">不透明指令内容</string>
     <string name="sandbox_instruction_set">AI 指令集</string>
     <string name="sandbox_instruction_revision">版本：%1$s · 仅在你主动点击“复制全部”时写入剪贴板</string>
+    <string name="sandbox_instruction_length">指令长度：%1$d 字符</string>
+    <string name="sandbox_instruction_updated">更新时间：%1$s</string>
     <string name="sandbox_copy_all_instructions">复制全部</string>
     <string name="sandbox_instructions_copied">AI 指令集已复制</string>
     <string name="sandbox_run">运行</string>

@@ -358,7 +358,24 @@ fun SandboxSettingsScreen(onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        stringResource(R.string.sandbox_instruction_revision, instructions.revision),
+                        buildString {
+                            append(stringResource(R.string.sandbox_instruction_revision, instructions.revision))
+                            append(" · ")
+                            append(stringResource(R.string.sandbox_instruction_length, instructions.content.length))
+                            instructions.updatedAt?.takeIf { it > 0 }?.let {
+                                append(" · ")
+                                append(stringResource(
+                                    R.string.sandbox_instruction_updated,
+                                    android.text.format.DateUtils.formatDateTime(
+                                        context,
+                                        it,
+                                        android.text.format.DateUtils.FORMAT_SHOW_DATE or
+                                            android.text.format.DateUtils.FORMAT_SHOW_TIME or
+                                            android.text.format.DateUtils.FORMAT_SHOW_YEAR,
+                                    ),
+                                ))
+                            }
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

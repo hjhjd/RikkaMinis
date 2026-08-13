@@ -65,6 +65,9 @@ import com.openminis.app.service.SessionConcurrencyManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -102,6 +105,9 @@ class ChatViewModel(
 
     companion object {
         internal const val TAG = "ChatViewModel"
+        private const val DISPATCH_UI_FLUSH_MS = 75L
+        private const val DISPATCH_UI_TAIL_CHARS = 50_000
+        private const val DISPATCH_UI_QUEUE_CAPACITY = 64
         // [T-preflight-tool-title-nonblocking] Fields kept in each tool's
         // `required` list (so the schema keeps nudging the model to emit them —
         // tool_title drives the live pill header) but which must NOT block the
@@ -8141,39 +8147,64 @@ class ChatViewModel(
         toolBlocks: MutableList<AssistantBlock>,
         assistantId: String,
         currentText: String,
-    ): ToolExecutionResult = runCatching {
-        val args = JSONObject(argsJson)
-        val sandbox = args.getString("sandbox").trim()
-        val payload = args.getString("payload")
-        val timeoutMs = args.optLong("timeout", 900L).coerceIn(1L, 3600L) * 1000L
-        val delaySec = args.optLong("delay", 0L).coerceIn(0L, 86_400L)
-        val toolTitle = args.optString("tool_title", "sandbox_dispatch")
-        require(sandbox.isNotEmpty() && !sandbox.equals("proot", true)) { "An explicit WebSocket sandbox is required" }
-        require(payload.isNotEmpty()) { "Payload cannot be empty" }
-        if (delaySec > 0) kotlinx.coroutines.delay(delaySec * 1000L)
-        val result = (context.applicationContext as com.openminis.app.MinisApp).sandboxDispatchService.dispatch(
-            sandbox = sandbox,
-            payload = payload,
-            timeoutMs = timeoutMs,
-        ) { chunk ->
-            val idx = toolBlocks.indexOfFirst { it.id == toolId }
-            if (idx >= 0) {
-                val combined = toolBlocks[idx].content + chunk
-                toolBlocks[idx] = toolBlocks[idx].copy(content = combined.takeLast(50_000))
-                viewModelScope.launch(Dispatchers.Main) {
-                    updateAssistantMessage(assistantId, currentText, true, toolBlocks)
+    ): ToolExecutionResult {
+        val toolTitle = runCatching { JSONObject(argsJson).optString("tool_title", "sandbox_dispatch") }
+            .getOrDefault("sandbox_dispatch")
+        return try {
+            val args = JSONObject(argsJson)
+            val sandbox = args.getString("sandbox").trim()
+            val payload = args.getString("payload")
+            val timeoutMs = args.optLong("timeout", 900L).coerceIn(1L, 3600L) * 1000L
+            val delaySec = args.optLong("delay", 0L).coerceIn(0L, 86_400L)
+            require(sandbox.isNotEmpty() && !sandbox.equals("proot", true)) { "An explicit WebSocket sandbox is required" }
+            require(payload.isNotEmpty()) { "Payload cannot be empty" }
+            if (delaySec > 0) kotlinx.coroutines.delay(delaySec * 1000L)
+
+            val result = coroutineScope {
+                val chunks = Channel<String>(DISPATCH_UI_QUEUE_CAPACITY)
+                val uiDropped = AtomicBoolean(false)
+                val uiJob = launch(Dispatchers.Main.immediate) {
+                    val pending = StringBuilder()
+                    for (first in chunks) {
+                        pending.append(first)
+                        kotlinx.coroutines.delay(DISPATCH_UI_FLUSH_MS)
+                        while (true) {
+                            val next = chunks.tryReceive().getOrNull() ?: break
+                            pending.append(next)
+                        }
+                        if (uiDropped.getAndSet(false)) pending.insert(0, "[…UI preview truncated…]\n")
+                        val idx = toolBlocks.indexOfFirst { it.id == toolId }
+                        if (idx >= 0 && pending.isNotEmpty()) {
+                            val combined = toolBlocks[idx].content + pending
+                            toolBlocks[idx] = toolBlocks[idx].copy(content = combined.takeLast(DISPATCH_UI_TAIL_CHARS))
+                            pending.setLength(0)
+                            updateAssistantMessage(assistantId, currentText, true, toolBlocks)
+                        }
+                    }
+                }
+                try {
+                    (context.applicationContext as com.openminis.app.MinisApp).sandboxDispatchService.dispatch(
+                        sandbox = sandbox,
+                        payload = payload,
+                        timeoutMs = timeoutMs,
+                    ) { chunk ->
+                        if (chunks.trySend(chunk).isFailure) uiDropped.set(true)
+                    }
+                } finally {
+                    chunks.close()
+                    uiJob.join()
                 }
             }
+            ToolExecutionResult(
+                output = "[sandbox: $sandbox]\n${result.output.ifBlank { "(no output)" }}",
+                success = true,
+                toolTitle = toolTitle,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            ToolExecutionResult("Dispatch failed: ${error.message}", false, toolTitle = toolTitle)
         }
-        ToolExecutionResult(
-            output = "[sandbox: $sandbox]\n${result.output.ifBlank { "(no output)" }}",
-            success = true,
-            toolTitle = toolTitle,
-        )
-    }.getOrElse { error ->
-        val title = runCatching { JSONObject(argsJson).optString("tool_title", "sandbox_dispatch") }
-            .getOrDefault("sandbox_dispatch")
-        ToolExecutionResult("Dispatch failed: ${error.message}", false, toolTitle = title)
     }
 
     private suspend fun executeRemoteReadImage(args: JSONObject, sandbox: String, toolTitle: String): ToolExecutionResult = runCatching {

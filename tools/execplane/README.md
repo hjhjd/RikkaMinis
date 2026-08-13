@@ -9,16 +9,18 @@
 
 两个入口复用相同的数据面实现：
 
-- `runtime.py`：命令执行、状态、远程文件 RPC、单次环境变量注入；
+- `runtime.py`：不透明 dispatch、旧命令执行、状态、远程文件 RPC、单次环境变量注入；
+- `dispatch-plugin-example.py`：参考 DSL 插件，当前实现 `help/status/exec`；
 - `transfer_runtime.py`：文件和目录 Push/Pull、分块校验、冲突处理和断点状态。
 
 仓库保留两个入口，但单个容器通常只运行其中一个。不要让正向和反向入口以不同名称同时代表同一个容器，否则 App 会看到两个实际指向同一文件系统的沙箱。
 
 ## 功能
 
-当前执行端声明并实现以下 capabilities：
+当前执行端可声明并实现以下 capabilities（`dispatch` 仅在配置插件时声明）：
 
 ```text
+dispatch
 exec
 status
 fs.stat
@@ -35,7 +37,8 @@ env.inject
 
 对应用户功能：
 
-- 在指定 WS 沙箱执行 Shell 命令；
+- `sandbox_dispatch` 将不透明 payload 发送给服务端 DSL；参考插件支持 `help/status/exec`；
+- 旧兼容路径在指定 WS 沙箱执行 Shell 命令；
 - `file_read`、`file_write`、`file_edit` 显式操作 WS 文件；
 - `sandbox_file_push` 将 App/PRoot 文件或目录推入 WS；
 - `sandbox_file_pull` 将 WS 文件或目录拉回 App/PRoot；
@@ -341,9 +344,12 @@ find "$HOME/workspace" /tmp \( -name '*.part' -o -name '*.minis-*.dir' \) -print
 ```text
 ws-server.py          正向入口：App 主动连接容器
 ws-agent.py           反向入口：容器主动连接 App
-runtime.py            公共命令、文件 RPC 和环境注入运行时
+dispatch-plugin-example.py  参考不透明 DSL：help/status/exec
+instructions-example.md      可复制到 AI 提示词的 VCPMinis 指令集
+runtime.py            公共 dispatch、旧命令、文件 RPC 和环境注入运行时
 transfer_runtime.py   公共文件/目录传输状态机
-test_runtime.py       Python 单元和安全回归测试
+test_runtime.py       Python 运行时单元和安全回归测试
+test_dispatch_plugin.py DSL 解析、流式输出和进程组取消测试
 ```
 
 

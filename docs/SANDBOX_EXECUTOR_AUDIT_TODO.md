@@ -85,14 +85,14 @@ capabilities / dispatch / cancel
 - [x] WS 路径不再使用“一条服务端命令一个 `ToolDescriptor`”模型。
 - [x] 将 WS 调用参数收敛为 sandbox、opaque payload、timeout；request ID 由传输层生成和关联。
 - [x] 将 WS 结果收敛为流式 Output 与最终成功/失败结果。
-- [ ] 评估并移除仅为动态多工具 manifest 引入的 `ToolManifest` 复杂度；本地 Provider/Registry 可继续服务 Android/PRoot 工具。
+- [x] 移除仅为动态多工具 manifest 引入的 `ToolManifest` 复杂度；本地 Provider/Registry 继续服务 Android/PRoot 工具。
 - [x] 模型侧 WS 工具固定为一个 `sandbox_dispatch` 定义，不随服务端业务指令变化。
 
 ### 1.3 从 ChatViewModel 解耦
 
 - [x] `ChatViewModel` 已接入唯一 `sandbox_dispatch`，只提交 sandbox、payload、timeout/delay 并消费文本结果。
-- [ ] 用 `Flow`/`Channel` 传递事件，替代 WebSocket 线程直接修改 UI。
-- [ ] 输出按 50–100 ms 聚合刷新，禁止每行启动一个 Main coroutine。
+- [x] 用 `Channel` 传递 WS dispatch 输出事件，替代 WebSocket 线程直接修改 UI。
+- [x] WS dispatch 输出由单一 Main 消费协程按 75 ms 聚合刷新，不再为每个 chunk 启动 Main coroutine。
 - [x] UI 预览保留有限尾部，完整结果由通道层限制为 1 MiB。
 - [x] 旧本地工具执行分发暂时保留；WS 新功能禁止继续增加业务命令分支。
 
@@ -125,7 +125,8 @@ capabilities / dispatch / cancel
 - [x] Android 在对应 WS 沙箱详情中展示来源沙箱、revision 和完整内容。
 - [x] 提供“复制全部指令”按钮，复制内容逐字保持，不自动添加或删改提示。
 - [x] 指令集不会自动进入 system prompt、Agent prompt、会话记忆或剪贴板。
-- [ ] 指令集更新提示 revision 变化和更新时间/长度展示；不得覆盖用户已有内容。
+- [ ] 指令集更新提示 revision 变化；不得覆盖用户已有内容。
+  - [x] 指令集详情展示当前 revision、更新时间和内容长度。
 - [x] 限制指令集为 256 KiB；反向注册异常内容会拒绝，正向异常握手不会上线。
 
 ### 2.3 单一模型工具
@@ -135,6 +136,18 @@ capabilities / dispatch / cancel
 - [ ] 允许会话/Agent 决定是否暴露 `sandbox_dispatch` 以及允许访问哪些沙箱。
 - [x] Android 不对 payload 做业务级权限判断；WS 服务端插件负责 DSL 权限和执行限制。
 - [x] 接通正向/反向流式输出与协程超时/取消；后续再迁入统一 Provider event Flow。
+
+### 2.4 VCPMinis 最小 DSL
+
+- [x] 服务端插件实现 `help`、`status`、`exec` 三个 verb。
+- [x] `exec` 同时支持 `exec <单行脚本>` 和首行 `exec` + 后续多行脚本。
+- [x] exec body 原样交给服务端 `/bin/sh -lc`，Android 不参与解析和转义。
+- [x] stdout/stderr 分流流式回传，最终结果附加 exit code 与 durationMs。
+- [x] 插件取消时先 SIGTERM、超时后 SIGKILL，确保终止完整进程组。
+- [x] 服务端保留有限结果尾部并继承 Runtime 的事件/累计输出硬上限。
+- [x] 指令集完整描述语法、文件系统边界、退出码和推荐施工流程。
+- [x] 新增 DSL 单元测试：help/status、单行/多行、stdout/stderr、非零退出、非法 verb、取消无孤儿进程。
+- [x] 重启 VCPMinis systemd 服务并通过 Android `sandbox_dispatch` 完成 help/status/exec、错误处理、超时取消和无孤儿进程端到端验证。
 
 **阶段 2 完成条件**
 

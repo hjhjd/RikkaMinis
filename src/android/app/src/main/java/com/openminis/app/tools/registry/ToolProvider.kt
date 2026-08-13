@@ -30,12 +30,6 @@ data class ToolIdentity(
     }
 }
 
-data class ToolManifest(
-    val providerId: ToolProviderId,
-    val revision: String,
-    val tools: List<ToolDescriptor>,
-)
-
 /** Provider-owned descriptor converted to the existing model-facing definition for now. */
 data class ToolDescriptor(
     val identity: ToolIdentity,
@@ -84,13 +78,6 @@ interface ToolProvider {
 
     /** Must be side-effect free. Dynamic providers should expose their cached descriptors. */
     fun tools(): List<ToolDescriptor>
-
-    /** Cached manifest view; dynamic providers should override with the remote revision. */
-    fun manifest(): ToolManifest = ToolManifest(
-        providerId = id,
-        revision = "local",
-        tools = tools(),
-    )
 
     fun invoke(invocation: ToolInvocation): Flow<ToolInvocationEvent>
 
