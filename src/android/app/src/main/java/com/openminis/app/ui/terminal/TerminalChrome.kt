@@ -2,83 +2,98 @@ package com.openminis.app.ui.terminal
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.KeyboardTab
-import androidx.compose.material.icons.filled.Brush
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Eject
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.openminis.app.R
 
-/** Centralized terminal palette, ready for the upcoming visual redesign. */
 internal object TerminalColors {
-    val background = Color(0xFF000000)
-    val foreground = Color(0xFFD4D4D4)
-    val accent = Color(0xFF34C759)
-    val accessoryBackground = Color(0xFF1F1F1F)
-    val buttonBackground = Color(0xFF404040)
-    val buttonActive = Color(0xFF007AFF)
-    val topButtonBackground = Color(0xFF2C2C2E)
+    val background = Color.Black
+    val foreground = Color(0xFFE6E2EA)
+    val muted = Color(0xFFD9D3DE)
+    val accent = Color(0xFFD7C2FF)
+    val divider = Color(0xFF353238)
 }
 
+internal val TerminalHeaderHeight = 64.dp
+internal val TerminalTabHeight = 52.dp
+internal val TerminalAccessoryHeight = 112.dp
+
 @Composable
-internal fun TerminalTopBar(onClose: () -> Unit, onClear: () -> Unit) {
+internal fun TerminalHeader(onBack: () -> Unit, onAdd: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().background(TerminalColors.background)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().height(TerminalHeaderHeight)
+            .background(TerminalColors.background).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CircularIconButton(Icons.Default.Close, stringResource(R.string.common_close), TerminalColors.foreground, onClose)
-        Spacer(modifier = Modifier.weight(1f))
-        Text(
-            stringResource(R.string.terminal_title),
-            color = TerminalColors.foreground,
-            style = TextStyle(fontFamily = JetBrainsMonoFontFamily, fontSize = 16.sp),
+        Icon(
+            Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "返回",
+            tint = TerminalColors.foreground,
+            modifier = Modifier.clickable(onClick = onBack).padding(4.dp).size(32.dp),
         )
-        Spacer(modifier = Modifier.weight(1f))
-        CircularIconButton(Icons.Default.Brush, stringResource(R.string.terminal_clear), TerminalColors.accent, onClear)
+        Text(
+            text = "VCPMinis-Debian",
+            color = TerminalColors.foreground,
+            style = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.Medium),
+            modifier = Modifier.weight(1f).padding(start = 18.dp),
+        )
+        Icon(
+            Icons.Default.Add,
+            contentDescription = "新建终端",
+            tint = TerminalColors.foreground,
+            modifier = Modifier.clickable(onClick = onAdd).padding(4.dp).size(32.dp),
+        )
     }
 }
 
 @Composable
-private fun CircularIconButton(icon: ImageVector, contentDescription: String, tint: Color, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier.size(36.dp).clip(CircleShape)
-            .background(TerminalColors.topButtonBackground).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription, tint = tint, modifier = Modifier.size(18.dp))
+internal fun TerminalTab(onClose: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().height(TerminalTabHeight).background(TerminalColors.background)) {
+        Row(
+            modifier = Modifier.weight(1f).padding(start = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "nova@vcpminis",
+                color = TerminalColors.accent,
+                style = TextStyle(fontFamily = JetBrainsMonoFontFamily, fontSize = 17.sp, fontWeight = FontWeight.Bold),
+            )
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "关闭终端",
+                tint = TerminalColors.accent,
+                modifier = Modifier.clickable(onClick = onClose).padding(10.dp).size(20.dp),
+            )
+        }
+        Row(modifier = Modifier.fillMaxWidth().height(2.dp)) {
+            Box(modifier = Modifier.weight(0.35f).fillMaxSize().background(TerminalColors.accent))
+            Box(modifier = Modifier.weight(0.65f).fillMaxSize().background(TerminalColors.divider))
+        }
     }
 }
+
+private data class TerminalKey(val label: String, val bytes: ByteArray? = null, val modifier: ModifierKey? = null)
+private enum class ModifierKey { CTRL, ALT }
 
 @Composable
 internal fun KeyboardAccessoryBar(
@@ -88,54 +103,48 @@ internal fun KeyboardAccessoryBar(
     onAltToggle: () -> Unit,
     onSendRaw: (ByteArray) -> Unit,
 ) {
-    Box(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp)).background(TerminalColors.accessoryBackground),
+    val rows = listOf(
+        listOf(
+            TerminalKey("ESC", byteArrayOf(0x1B)), TerminalKey("/", byteArrayOf('/'.code.toByte())),
+            TerminalKey("−", byteArrayOf('-'.code.toByte())), TerminalKey("HOME", byteArrayOf(0x1B, 0x5B, 0x48)),
+            TerminalKey("↑", byteArrayOf(0x1B, 0x5B, 0x41)), TerminalKey("END", byteArrayOf(0x1B, 0x5B, 0x46)),
+            TerminalKey("PGUP", byteArrayOf(0x1B, 0x5B, 0x35, 0x7E)),
+        ),
+        listOf(
+            TerminalKey("↹", byteArrayOf(0x09)), TerminalKey("CTRL", modifier = ModifierKey.CTRL),
+            TerminalKey("ALT", modifier = ModifierKey.ALT), TerminalKey("←", byteArrayOf(0x1B, 0x5B, 0x44)),
+            TerminalKey("↓", byteArrayOf(0x1B, 0x5B, 0x42)), TerminalKey("→", byteArrayOf(0x1B, 0x5B, 0x43)),
+            TerminalKey("PGDN", byteArrayOf(0x1B, 0x5B, 0x36, 0x7E)),
+        ),
+    )
+    Column(
+        modifier = Modifier.fillMaxWidth().height(TerminalAccessoryHeight).background(TerminalColors.background)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.SpaceEvenly,
     ) {
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            QuickCommandButton("Esc", iconText = "⎋") { onSendRaw(byteArrayOf(0x1B)) }
-            QuickCommandButton("Tab", icon = Icons.AutoMirrored.Filled.KeyboardTab) { onSendRaw(byteArrayOf(0x09)) }
-            QuickCommandButton("⏎", iconText = "⏎") { onSendRaw(byteArrayOf(0x0D)) }
-            QuickCommandButton("Ctrl", iconText = "^", isActive = ctrlDown, onClick = onCtrlToggle)
-            QuickCommandButton("Alt", iconText = "⌥", isActive = altDown, onClick = onAltToggle)
-            QuickCommandButton("↑", icon = Icons.Default.KeyboardArrowUp) { onSendRaw(byteArrayOf(0x1B, 0x5B, 0x41)) }
-            QuickCommandButton("↓", icon = Icons.Default.KeyboardArrowDown) { onSendRaw(byteArrayOf(0x1B, 0x5B, 0x42)) }
-            QuickCommandButton("←", icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft) { onSendRaw(byteArrayOf(0x1B, 0x5B, 0x44)) }
-            QuickCommandButton("→", icon = Icons.AutoMirrored.Filled.KeyboardArrowRight) { onSendRaw(byteArrayOf(0x1B, 0x5B, 0x43)) }
-            QuickCommandButton("C-c", icon = Icons.Outlined.Cancel) { onSendRaw(byteArrayOf(0x03)) }
-            QuickCommandButton("C-d", icon = Icons.Default.Eject) { onSendRaw(byteArrayOf(0x04)) }
-            QuickCommandButton("C-z", icon = Icons.Outlined.PauseCircle) { onSendRaw(byteArrayOf(0x1A)) }
+        rows.forEach { keys ->
+            Row(modifier = Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                keys.forEach { key ->
+                    val active = key.modifier == ModifierKey.CTRL && ctrlDown || key.modifier == ModifierKey.ALT && altDown
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxSize().clickable {
+                            when (key.modifier) {
+                                ModifierKey.CTRL -> onCtrlToggle()
+                                ModifierKey.ALT -> onAltToggle()
+                                null -> key.bytes?.let(onSendRaw)
+                            }
+                        },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            key.label,
+                            color = if (active) TerminalColors.accent else TerminalColors.muted,
+                            style = TextStyle(fontSize = if (key.label in setOf("↑", "↓", "←", "→", "↹")) 24.sp else 16.sp),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
         }
     }
 }
-
-@Composable
-private fun QuickCommandButton(
-    label: String,
-    icon: ImageVector? = null,
-    iconText: String? = null,
-    isActive: Boolean = false,
-    onClick: () -> Unit,
-) {
-    val background = if (isActive) TerminalColors.buttonActive else TerminalColors.buttonBackground
-    val foreground = if (isActive) Color.White else TerminalColors.accent
-    Row(
-        modifier = Modifier.height(28.dp).clip(RoundedCornerShape(6.dp))
-            .background(background).clickable(onClick = onClick).padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        when {
-            icon != null -> Icon(icon, null, tint = foreground, modifier = Modifier.size(12.dp))
-            iconText != null -> Text(iconText, color = foreground, style = terminalButtonTextStyle())
-        }
-        Text(label, color = foreground, style = terminalButtonTextStyle(), maxLines = 1)
-    }
-}
-
-private fun terminalButtonTextStyle() = TextStyle(fontFamily = JetBrainsMonoFontFamily, fontSize = 11.sp)

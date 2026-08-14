@@ -1,12 +1,13 @@
 # MinisApp shell configuration
 # Loaded by /etc/profile via the profile.d mechanism (login shells only).
 
-# T294: prompt parity with iOS — `root@minis:/var/minis#`. iOS bakes the
-# literal "minis" into PS1 (deps/prepare_alpine_rootfs.sh) rather than
-# relying on \h, so the prompt is stable regardless of what /etc/hostname
-# happens to contain. We do the same on Android so a fresh install
-# matches without needing a rootfs rebuild.
-export PS1='\u@minis:\w\$ '
+# Keep the interactive identity stable and match the terminal tab label.
+# ANSI markers color the identity green and the working directory blue.
+if [ -n "${BASH_VERSION:-}" ]; then
+    export PS1='\[\e[1;32m\]nova@vcpminis\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '
+else
+    export PS1='\e[1;32mnova@vcpminis\e[0m:\e[1;34m\w\e[0m\$ '
+fi
 
 # Enable ash command history with arrow keys
 export HISTFILE="$HOME/.ash_history"
