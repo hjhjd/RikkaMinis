@@ -9161,7 +9161,7 @@ class ChatViewModel(
         return com.openminis.app.agent.TarvenInjectionEngine.apply(systemPrompt, messages, rules, placeholders)
     }
 
-    private fun buildSystemPrompt(): String? {
+    private suspend fun buildSystemPrompt(): String? {
         // Cache-friendly layout: keep `base` byte-stable by stripping out anything
         // that varies per request, then append a "Runtime context" suffix at the
         // very end with all the dynamic bits (date, timezone, locale, configured
@@ -9189,9 +9189,16 @@ class ChatViewModel(
         // Render the user-controlled Agent/SOUL personality layer. There is no
         // app-owned identity template; the default Agent uses SOUL.md body,
         // style and language, while custom Agents use AgentEntity instructions.
+        // Read the Agent row at the request boundary. Room may deliver the
+        // observe(id) update one main-loop tick after AgentEditScreen.save()
+        // returns; using only _activeAgent here could therefore inject the old
+        // tool template once after the user had disabled it.
+        val promptAgentId = _activeAgentId.value
+        val promptAgent = agentRepository.get(promptAgentId)
+            ?: _activeAgent.value?.takeIf { it.id == promptAgentId }
         val rawAgentSection = com.openminis.app.agent.AgentPromptRenderer.render(
             context,
-            _activeAgent.value,
+            promptAgent,
         )
         val sandboxSnapshot = sandboxRuntimeSnapshot()
         val agentSection = com.openminis.app.agent.SystemPromptPreferences.renderPlaceholders(
@@ -9236,12 +9243,11 @@ class ChatViewModel(
 - 如果用户询问为何看不到旧记忆或要求保存记忆，说明当前记忆已关闭，并引导其使用 `/memory` 或前往 `[设置 → 记忆](minis://settings/memory)` 重新启用。
 - SOUL.md（人格与身份）不受此开关影响。"""
         }
-        val activeAgent = _activeAgent.value
-        val toolSection = if (activeAgent?.toolPromptEnabled == 0) {
+        val toolSection = if (promptAgent?.toolPromptEnabled != 1) {
             ""
         } else {
-            val template = if (activeAgent?.customToolPromptEnabled == 1) {
-                activeAgent.customToolPrompt.orEmpty()
+            val template = if (promptAgent.customToolPromptEnabled == 1) {
+                promptAgent.customToolPrompt.orEmpty()
             } else {
                 com.openminis.app.agent.SystemPromptPreferences.defaultToolTemplate(context)
             }
