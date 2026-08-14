@@ -153,7 +153,33 @@ VCPMinis 保留两类明确分离的执行环境。
 - 指令集带 revision，更新时提示但不自动注入模型提示词；
 - 支持有界流式输出、超时、取消、截断和 Agent 级沙箱白名单。
 
-参考执行端位于 [`tools/execplane`](tools/execplane)，示例 VCPMinis DSL 提供 `help`、`status` 和 `exec`。
+参考执行端位于 [`tools/execplane`](tools/execplane)，示例 VCPMinis DSL 提供 `help`、`status` 和 `exec`。这些 verb 不是 Android 内置协议；其他执行端可以提供完全不同的指令集。
+
+#### 沙箱提示词占位符
+
+沙箱运行状态不再由 `ChatViewModel` 强制追加到系统提示词末尾，而是在每次发送、重试或恢复 Agent Loop 时生成快照，并解析 Agent 人格提示词和工具提示词中的占位符。默认 [`default_tool_zh.md`](src/android/app/src/main/assets/prompts/default_tool_zh.md) 在末尾放置 `{{sandbox_runtime_context}}`，因此默认布局与原行为一致；Agent 可以移动、重复或删除占位符来自由控制排布。
+
+| 占位符 | 解析内容 |
+|---|---|
+| `{{sandbox_runtime_context}}` | 完整沙箱运行上下文，包括模式、默认目标、首选目标、在线列表和路由要求 |
+| `{{sandbox_mode}}` | 当前模式：`PRoot` 或 `WebSocket` |
+| `{{sandbox_default_id}}` | 默认 WS 沙箱的稳定 ID；未选择时为空 |
+| `{{sandbox_default_name}}` | 默认 WS 沙箱显示名称；未选择时为空 |
+| `{{sandbox_preferred_id}}` | 当前首选沙箱 ID；PRoot 模式下为 `proot` |
+| `{{sandbox_preferred_name}}` | 当前首选沙箱名称；PRoot 模式下为 `proot` |
+| `{{sandbox_online_ids}}` | 当前在线 WS 沙箱稳定 ID，多个值以逗号分隔 |
+
+例如，Agent 人格提示词可以写成：
+
+```text
+默认执行目标：{{sandbox_preferred_name}}
+调用 sandbox_dispatch 时使用稳定 ID：{{sandbox_preferred_id}}
+当前在线 WS ID：{{sandbox_online_ids}}
+
+{{sandbox_runtime_context}}
+```
+
+同一占位符出现多次时会全部替换。若 Agent 人格提示词和工具提示词均未包含沙箱占位符，系统不会再隐式追加沙箱上下文。占位符只注入 Android 已知的路由和在线状态，**不会**注入 WS 服务端通过握手返回的完整 `instructionSet.content`；服务端 DSL 仍需由用户从沙箱设置页复制到 Agent 提示词或当前对话，防止客户端擅自信任远端提示内容。
 
 #### Resource 通道
 

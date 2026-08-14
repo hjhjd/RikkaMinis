@@ -19,6 +19,12 @@ object SystemPromptPreferences {
     const val MEMORY_SYSTEM_SECTION = "{{memory_system_section}}"
     const val RUNTIME_CONTEXT = "{{runtime_context}}"
     const val SANDBOX_RUNTIME_CONTEXT = "{{sandbox_runtime_context}}"
+    const val SANDBOX_MODE = "{{sandbox_mode}}"
+    const val SANDBOX_DEFAULT_ID = "{{sandbox_default_id}}"
+    const val SANDBOX_DEFAULT_NAME = "{{sandbox_default_name}}"
+    const val SANDBOX_PREFERRED_ID = "{{sandbox_preferred_id}}"
+    const val SANDBOX_PREFERRED_NAME = "{{sandbox_preferred_name}}"
+    const val SANDBOX_ONLINE_IDS = "{{sandbox_online_ids}}"
 
     private const val TOOL_ASSET = "prompts/default_tool_zh.md"
 
@@ -45,11 +51,19 @@ object SystemPromptPreferences {
         memoryToolBullets: String,
         memorySystemSection: String,
         runtimeContext: String,
+        sandboxPlaceholders: Map<String, String> = emptyMap(),
     ): String = template
         .replace(MEMORY_TOOL_BULLETS, memoryToolBullets)
         .replace(MEMORY_SYSTEM_SECTION, memorySystemSection)
         .replace(RUNTIME_CONTEXT, runtimeContext)
+        .let { renderPlaceholders(it, sandboxPlaceholders) }
         .trimEnd()
+
+    /** Replaces every occurrence so Agent and tool prompts can arrange fields freely. */
+    fun renderPlaceholders(template: String, placeholders: Map<String, String>): String =
+        placeholders.entries.fold(template) { rendered, (placeholder, value) ->
+            rendered.replace(placeholder, value)
+        }
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

@@ -9122,35 +9122,40 @@ class ChatViewModel(
     private data class SandboxRuntimeSnapshot(
         val promptSection: String,
         val toolDescription: String,
+        val placeholders: Map<String, String>,
     )
 
     private fun sandboxRuntimeSnapshot(): SandboxRuntimeSnapshot {
         val app = context.applicationContext as? com.openminis.app.MinisApp
         val settings = app?.execPlaneSettingsRepository
         val bridge = app?.execPlaneBridge
-        if (settings == null || bridge == null) {
-            return SandboxRuntimeSnapshot(
-                promptSection = "- 当前沙箱模式：PRoot\n- 首选沙箱：proot\n- 在线 WebSocket 沙箱：无",
-                toolDescription = "当前沙箱模式：PRoot；首选沙箱：proot；在线 WebSocket 沙箱：无。",
-            )
-        }
-        val selected = settings.selectedForwardServer()
+        val selected = if (settings != null && bridge != null) settings.selectedForwardServer() else null
         val mode = if (selected == null) "PRoot" else "WebSocket"
-        val preferred = selected?.name ?: "proot"
-        val online = bridge.connections.snapshots.value.values
-            .filter { it.online }
-            .sortedBy { it.name }
-            .map { "${it.name}(id=${it.sandboxId})" }
-        val onlineText = online.joinToString("、").ifEmpty { "无" }
+        val preferredName = selected?.name ?: "proot"
         val preferredId = selected?.id ?: "proot"
-        val rule = if (selected == null) {
-            "当前应默认使用 proot。"
+        val onlineSnapshots = bridge?.connections?.snapshots?.value?.values
+            ?.filter { it.online }?.sortedBy { it.name }.orEmpty()
+        val onlineText = onlineSnapshots.joinToString("、") { "${it.name}(id=${it.sandboxId})" }.ifEmpty { "无" }
+        val rule = if (selected == null) "当前应默认使用 proot。" else
+            "当前应默认使用 WebSocket 沙箱“$preferredName”；不要为了省事主动改用 proot。仅当系统报告通道故障并自动容灾时，实际结果才可能是 proot。"
+        val promptSection = if (settings == null || bridge == null) {
+            "- 当前沙箱模式：PRoot\n- 首选沙箱：proot\n- 在线 WebSocket 沙箱：无"
         } else {
-            "当前应默认使用 WebSocket 沙箱“$preferred”；不要为了省事主动改用 proot。仅当系统报告通道故障并自动容灾时，实际结果才可能是 proot。"
+            "- 当前沙箱模式：$mode\n- 默认 WebSocket 沙箱：${selected?.name ?: "未选择"}\n- 首选沙箱：$preferredName（ID：$preferredId）\n- 当前在线 WebSocket 沙箱：$onlineText\n- 路由要求：调用 sandbox_dispatch 时使用稳定 ID。$rule"
         }
+        val fullContext = "沙箱运行上下文：\n$promptSection"
         return SandboxRuntimeSnapshot(
-            promptSection = "- 当前沙箱模式：$mode\n- 默认 WebSocket 沙箱：${selected?.name ?: "未选择"}\n- 首选沙箱：$preferred（ID：$preferredId）\n- 当前在线 WebSocket 沙箱：$onlineText\n- 路由要求：调用 sandbox_dispatch 时使用稳定 ID。$rule",
-            toolDescription = "当前沙箱模式：$mode；默认 WebSocket 沙箱：${selected?.name ?: "未选择"}（ID：$preferredId）；首选沙箱：$preferred；在线 WebSocket 沙箱：$onlineText。调用 `sandbox_dispatch` 时优先填写稳定 ID，不要填写显示名称。$rule",
+            promptSection = promptSection,
+            toolDescription = "当前沙箱模式：$mode；默认 WebSocket 沙箱：${selected?.name ?: "未选择"}（ID：$preferredId）；首选沙箱：$preferredName；在线 WebSocket 沙箱：$onlineText。调用 `sandbox_dispatch` 时优先填写稳定 ID，不要填写显示名称。$rule",
+            placeholders = mapOf(
+                com.openminis.app.agent.SystemPromptPreferences.SANDBOX_RUNTIME_CONTEXT to fullContext,
+                com.openminis.app.agent.SystemPromptPreferences.SANDBOX_MODE to mode,
+                com.openminis.app.agent.SystemPromptPreferences.SANDBOX_DEFAULT_ID to selected?.id.orEmpty(),
+                com.openminis.app.agent.SystemPromptPreferences.SANDBOX_DEFAULT_NAME to selected?.name.orEmpty(),
+                com.openminis.app.agent.SystemPromptPreferences.SANDBOX_PREFERRED_ID to preferredId,
+                com.openminis.app.agent.SystemPromptPreferences.SANDBOX_PREFERRED_NAME to preferredName,
+                com.openminis.app.agent.SystemPromptPreferences.SANDBOX_ONLINE_IDS to onlineSnapshots.joinToString(",") { it.sandboxId },
+            ),
         )
     }
 
@@ -9207,16 +9212,11 @@ class ChatViewModel(
             context,
             _activeAgent.value,
         )
-        val sandboxRuntimeBlock = "沙箱运行上下文：\n${sandboxRuntimeSnapshot().promptSection}"
-        var sandboxContextInjected = false
-        fun injectSandboxContext(template: String): String {
-            val placeholder = com.openminis.app.agent.SystemPromptPreferences.SANDBOX_RUNTIME_CONTEXT
-            if (!template.contains(placeholder)) return template
-            val replacement = if (sandboxContextInjected) "" else sandboxRuntimeBlock
-            sandboxContextInjected = true
-            return template.replace(placeholder, replacement)
-        }
-        val agentSection = injectSandboxContext(rawAgentSection)
+        val sandboxSnapshot = sandboxRuntimeSnapshot()
+        val agentSection = com.openminis.app.agent.SystemPromptPreferences.renderPlaceholders(
+            rawAgentSection,
+            sandboxSnapshot.placeholders,
+        )
         // [T-memory-toggle-gates-injection-and-tools-android] Mirror the iOS
         // gate: when memory is disabled for this session, replace the
         // "memory_write / memory_get" tool bullets and the "Memory system:"
@@ -9265,10 +9265,11 @@ class ChatViewModel(
                 com.openminis.app.agent.SystemPromptPreferences.defaultToolTemplate(context)
             }
             com.openminis.app.agent.SystemPromptPreferences.renderToolTemplate(
-                template = injectSandboxContext(template),
+                template = template,
                 memoryToolBullets = toolListMemoryBullets,
                 memorySystemSection = memorySystemSection,
                 runtimeContext = runtimeContextBlock,
+                sandboxPlaceholders = sandboxSnapshot.placeholders,
             )
         }
         val base = buildString {
@@ -9331,10 +9332,6 @@ class ChatViewModel(
             if (dailyMemoryFragment != null) {
                 append("\n\n")
                 append(dailyMemoryFragment)
-            }
-            if (!sandboxContextInjected) {
-                append("\n\n")
-                append(sandboxRuntimeBlock)
             }
         }
     }

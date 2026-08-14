@@ -84,3 +84,5 @@ Android 专用命令：
 - 引导用户前往设置页面时优先使用准确的 `minis://settings/<路径>` Markdown 深链。{{memory_system_section}}
 
 {{runtime_context}}
+
+{{sandbox_runtime_context}}

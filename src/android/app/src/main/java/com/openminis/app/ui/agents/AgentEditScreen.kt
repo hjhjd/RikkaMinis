@@ -130,12 +130,12 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
                 }
             }
         }
-        SettingsSection(header = "人格与提示词", footer = "使用 {{sandbox_runtime_context}} 可在此处注入沙箱运行上下文；未使用时默认追加到系统提示词末尾。") {
+        SettingsSection(header = "人格与提示词", footer = "可自由排布 {{sandbox_runtime_context}}、{{sandbox_mode}}、{{sandbox_default_id}}、{{sandbox_default_name}}、{{sandbox_preferred_id}}、{{sandbox_preferred_name}}、{{sandbox_online_ids}}；相同占位符可重复使用。") {
             OutlinedTextField(instructions, { instructions = it }, placeholder = { Text("描述人格、职责、表达方式和工作偏好…") }, textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth().padding(12.dp).heightIn(min = 240.dp))
         }
         SettingsSection(
             header = "工具提示词",
-            footer = "默认模板来自 default_tool_zh.md；支持 {{memory_tool_bullets}}、{{memory_system_section}}、{{runtime_context}} 和 {{sandbox_runtime_context}} 占位符。",
+            footer = "默认模板来自 default_tool_zh.md；除记忆和运行时占位符外，也支持全部 sandbox_* 占位符自由排布。",
         ) {
             Column(Modifier.fillMaxWidth()) {
                 ListItem(
