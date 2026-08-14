@@ -369,7 +369,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 - [x] 将 `PRootToolProvider.invoke()` 改为有界 `callbackFlow`/Channel，可靠发送 Started、Output、Completed、Failed 和取消事件。
 - [x] 为 WS 增加 `SandboxDispatchProvider`，把 `SandboxDispatchService` 输出转换为同一套 `ToolInvocationEvent`。
-- [ ] 两个 Provider 共用单事件、累计输出和 UI 预览上限；拥塞时只丢中间预览，不丢最终状态与截断标记。
+- [x] 两个 Provider 共用单事件、累计输出和 UI 预览上限；拥塞时只丢中间预览，不丢最终状态与截断标记。
 - [x] 保证每个 invocation 只产生一个终态；处理完成、超时和外部取消同时到达的竞态。
 - [x] Provider 不解析或改写 WS payload；PRoot 与 WS 仍使用独立参数和执行实现。
 
@@ -382,12 +382,12 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 ### 7.4 收敛 ChatViewModel 与 UI
 
-- [ ] 抽出单一 invocation event 消费器，统一使用有界 Channel 和 75 ms 聚合刷新。
+- [x] 抽出单一 invocation event 消费器，统一使用有界 Channel 和 75 ms 聚合刷新。
 - [ ] 删除 `executeShellCommand()` 与 `executeSandboxDispatch()` 中重复的流式预览、状态和结果拼装逻辑。
-- [ ] PRoot 与 WS 统一展示运行状态、沙箱标识、耗时、超时、取消和截断；保留各自工具标题与参数详情。
-- [ ] PRoot 显示 `proot`；WS 显示稳定 sandbox ID 和当前显示名称，不用显示名称作为身份。
-- [ ] 显式标识 WS 通道错误与服务端执行失败；禁止 UI 文案暗示已自动降级。
-- [ ] 保持现有工具 schema：`shell_execute` 仅本地，`sandbox_dispatch` 仅 WS。
+- [x] PRoot 与 WS 统一展示运行状态、沙箱标识、耗时、超时、取消和截断；保留各自工具标题与参数详情。
+- [x] PRoot 显示 `proot`；WS 显示稳定 sandbox ID 和当前显示名称，不用显示名称作为身份。
+- [x] 显式标识 WS 通道错误与服务端执行失败；禁止 UI 文案暗示已自动降级。
+- [x] 保持现有工具 schema：`shell_execute` 仅本地，`sandbox_dispatch` 仅 WS。
 
 ### 7.5 回归与验收
 

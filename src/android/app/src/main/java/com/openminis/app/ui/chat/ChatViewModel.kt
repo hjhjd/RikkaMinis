@@ -60,6 +60,11 @@ import com.openminis.app.tools.SandboxFilePushTool
 import com.openminis.app.tools.ToolExecutionResult
 import com.openminis.app.tools.registry.LegacyAgentToolProvider
 import com.openminis.app.tools.registry.PRootToolProvider
+import com.openminis.app.tools.registry.SandboxDispatchProvider
+import com.openminis.app.tools.registry.ToolIdentity
+import com.openminis.app.tools.registry.ToolInvocation
+import com.openminis.app.tools.registry.ToolInvocationEvent
+import com.openminis.app.tools.registry.ToolProvider
 import com.openminis.app.tools.registry.ToolRegistry
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
@@ -69,7 +74,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -911,15 +915,21 @@ class ChatViewModel(
      */
     private val prootToolProvider = PRootToolProvider()
     private val sandboxDispatchAccess = SandboxDispatchAccessPolicy(context)
+    private val sandboxDispatchProvider = SandboxDispatchProvider(
+        service = (context.applicationContext as com.openminis.app.MinisApp).sandboxDispatchService,
+        definitionProvider = { AgentTools.sandboxDispatchDefinition(sandboxRuntimeSnapshot().toolDescription) },
+        enabledProvider = { sandboxDispatchAccess.isExposed(_activeAgentId.value) },
+    )
 
     private val toolRegistry = ToolRegistry(listOf(
         prootToolProvider,
+        sandboxDispatchProvider,
         LegacyAgentToolProvider {
             AgentTools.makeAgentTools(
                 memoryEnabled = _memoryEnabled.value,
                 sandboxPrompt = sandboxRuntimeSnapshot().toolDescription,
                 includeShellExecute = false,
-                includeSandboxDispatch = sandboxDispatchAccess.isExposed(_activeAgentId.value),
+                includeSandboxDispatch = false,
             )
         },
     ))
@@ -8122,75 +8132,64 @@ class ChatViewModel(
     }
 
     private suspend fun executeSandboxDispatch(
-        argsJson: String,
-        toolId: String,
-        toolBlocks: MutableList<AssistantBlock>,
-        assistantId: String,
-        currentText: String,
+        argsJson: String, toolId: String, toolBlocks: MutableList<AssistantBlock>,
+        assistantId: String, currentText: String,
     ): ToolExecutionResult {
-        val toolTitle = runCatching { JSONObject(argsJson).optString("tool_title", "sandbox_dispatch") }
-            .getOrDefault("sandbox_dispatch")
+        val args = JSONObject(argsJson)
+        val sandbox = args.optString("sandbox").trim()
+        val toolTitle = args.optString("tool_title", "sandbox_dispatch")
         return try {
-            val args = JSONObject(argsJson)
-            val sandbox = args.getString("sandbox").trim()
-            val payload = args.getString("payload")
-            val timeoutMs = args.optLong("timeout", 900L).coerceIn(1L, 3600L) * 1000L
-            val delaySec = args.optLong("delay", 0L).coerceIn(0L, 86_400L)
             require(sandbox.isNotEmpty() && !sandbox.equals("proot", true)) { "An explicit WebSocket sandbox is required" }
             require(sandboxDispatchAccess.isAllowed(_activeAgentId.value, sandbox)) {
                 "Agent '${_activeAgentId.value}' is not allowed to access sandbox '$sandbox'"
             }
-            require(payload.isNotEmpty()) { "Payload cannot be empty" }
-            if (delaySec > 0) kotlinx.coroutines.delay(delaySec * 1000L)
+            consumeInvocationEvents(
+                provider = sandboxDispatchProvider,
+                invocation = ToolInvocation(ToolIdentity(SandboxDispatchProvider.ID, SandboxDispatchProvider.TOOL_NAME), toolId, activeSessionId, argsJson),
+                toolId = toolId, toolBlocks = toolBlocks, assistantId = assistantId, currentText = currentText,
+                fallbackTitle = toolTitle, sandboxName = sandbox,
+            )
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (error: Throwable) { ToolExecutionResult("Dispatch failed: ${error.message}", false, toolTitle = toolTitle, sandboxName = sandbox) }
+    }
 
-            val result = coroutineScope {
-                val chunks = Channel<String>(DISPATCH_UI_QUEUE_CAPACITY)
-                val uiDropped = AtomicBoolean(false)
-                val uiJob = launch(Dispatchers.Main.immediate) {
-                    val pending = StringBuilder()
-                    for (first in chunks) {
-                        pending.append(first)
-                        kotlinx.coroutines.delay(DISPATCH_UI_FLUSH_MS)
-                        while (true) {
-                            val next = chunks.tryReceive().getOrNull() ?: break
-                            pending.append(next)
-                        }
-                        if (uiDropped.getAndSet(false)) pending.insert(0, "[…UI preview truncated…]\n")
+    private suspend fun consumeInvocationEvents(
+        provider: ToolProvider, invocation: ToolInvocation, toolId: String,
+        toolBlocks: MutableList<AssistantBlock>, assistantId: String, currentText: String,
+        fallbackTitle: String, sandboxName: String,
+    ): ToolExecutionResult {
+        var title = fallbackTitle
+        var final: com.openminis.app.tools.registry.ToolInvocationResult? = null
+        var failure: String? = null
+        val preview = StringBuilder()
+        var lastFlush = 0L
+        provider.invoke(invocation).collect { event ->
+            when (event) {
+                is ToolInvocationEvent.Started -> title = event.title ?: title
+                is ToolInvocationEvent.Output -> {
+                    preview.append(event.text)
+                    if (preview.length > DISPATCH_UI_TAIL_CHARS) preview.delete(0, preview.length - DISPATCH_UI_TAIL_CHARS)
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastFlush >= DISPATCH_UI_FLUSH_MS) {
                         val idx = toolBlocks.indexOfFirst { it.id == toolId }
-                        if (idx >= 0 && pending.isNotEmpty()) {
-                            val combined = toolBlocks[idx].content + pending
-                            toolBlocks[idx] = toolBlocks[idx].copy(content = combined.takeLast(DISPATCH_UI_TAIL_CHARS))
-                            pending.setLength(0)
-                            updateAssistantMessage(assistantId, currentText, true, toolBlocks)
-                        }
+                        if (idx >= 0) toolBlocks[idx] = toolBlocks[idx].copy(content = preview.toString())
+                        withContext(Dispatchers.Main) { updateAssistantMessage(assistantId, currentText, true, toolBlocks) }
+                        lastFlush = now
                     }
                 }
-                try {
-                    (context.applicationContext as com.openminis.app.MinisApp).sandboxDispatchService.dispatch(
-                        sandbox = sandbox,
-                        payload = payload,
-                        timeoutMs = timeoutMs,
-                        outputCallback = { chunk ->
-                            if (chunks.trySend(chunk).isFailure) uiDropped.set(true)
-                        },
-                    )
-                } finally {
-                    chunks.close()
-                    uiJob.join()
-                }
+                is ToolInvocationEvent.Completed -> final = event.result
+                is ToolInvocationEvent.Failed -> failure = event.message
+                is ToolInvocationEvent.UrlCaptured -> MinisOpenUrlBroker.offer(event.url)
+                else -> Unit
             }
-            ToolExecutionResult(
-                output = "[sandbox: $sandbox]\n${result.output.ifBlank { "(no output)" }}",
-                success = true,
-                toolTitle = toolTitle,
-                truncated = result.truncated,
-                sandboxName = sandbox,
-            )
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Throwable) {
-            ToolExecutionResult("Dispatch failed: ${error.message}", false, toolTitle = toolTitle)
         }
+        failure?.let { return ToolExecutionResult(it, false, toolTitle = title, sandboxName = sandboxName) }
+        val r = final ?: return ToolExecutionResult("Invocation ended without a terminal result", false, toolTitle = title, sandboxName = sandboxName)
+        return ToolExecutionResult(
+            output = "[sandbox: ${r.sandboxName ?: sandboxName}]\n${r.output.ifBlank { "(no output)" }}",
+            success = r.success, toolTitle = title, timedOut = r.timedOut, cancelled = r.cancelled,
+            truncated = r.truncated, sandboxName = r.sandboxName ?: sandboxName,
+        )
     }
 
 
