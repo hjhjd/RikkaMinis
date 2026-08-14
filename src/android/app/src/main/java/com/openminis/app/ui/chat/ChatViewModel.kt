@@ -65,6 +65,7 @@ import com.openminis.app.tools.registry.ToolIdentity
 import com.openminis.app.tools.registry.ToolInvocation
 import com.openminis.app.tools.registry.ToolInvocationEvent
 import com.openminis.app.tools.registry.ToolProvider
+import com.openminis.app.tools.registry.InvocationPreviewAccumulator
 import com.openminis.app.tools.registry.ToolRegistry
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
@@ -8161,7 +8162,7 @@ class ChatViewModel(
         var title = fallbackTitle
         var final: com.openminis.app.tools.registry.ToolInvocationResult? = null
         var failure: String? = null
-        val preview = StringBuilder()
+        val preview = InvocationPreviewAccumulator(DISPATCH_UI_TAIL_CHARS)
         var lastFlush = 0L
         provider.invoke(invocation).collect { event ->
             when (event) {
@@ -8169,12 +8170,11 @@ class ChatViewModel(
                 is ToolInvocationEvent.Output -> {
                     val (visible, urls) = MinisUrlMarker.extract(event.text)
                     urls.forEach(MinisOpenUrlBroker::offer)
-                    preview.append(visible)
-                    if (preview.length > DISPATCH_UI_TAIL_CHARS) preview.delete(0, preview.length - DISPATCH_UI_TAIL_CHARS)
+                    val previewText = preview.append(visible)
                     val now = android.os.SystemClock.elapsedRealtime()
                     if (now - lastFlush >= DISPATCH_UI_FLUSH_MS) {
                         val idx = toolBlocks.indexOfFirst { it.id == toolId }
-                        if (idx >= 0) toolBlocks[idx] = toolBlocks[idx].copy(content = preview.toString())
+                        if (idx >= 0) toolBlocks[idx] = toolBlocks[idx].copy(content = previewText)
                         withContext(Dispatchers.Main) { updateAssistantMessage(assistantId, currentText, true, toolBlocks) }
                         lastFlush = now
                     }

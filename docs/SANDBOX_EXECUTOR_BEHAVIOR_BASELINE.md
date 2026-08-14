@@ -31,3 +31,14 @@ sandbox_dispatch: status
 sandbox_dispatch: exec\nprintf out\nprintf err >&2\nexit 7
 sandbox_dispatch(timeout=1): exec\ntrap '' TERM\nwhile :; do :; done
 ```
+
+## 阶段 7 统一展示契约
+
+PRoot 与 WS 继续使用独立工具和执行协议，但现统一转换为 `ToolInvocationEvent`，并由
+`ChatViewModel.consumeInvocationEvents` 消费。两者共享 75 ms UI 刷新节流、50,000 字符
+有界预览尾部、单终态约束以及 timedOut/cancelled/truncated/sandboxName 展示字段。
+
+- PRoot：结构化提供 exitCode 和 durationMs；sandboxId/name 为 `proot`。
+- WS：不从 payload 或输出文本推断 exitCode；显示请求使用的稳定 sandbox ID。
+- `shell_execute` 仍只执行本地 PRoot；`sandbox_dispatch` 仍拒绝 `proot` 且不解析 payload。
+- Provider 通过 invocationId 注册取消句柄；UI 不接触 PersistentShell 或 WS request ID。

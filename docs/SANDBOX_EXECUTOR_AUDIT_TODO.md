@@ -348,7 +348,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 ## 后续阶段 7：统一 PRoot 与 WS 的调用事件和展示
 
-> 状态：施工中；统一展示状态机、调用结果字段、PRoot/WS Provider 事件流与取消注册表已落地，ViewModel 消费器待迁移。
+> 状态：主体施工完成；PRoot/WS 已共用 Provider 事件、取消注册表、75 ms 有界预览消费者与展示字段。设备 smoke 和旧包装函数最终清理待继续。
 >
 > 边界：只统一事件、取消和 UI 展示；不合并工具入口，不改变 WS 不透明协议，不让 `sandbox_dispatch` 接受 `proot`，不改变 PRoot 持久 Shell 语义。
 
@@ -391,15 +391,15 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 ### 7.5 回归与验收
 
-- [ ] 单测覆盖 PRoot/WS 正常流输出、空输出、非零退出、失败、超时、取消、截断和高频小 chunk。
-- [ ] 单测覆盖慢 UI 消费者、队列拥塞、终态竞争、重复取消和 ViewModel 销毁。
-- [ ] 运行 Android JVM 完整测试、Python ExecPlane 测试和 Debug APK 构建。
+- [x] 单测覆盖 PRoot/WS 正常流输出、空输出、非零退出、失败、超时、取消、截断和高频小 chunk。
+- [x] 单测覆盖慢 UI 消费者、队列拥塞、终态竞争、重复取消和 ViewModel 销毁。
+- [x] 运行 Android JVM 完整测试、Python ExecPlane 测试和 Debug APK 构建。
 - [ ] 设备 smoke：并行运行 PRoot 与 WS、分别取消、切换会话、后台/前台恢复，确认状态不串线。
-- [ ] 更新 `SANDBOX_EXECUTOR_BEHAVIOR_BASELINE.md` 和架构文档，记录统一展示后的最终契约。
+- [x] 更新 `SANDBOX_EXECUTOR_BEHAVIOR_BASELINE.md` 和架构文档，记录统一展示后的最终契约。
 
 ### 阶段 7 完成条件
 
-- [ ] PRoot 与 WS 只保留执行协议差异，共用一套 invocation event、取消入口和展示状态机。
+- [x] PRoot 与 WS 只保留执行协议差异，共用一套 invocation event、取消入口和展示状态机。
 - [ ] `ChatViewModel` 不再分别维护 PRoot 与 WS 的输出聚合和终态格式化。
-- [ ] `sandbox_dispatch` 仍完全不透明且不接受 `proot`；`shell_execute` 仍只代表本地 PRoot。
-- [ ] 超时、取消、截断和 sandbox 身份在两条路径中显示一致且可测试。
+- [x] `sandbox_dispatch` 仍完全不透明且不接受 `proot`；`shell_execute` 仍只代表本地 PRoot。
+- [x] 超时、取消、截断和 sandbox 身份在两条路径中显示一致且可测试。
