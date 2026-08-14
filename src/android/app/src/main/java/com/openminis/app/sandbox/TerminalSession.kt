@@ -47,6 +47,13 @@ class TerminalSession(private val context: Context) {
          */
         private val liveSessions = CopyOnWriteArrayList<WeakReference<TerminalSession>>()
 
+        /**
+         * Prefer bash when the user has installed it, but never require it:
+         * the bundled Alpine minirootfs only guarantees BusyBox /bin/sh.
+         */
+        internal fun resolveInteractiveShell(rootfsDir: File): String =
+            if (File(rootfsDir, "bin/bash").isFile) "/bin/bash" else "/bin/sh"
+
         /** Broadcast `export TZ=<value>` to every live interactive shell. */
         fun broadcastTimezone(tz: String) {
             val dead = mutableListOf<WeakReference<TerminalSession>>()
@@ -438,12 +445,14 @@ class TerminalSession(private val context: Context) {
             args.add("--native-offload=${NativeOffloadServer.socketName}:${handlers.joinToString(",")}")
         }
 
-        // Login + interactive shell.
-        // Use bash, not busybox ash: interactive ash exits when it receives
-        // SIGINT while waiting at the prompt (pressing Ctrl+C in the terminal
-        // kills the whole session, exit=130). Bash ignores a pending SIGINT
-        // at the prompt and just clears the input line.
-        args.add("/bin/bash")
+        // Login + interactive shell. Bash is optional and installed on demand;
+        // the factory Alpine image only contains BusyBox /bin/sh. Hard-coding
+        // /bin/bash here makes every fresh-install terminal exit immediately.
+        val shell = resolveInteractiveShell(rootfsManager.rootfsDir)
+        if (shell != "/bin/bash") {
+            Log.i(TAG, "bash is not installed; interactive terminal uses /bin/sh")
+        }
+        args.add(shell)
         args.add("-l")
         args.add("-i")
         return args
