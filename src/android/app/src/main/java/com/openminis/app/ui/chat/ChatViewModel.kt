@@ -95,6 +95,16 @@ import java.io.ByteArrayOutputStream
 // [T-android-split-chat] StreamingDelta / ChatMessage / QueuedPrompt /
 // ToolBlockStatus / SlashCommand / AssistantBlock moved verbatim to ChatModels.kt.
 
+/** 唯一的文本流发布节奏；Agent Loop 合并 token 后按此频率推送。 */
+internal fun streamTextPublishIntervalMs(len: Int): Long = when {
+    len < 500 -> 80L
+    len < 2_000 -> 120L
+    len < 32_000 -> 200L
+    len < 64_000 -> 400L
+    len < 128_000 -> 750L
+    else -> 1_200L
+}
+
 class ChatViewModel(
     internal val sessionId: String,
     private val draftAgentId: String? = null,
@@ -528,17 +538,15 @@ class ChatViewModel(
         for (id in drop) streamFlushStates.remove(id)?.trailingJob?.cancel()
     }
 
-    // Dual-path flush thresholds — ported from iOS. Time tiers scale with total
-    // length; the newline fast-path flushes immediately on a line break once
-    // enough new chars have accumulated, gated to short docs so dense
-    // box-drawing streams don't pin the flush rate to the per-token cadence.
-    private fun streamFlushThrottleMs(len: Int): Long = when {
-        len < 500 -> 200L
-        len < 2_000 -> 300L
-        len < 32_000 -> 500L
-        len < 64_000 -> 1_000L
-        len < 128_000 -> 1_500L
-        else -> 2_000L
+    // 非文本 side-channel 更新（thinking/tool preview）的保护门控。文本已由
+    // Agent Loop 按 streamTextPublishIntervalMs 合并，进入这里后直接发布。
+    private fun sideChannelFlushThrottleMs(len: Int): Long = when {
+        len < 500 -> 120L
+        len < 2_000 -> 180L
+        len < 32_000 -> 300L
+        len < 64_000 -> 600L
+        len < 128_000 -> 1_000L
+        else -> 1_500L
     }
 
     /**
@@ -6710,11 +6718,9 @@ class ChatViewModel(
         // host.example.com. We coalesce deltas in `pendingChunkText` and only
         // flip the UI on a 50ms timer; the per-stream end and per-retry
         // rollback paths flush whatever's pending so no characters are lost.
-        // T256: tiered streaming throttle, mirrors iOS AIChatViewModel.swift
-        // 6135-6155. The fixed 50ms window saturated the Pixel 4a UI thread
-        // (95p frame 77ms / 29% janky). 6-segment ladder lets short replies
-        // stay snappy (150ms ≈ 6.5 fps which is fine for <500-char snippets)
-        // while long-form output (>32k chars) drops to 0.5-2s gates.
+        // T256: tiered streaming throttle. The fixed 50ms window saturated
+        // Pixel 4a; the shared cadence keeps short prose responsive while
+        // progressively slowing expensive long-form markdown.
         // Newline fast-path keeps short messages flowing at human-readable
         // pace while still avoiding the per-token recompose storm.
         var lastUiUpdateMs = 0L
@@ -6735,14 +6741,7 @@ class ChatViewModel(
         // other tools get 5Hz so command/url previews stay legible.
         var lastFileToolInputMs = 0L
         var lastOtherToolInputMs = 0L
-        fun textDeltaThrottleMs(len: Int): Long = when {
-            len < 500     -> 150L
-            len < 2_000   -> 300L
-            len < 32_000  -> 500L
-            len < 64_000  -> 1_000L
-            len < 128_000 -> 1_500L
-            else          -> 2_000L
-        }
+        fun textDeltaThrottleMs(len: Int): Long = streamTextPublishIntervalMs(len)
 
         // Fallback state — mirrors iOS streamWithGroupFallback
         var currentProvider = provider
@@ -8667,13 +8666,14 @@ class ChatViewModel(
                 toolBlocksImmutable.indices.any { i ->
                     prev.toolBlocks[i].toolStatus != toolBlocksImmutable[i].toolStatus
                 }
+            val textChanged = prev != null && prev.content != content
             val structuralChange = prev == null ||
                 prev.toolBlocks.size != toolBlocksImmutable.size ||
                 prev.isAwaitingModelResponse != isAwaitingModelResponse ||
                 toolStatusChanged
             val now = System.currentTimeMillis()
             val elapsed = now - st.lastFlushMs
-            val throttle = streamFlushThrottleMs(content.length)
+            val throttle = sideChannelFlushThrottleMs(content.length)
             val newChunk = if (content.length > st.lastFlushedLen) {
                 content.substring(st.lastFlushedLen.coerceAtMost(content.length))
             } else ""
@@ -8694,7 +8694,7 @@ class ChatViewModel(
                 st.lastFlushedLen = text.length
             }
 
-            if (structuralChange || elapsed >= throttle || newlineFlush) {
+            if (textChanged || structuralChange || elapsed >= throttle || newlineFlush) {
                 st.trailingJob?.cancel()
                 st.trailingJob = null
                 st.pendingContent = null

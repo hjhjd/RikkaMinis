@@ -15,30 +15,25 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 
 /**
- * [T-android-stream-fade] Word-level fade-in for streamed markdown text.
+ * [T-android-stream-fade] Batch fade-in for streamed markdown text.
  *
- * Mirror of iOS TextFadeAnimator: newly appended characters render at α=0
- * and ease to α=1 over [FADE_DURATION_MS], with a small staggered delay
- * across word boundaries so the appearance reads as "words landing in
- * sequence" rather than "a single block flashing on". Only the streaming
- * last block opts in via [LocalAppendOnlyFade]; everything else (history,
+ * Newly appended characters are treated as one tail range and ease from α=0
+ * to α=1 over [STREAM_FADE_DURATION_MS]. There is deliberately no per-word
+ * stagger: stagger made coalesced stream batches look like a waterfall. Only
+ * the streaming last block opts in via [LocalAppendOnlyFade]; everything else (history,
  * cold-loaded sessions, completed messages) renders fully opaque.
  *
  * Implementation:
- *  - Each MdText with the local set to true holds a [FadeController] that
- *    tracks the previous plainText prefix. When the new plainText extends
- *    that prefix, the suffix gets sliced into word ranges, each tagged with
- *    a (startTimeNanos, staggerOffsetMs) pair.
+ *  - Each MdText tracks its previous plainText prefix. When text extends that
+ *    prefix, the complete suffix becomes one short-lived fade range.
  *  - A single `withFrameNanos` loop in the composable advances animation
  *    progress and writes the current alpha to a snapshot-state map. The
  *    MdText reads that map when composing its AnnotatedString overlay, so
  *    only this one MdText recomposes per frame — sibling blocks are inert.
  *  - When all ranges reach α=1 the loop suspends until a new append
  *    arrives, keeping idle cost at zero.
- *  - A guard caps the in-flight word count: bursts beyond [MAX_FADE_WORDS]
- *    are emitted fully opaque instead, matching iOS's TextFadeAnimator
- *    `maxAnimatedWords = 160` short-circuit so a 1k-token reflow can't
- *    saturate the frame budget.
+ *  - Large appends and excessive in-flight ranges render opaque immediately,
+ *    preventing animation backlog during restore or parser reflow.
  */
 
 internal val LocalAppendOnlyFade = compositionLocalOf { false }
@@ -50,26 +45,19 @@ internal val LocalAppendOnlyFade = compositionLocalOf { false }
 // for every frozen/history block, which keeps the plain per-block cache.
 internal val LocalLiveIncremental = compositionLocalOf { false }
 
-// [T-android-stream-fade] Fade made more legible after the dual-path flush +
-// smooth scroll landed: a flush batch is ~5–12 words and the newline fast-path
-// can fire again in <100ms, so a tight 100ms stagger window made the whole
-// batch light up almost together and the per-word reveal was invisible.
-// Widening the stagger window to 300ms (and the per-word cap to 90ms) spreads
-// the words within a batch into a clearly sequential left-to-right reveal even
-// when the next batch arrives quickly; the 350ms per-word fade is unchanged
-// (longer starts to feel laggy).
-private const val FADE_DURATION_MS = 350L
-private const val STAGGER_WINDOW_MS = 300L
-private const val PER_WORD_STAGGER_MS = 90L
-private const val MAX_FADE_WORDS = 160
+// 新增尾部整批淡入，不再逐词错峰。120ms 足够柔化跳变，又不会追赶下一批文本。
+internal const val STREAM_FADE_DURATION_MS = 120L
+internal const val MAX_ANIMATED_APPEND_CHARS = 512
+private const val MAX_ACTIVE_FADE_RANGES = 4
 
 private data class FadeRange(
     val start: Int,
     val end: Int,
-    val staggerMs: Long,
 )
 
-internal class FadeController {
+internal class FadeController(
+    private val nanoTime: () -> Long = System::nanoTime,
+) {
     /** plainText prefix already seen — anything beyond this is fresh. */
     var lastPlainText: String = ""
         private set
@@ -88,8 +76,7 @@ internal class FadeController {
 
     fun ingest(newPlainText: String) {
         if (newPlainText == lastPlainText) return
-        // On a hard reset (text shrank or diverged from prefix), drop all
-        // in-flight ranges — the caller is rendering a brand-new block.
+        // 文本缩短或前缀变化代表 composable 被复用到新块：清空旧动画。
         if (!newPlainText.startsWith(lastPlainText)) {
             rangesState.clear()
             rangeStartNanos.clear()
@@ -98,52 +85,19 @@ internal class FadeController {
             return
         }
         val base = lastPlainText.length
-        val suffix = newPlainText.substring(base)
+        val appendLength = newPlainText.length - base
         lastPlainText = newPlainText
-        if (suffix.isEmpty()) return
+        if (appendLength <= 0) return
 
-        // Split suffix into word-like runs separated by whitespace. Punctuation
-        // stays attached to its preceding word (iOS does the same), keeping
-        // the rhythm of "words landing" rather than "every glyph landing".
-        val words = mutableListOf<IntRange>()
-        var cursor = 0
-        var inWord = false
-        var wordStart = 0
-        for (i in suffix.indices) {
-            val c = suffix[i]
-            val isWs = c.isWhitespace()
-            if (!isWs && !inWord) {
-                wordStart = i; inWord = true
-            } else if (isWs && inWord) {
-                words.add(wordStart until i); inWord = false
-            }
-        }
-        if (inWord) words.add(wordStart until suffix.length)
-
-        // Whitespace-only suffix: nothing visible to fade — skip.
-        if (words.isEmpty()) return
-
-        // Stagger budget mirrors iOS: window is fixed (100ms), so per-word
-        // stagger shrinks as word count grows; capped at 60ms per word.
-        val totalWords = words.size + rangesState.size
-        if (totalWords > MAX_FADE_WORDS) {
-            // Too many in flight — flush everything to α=1 and skip the new
-            // ranges so we don't spend frames rendering an invisible wall.
-            rangesState.clear()
-            rangeStartNanos.clear()
-            alphas.clear()
+        // 大批恢复/重排直接显示，避免动画排队追赶已经到达的内容。
+        if (appendLength > MAX_ANIMATED_APPEND_CHARS || rangesState.size >= MAX_ACTIVE_FADE_RANGES) {
             return
         }
-        val perWordStaggerMs = minOf(PER_WORD_STAGGER_MS, STAGGER_WINDOW_MS / words.size.coerceAtLeast(1))
-
-        for ((idx, wr) in words.withIndex()) {
-            val absStart = base + wr.first
-            val absEnd = base + wr.last + 1
-            val staggerMs = idx * perWordStaggerMs
-            rangesState.add(FadeRange(absStart, absEnd, staggerMs))
-            rangeStartNanos.addLast(System.nanoTime())
-        }
+        rangesState.add(FadeRange(base, newPlainText.length))
+        rangeStartNanos.addLast(nanoTime())
     }
+
+    internal val activeRangeCount: Int get() = rangesState.size
 
     /**
      * Advance every range to its current alpha based on [nowNanos]. Returns
@@ -155,11 +109,11 @@ internal class FadeController {
         for (i in rangesState.indices) {
             val r = rangesState[i]
             val startNs = rangeStartNanos.elementAt(i)
-            val elapsedMs = (nowNanos - startNs) / 1_000_000L - r.staggerMs
+            val elapsedMs = (nowNanos - startNs) / 1_000_000L
             val alpha = if (elapsedMs <= 0) 0f
-            else if (elapsedMs >= FADE_DURATION_MS) 1f
+            else if (elapsedMs >= STREAM_FADE_DURATION_MS) 1f
             else {
-                val t = elapsedMs.toFloat() / FADE_DURATION_MS
+                val t = elapsedMs.toFloat() / STREAM_FADE_DURATION_MS
                 // Ease-out cubic 1 - (1-t)^3 (matches iOS animator curve).
                 val inv = 1f - t
                 1f - inv * inv * inv

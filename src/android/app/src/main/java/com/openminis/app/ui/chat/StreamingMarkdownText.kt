@@ -486,44 +486,14 @@ private fun MdText(
  * - The LAST block is the only one that changes during streaming (text appends to it)
  * - Completed blocks above are structurally stable → Compose skips them
  *
- * Update cadence: while [isStreaming] is true, content updates are coalesced
- * to at most one re-parse every [STREAMING_THROTTLE_MS] (~120 ms). Pixel 4a
- * traces showed every TextDelta (~5 ms cadence) was triggering a full
- * `parseMarkdownBlocks` over the entire accumulating string + a recompose of
- * every RenderBlock — a 5-row markdown table plus a few tool calls was enough
- * to ANR the main thread with 22 MB GC every 2 s. Throttling the *display*
- * content (not the underlying StateFlow) keeps the conversation visually
- * live (3-4 fps of growth is plenty for reading) while leaving 90 % of the
- * frame budget free.
+ * Update cadence is owned by ChatViewModel. This renderer consumes each
+ * coalesced snapshot immediately and keeps markdown parsing off the main thread;
+ * it must not add another timer because stacked throttles create bursty output.
  *
  * When the stream finishes ([isStreaming] flips to false), the final value
  * is published immediately so the user never sees a truncated last frame.
  */
-// Adaptive streaming throttle, mirrors iOS CollectionViewMessageListV3
-// `flushStreamingLayout` (100 ms when auto-scrolling, 3 s when away). On
-// Android we don't have direct access to the chat-level scroll state from
-// here, so substitute "doc length" as a proxy: long documents already cost
-// more per parse pass, so amortize them by sampling less often. Crashes
-// observed on Pixel 6 traced to ICU `RegexPattern::matcher` allocations
-// piling up under Scudo (OOM at ~140s of streaming) — slowing parses on
-// large bodies cuts native allocation pressure dramatically.
-//
-// [T-android-stream-flush-dualpath] Time-throttle tiers ported verbatim from
-// iOS AIChatViewModel+SSEStream (the `throttle` ladder): the time path is one
-// half of the dual-path flush — the other half is the newline fast-path below.
-// Tiers scale with total length to hold the Pixel 4a ANR / Pixel 6 Scudo-OOM
-// line on dense streams while keeping short replies responsive.
-//   < 500  : 200ms   < 2000 : 300ms   < 32K : 500ms
-//   < 64K  : 1000ms  < 128K : 1500ms  else  : 2000ms
-private fun streamingThrottleFor(content: String): Long = when {
-    content.length < 500 -> 200L
-    content.length < 2_000 -> 300L
-    content.length < 32_000 -> 500L
-    content.length < 64_000 -> 1_000L
-    content.length < 128_000 -> 1_500L
-    else -> 2_000L
-}
-
+// 流式发布已在 ChatViewModel 统一合并；渲染层只消费最新快照，避免重复等待。
 
 @Composable
 fun StreamingMarkdownText(
@@ -548,23 +518,8 @@ private fun StreamingMarkdownTextBody(
     isStreaming: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    // While streaming, sample `content` at the adaptive throttle interval.
-    // produceState + snapshotFlow.conflate() makes the upstream value collection
-    // suspend-safe and frees the runtime to drop intermediate values when the
-    // collector falls behind. When streaming ends, emit the final value
-    // unconditionally so we don't render a stale half-block.
-    val displayContent by produceState(initialValue = content, content, isStreaming) {
-        if (!isStreaming) {
-            value = content
-            return@produceState
-        }
-        snapshotFlow { content }
-            .conflate()
-            .collect { latest ->
-                value = latest
-                delay(streamingThrottleFor(latest))
-            }
-    }
+    // ViewModel 已完成 token 合并；这里直接采用最新内容，避免 legacy 路径二次节流。
+    val displayContent = content
     // [T-android-inline-parse-offmain] Theme snapshot for off-main prewarm.
     val mdColors = currentMdColors()
     var blocks by remember { mutableStateOf<List<MdBlock>>(emptyList()) }

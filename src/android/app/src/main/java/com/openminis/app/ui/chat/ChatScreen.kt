@@ -2653,7 +2653,7 @@ fun ChatScreen(
                         viewModel.streamingById,
                     ) { msgs, stream -> msgs to stream }
                         .conflate()
-                        .sample(80L)
+                        .sample(50L)
                         .collect { (msgs, stream) ->
                             val tickStartNs = System.nanoTime()
                             if (stream.isNotEmpty() && !streamWasActive) {
