@@ -144,7 +144,44 @@ Android coroutine 取消或请求超时时发送：
 
 取消绑定连接 identity 和 request ID；一个连接不能取消另一个连接的命令。重复取消返回 `cancelled=false`。
 
-## 5. 文件系统和传输
+## 5. 跨平台与自定义设备接入
+
+ExecPlane 的 `sandbox_dispatch` 控制面不绑定 Linux、POSIX 路径或特定 Shell。Android 只选择稳定 sandbox ID，并将 `payload` 作为不透明 UTF-8 字符串逐字发送；payload 的语法、路径规则、权限和业务行为全部由目标执行端的 DSL 定义。因此，仅需远程操作时，接入 Windows、macOS、NAS、路由器、IoT 或其他支持 WebSocket 的设备，通常**不需要修改 Android 端代码**。
+
+一个新的设备执行端至少需要实现：
+
+- 正向连接的 `capabilities`，或反向连接的 `register`；
+- `dispatch` 和最终 RPC response；
+- `cancel`，以及可选的 `dispatch.output` 流式事件；
+- 设备自己的 DSL/业务处理器；
+- 描述 DSL、路径语义和安全边界的 `instructionSet`。
+
+```text
+Android
+  └─ ExecPlane WebSocket 控制信封
+       └─ dispatch(payload)
+            └─ 设备自定义 DSL
+```
+
+DSL 不必是 Shell。例如 Windows 节点可定义 PowerShell DSL，NAS 可定义卷和快照操作，路由器可定义网络管理命令，IoT 节点可定义传感器或 GPIO 操作；payload 也可以是由服务端约定的 JSON 文本。Android 不得猜测、补全或改写其中的 `/`、`\`、盘符、命令名或参数。
+
+需要区分以下能力范围：
+
+| 目标能力 | 是否需要修改 Android | 设备端要求 |
+|---|---:|---|
+| 使用 `sandbox_dispatch` 执行自定义 DSL | 通常不需要 | 实现握手、dispatch、cancel 和指令集 |
+| 流式输出、超时和取消 | 不需要 | 按 ExecPlane 事件和 request ID 契约实现 |
+| 用户手动复制设备指令集给 Agent | 不需要 | 握手返回 `instructionSet` |
+| 使用设备 DSL 自行读写文件 | 不需要 | DSL 自行定义路径和文件行为 |
+| 使用通用 `sandbox_file_push/pull` | Android 通常不需要 | 还需实现 `transfer.open/chunk/commit/resume/abort` |
+| 自动向模型注入平台、路径风格或 DSL | 需要额外产品设计 | 握手需声明对应元数据并获得用户授权 |
+| 使用旧结构化远端 `exec` | 非 POSIX 平台不应依赖 | 当前兼容链固定使用 `/bin/sh -lc` |
+
+当前仓库的 Python 参考执行端和示例 DSL 是 **Linux/POSIX 实现**，其中包含 `/bin/sh -lc`、POSIX 进程组和信号语义；它们不是 ExecPlane 对所有设备的强制要求。Windows 等平台应实现独立的 dispatch 插件和进程树取消机制，而不是简单把 `\` 替换成 `/`。特别是 Windows 文件能力还需在设备端处理盘符、UNC、设备路径、NTFS ADS、junction/reparse point 和允许根校验。
+
+远端通过握手返回的 `instructionSet` 默认只在沙箱设置页展示和复制，不会自动进入系统提示词、Agent 提示词或会话。若不修改 Android，用户需要把对应设备的指令集放入 Agent 提示词或当前对话，模型才能可靠构造该设备的 payload。
+
+## 6. 文件系统和传输
 
 WS 与 App/PRoot 不共享文件系统。同名 `/var/minis` 路径也不是同一文件，跨边界必须使用：
 
@@ -174,7 +211,7 @@ WS 与 App/PRoot 不共享文件系统。同名 `/var/minis` 路径也不是同�
 
 失败时恢复原目标并清理 `.part/.stage/.backup`。目录传输拒绝符号链接；`fs.list` 通过 `lstat` 报告 `symlink`，不跟随读取链接目标。
 
-## 6. 资源保护
+## 7. 资源保护
 
 默认限制：
 
@@ -192,7 +229,7 @@ WS 与 App/PRoot 不共享文件系统。同名 `/var/minis` 路径也不是同�
 
 达到输出上限返回 `EXEC_OUTPUT_LIMIT`，资源不足返回 `EXEC_RESOURCE_LIMIT`。超限命令不会破坏 WS 通道，后续请求仍可执行。
 
-## 7. 鉴权与环境变量
+## 8. 鉴权与环境变量
 
 - Token 使用 Android 加密偏好存储；
 - Token 至少 32 字符；
@@ -204,7 +241,7 @@ WS 与 App/PRoot 不共享文件系统。同名 `/var/minis` 路径也不是同�
 - 注入仅对单次子进程生效；
 - `EXECPLANE_TOKEN`、`LD_PRELOAD` 等保留变量不会从 App 注入远端。
 
-## 8. 已验证范围
+## 9. 已验证范围
 
 已完成：
 
@@ -233,7 +270,7 @@ python3 -m py_compile runtime.py transfer_runtime.py ws-server.py ws-agent.py
 python3 -m unittest -v test_runtime.py
 ```
 
-## 9. 已知边界和延期项
+## 10. 已知边界和延期项
 
 当前可用于个人可信环境，但以下项目在扩大部署范围前必须完成：
 
