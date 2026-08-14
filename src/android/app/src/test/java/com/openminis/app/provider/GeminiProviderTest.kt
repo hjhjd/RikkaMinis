@@ -277,6 +277,27 @@ class GeminiProviderTest {
     }
 
     @Test
+    fun `streamMessage emits every function call in one candidate`() = runBlocking {
+        val sseBody = buildString {
+            appendLine("""data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"read_file","args":{"path":"README.md"}}},{"functionCall":{"name":"search_web","args":{"query":"kotlin"}}}]},"finishReason":"STOP"}]}""")
+            appendLine()
+        }
+        server.enqueue(MockResponse().setBody(sseBody).setHeader("Content-Type", "text/event-stream"))
+
+        val chunks = provider.streamMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "inspect")), null, 1024,
+        ).toList()
+
+        val starts = chunks.filterIsInstance<LLMStreamChunk.ToolUseStart>()
+        val completes = chunks.filterIsInstance<LLMStreamChunk.ToolCallComplete>()
+        assertEquals(listOf("read_file", "search_web"), starts.map { it.name })
+        assertEquals(2, starts.map { it.id }.distinct().size)
+        assertEquals(2, completes.size)
+        assertEquals("README.md", completes[0].args.getString("path"))
+        assertEquals("kotlin", completes[1].args.getString("query"))
+    }
+
+    @Test
     fun `streamMessage extracts finishReason from SSE`() = runBlocking {
         val sseBody = buildString {
             appendLine("""data: {"candidates":[{"content":{"parts":[{"text":"Hi"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":1}}""")

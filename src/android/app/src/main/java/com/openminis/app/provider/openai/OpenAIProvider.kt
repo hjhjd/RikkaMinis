@@ -1548,6 +1548,9 @@ class OpenAIProvider private constructor(
             }
             body.put("tools", toolsArray)
             body.put("tool_choice", "auto")
+            // Compatible gateways do not all share OpenAI's default, so
+            // advertise that one assistant turn may return multiple calls.
+            body.put("parallel_tool_calls", true)
         }
 
         val messagesArray = JSONArray()

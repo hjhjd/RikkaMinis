@@ -1,5 +1,6 @@
 package com.openminis.app.provider
 
+import com.openminis.app.data.model.AgentContentPart
 import com.openminis.app.data.model.LLMError
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
@@ -343,6 +344,129 @@ class OpenAIProviderTest {
         assertEquals(2, usageChunks[0].usage.outputTokens)
 
         assertTrue(chunks.any { it is LLMStreamChunk.Finished })
+    }
+
+    @Test
+    fun `streamMessage keeps two interleaved ChatCompletions tool calls separate`() = runBlocking {
+        val streamBody = sseBody(
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"read_file","arguments":"{\"path\":\""}},{"index":1,"id":"call_b","function":{"name":"search_web","arguments":"{\"query\":\""}}]}}]}""",
+            """{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"kotlin\"}"}},{"index":0,"function":{"arguments":"README.md\"}"}}]},"finish_reason":"tool_calls"}]}""",
+        )
+        server.enqueue(MockResponse().setBody(streamBody).setHeader("Content-Type", "text/event-stream"))
+
+        val chunks = provider.streamMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "inspect")), null, 1024,
+        ).toList()
+
+        val starts = chunks.filterIsInstance<LLMStreamChunk.ToolUseStart>()
+        assertEquals(listOf("call_a", "call_b"), starts.map { it.id })
+        assertEquals(listOf("read_file", "search_web"), starts.map { it.name })
+        val completes = chunks.filterIsInstance<LLMStreamChunk.ToolCallComplete>()
+        assertEquals(2, completes.size)
+        assertEquals("README.md", completes[0].args.getString("path"))
+        assertEquals("kotlin", completes[1].args.getString("query"))
+    }
+
+    @Test
+    fun `连续工具链会回传整批结果并继续下一轮调用`() = runBlocking {
+        server.enqueue(MockResponse().setBody(sseBody(
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"read_file","arguments":"{\"path\":\"README.md\"}"}},{"index":1,"id":"call_b","function":{"name":"search_web","arguments":"{\"query\":\"kotlin\"}"}}]},"finish_reason":"tool_calls"}]}"""
+        )).setHeader("Content-Type", "text/event-stream"))
+        server.enqueue(MockResponse().setBody(sseBody(
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_c","function":{"name":"write_report","arguments":"{\"path\":\"report.md\"}"}}]},"finish_reason":"tool_calls"}]}"""
+        )).setHeader("Content-Type", "text/event-stream"))
+        server.enqueue(MockResponse().setBody(sseBody(
+            """{"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}"""
+        )).setHeader("Content-Type", "text/event-stream"))
+
+        val history = mutableListOf(LLMMessage(LLMMessage.Role.USER, "inspect and report"))
+        suspend fun nextRound(): List<LLMStreamChunk> = provider.streamMessage(
+            history, null, 1024,
+        ).toList()
+        fun appendToolRound(calls: List<LLMStreamChunk.ToolCallComplete>) {
+            history += LLMMessage(
+                role = LLMMessage.Role.ASSISTANT, content = "",
+                contentParts = calls.map { AgentContentPart.ToolUse(it.id, it.name, it.args) },
+            )
+            history += LLMMessage(
+                role = LLMMessage.Role.USER, content = "",
+                contentParts = calls.map {
+                    AgentContentPart.ToolResult(it.id, it.name, "result:${it.id}")
+                },
+            )
+        }
+
+        val firstCalls = nextRound().filterIsInstance<LLMStreamChunk.ToolCallComplete>()
+        assertEquals(listOf("call_a", "call_b"), firstCalls.map { it.id })
+        server.takeRequest() // consume the initial user-only request
+        appendToolRound(firstCalls)
+
+        val secondCalls = nextRound().filterIsInstance<LLMStreamChunk.ToolCallComplete>()
+        assertEquals(listOf("call_c"), secondCalls.map { it.id })
+        val secondRequest = JSONObject(server.takeRequest().body.readUtf8())
+        val secondMessages = secondRequest.getJSONArray("messages")
+        val assistant = secondMessages.getJSONObject(1)
+        assertEquals(listOf("call_a", "call_b"), (0 until assistant.getJSONArray("tool_calls").length()).map {
+            assistant.getJSONArray("tool_calls").getJSONObject(it).getString("id")
+        })
+        assertEquals(listOf("call_a", "call_b"), listOf(
+            secondMessages.getJSONObject(2).getString("tool_call_id"),
+            secondMessages.getJSONObject(3).getString("tool_call_id"),
+        ))
+        appendToolRound(secondCalls)
+
+        val finalChunks = nextRound()
+        assertEquals("done", finalChunks.filterIsInstance<LLMStreamChunk.Text>().joinToString("") { it.text })
+        assertTrue(finalChunks.none { it is LLMStreamChunk.ToolCallComplete })
+        val thirdMessages = JSONObject(server.takeRequest().body.readUtf8()).getJSONArray("messages")
+        assertEquals("call_c", thirdMessages.getJSONObject(thirdMessages.length() - 1).getString("tool_call_id"))
+    }
+
+    @Test
+    fun `streamMessage sends parallel tool call capability when tools are present`() = runBlocking {
+        server.enqueue(MockResponse().setBody(sseBody(
+            """{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}"""
+        )).setHeader("Content-Type", "text/event-stream"))
+        val tool = com.openminis.app.data.model.AgentToolDefinition(
+            name = "noop", description = "test", parameters = emptyMap(),
+        )
+
+        provider.streamMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "test")), null, 1024,
+            tools = listOf(tool),
+        ).toList()
+
+        val body = JSONObject(server.takeRequest().body.readUtf8())
+        assertTrue(body.getBoolean("parallel_tool_calls"))
+        assertEquals(1, body.getJSONArray("tools").length())
+    }
+
+    @Test
+    fun `Responses API keeps two function call items separate`() = runBlocking {
+        val responsesProvider = OpenAIProvider(
+            apiKey = "test-key", model = LLMModel.gpt4oMini,
+            basePath = server.url("/v1").toString().trimEnd('/'), useResponsesAPI = true,
+        )
+        val streamBody = sseBody(
+            """{"type":"response.output_item.added","item":{"type":"function_call","id":"item_a","call_id":"call_a","name":"read_file"}}""",
+            """{"type":"response.output_item.added","item":{"type":"function_call","id":"item_b","call_id":"call_b","name":"search_web"}}""",
+            """{"type":"response.function_call_arguments.delta","item_id":"item_b","delta":"{\"query\":\"kotlin\"}"}""",
+            """{"type":"response.function_call_arguments.delta","item_id":"item_a","delta":"{\"path\":\"README.md\"}"}""",
+            """{"type":"response.output_item.done","item":{"type":"function_call","id":"item_a","arguments":"{\"path\":\"README.md\"}"}}""",
+            """{"type":"response.output_item.done","item":{"type":"function_call","id":"item_b","arguments":"{\"query\":\"kotlin\"}"}}""",
+            """{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call"}]}}""",
+        )
+        server.enqueue(MockResponse().setBody(streamBody).setHeader("Content-Type", "text/event-stream"))
+
+        val chunks = responsesProvider.streamMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "inspect")), null, 1024,
+        ).toList()
+
+        val completes = chunks.filterIsInstance<LLMStreamChunk.ToolCallComplete>()
+        assertEquals(2, completes.size)
+        assertEquals(listOf("read_file", "search_web"), completes.map { it.name })
+        assertEquals("README.md", completes[0].args.getString("path"))
+        assertEquals("kotlin", completes[1].args.getString("query"))
     }
 
     @Test

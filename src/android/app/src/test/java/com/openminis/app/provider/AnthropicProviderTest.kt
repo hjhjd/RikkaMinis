@@ -263,6 +263,31 @@ class AnthropicProviderTest {
     }
 
     @Test
+    fun `streamMessage emits two consecutive tool use blocks`() = runBlocking {
+        val sseBody = buildString {
+            appendLine("""data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}"""); appendLine()
+            appendLine("""data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_a","name":"read_file"}}"""); appendLine()
+            appendLine("""data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"README.md\"}"}}"""); appendLine()
+            appendLine("""data: {"type":"content_block_stop","index":0}"""); appendLine()
+            appendLine("""data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tool_b","name":"search_web"}}"""); appendLine()
+            appendLine("""data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"kotlin\"}"}}"""); appendLine()
+            appendLine("""data: {"type":"content_block_stop","index":1}"""); appendLine()
+            appendLine("""data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}"""); appendLine()
+        }
+        server.enqueue(MockResponse().setBody(sseBody).setHeader("Content-Type", "text/event-stream"))
+
+        val chunks = provider.streamMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "inspect")), null, 1024,
+        ).toList()
+
+        val completes = chunks.filterIsInstance<LLMStreamChunk.ToolCallComplete>()
+        assertEquals(listOf("tool_a", "tool_b"), completes.map { it.id })
+        assertEquals(listOf("read_file", "search_web"), completes.map { it.name })
+        assertEquals("README.md", completes[0].args.getString("path"))
+        assertEquals("kotlin", completes[1].args.getString("query"))
+    }
+
+    @Test
     fun `streamMessage ignores non-data lines`() = runBlocking {
         val sseBody = buildString {
             appendLine("event: message_start")
