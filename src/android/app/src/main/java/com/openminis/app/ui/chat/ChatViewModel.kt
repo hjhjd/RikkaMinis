@@ -8210,7 +8210,7 @@ class ChatViewModel(
 
     private suspend fun executeRemoteReadImage(args: JSONObject, sandbox: String, toolTitle: String): ToolExecutionResult = runCatching {
         val path = args.getString("path")
-        val bytes = (context.applicationContext as com.openminis.app.MinisApp).sandboxFileService
+        val bytes = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway
             .readAll(sandbox, path, 16 * 1024 * 1024)
         val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
@@ -8232,7 +8232,7 @@ class ChatViewModel(
     }.getOrElse { ToolExecutionResult("Error reading image $sandbox:${args.optString("path")}: ${it.message}", false, toolTitle = toolTitle) }
 
     private suspend fun executeSandboxPush(args: JSONObject, toolTitle: String): ToolExecutionResult = runCatching {
-        val result = (context.applicationContext as com.openminis.app.MinisApp).sandboxTransferService.push(
+        val result = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway.push(
             context, activeSessionId, args.getString("sandbox"), args.getString("source"),
             args.getString("destination"), args.optString("overwrite", "fail"),
         )
@@ -8244,7 +8244,7 @@ class ChatViewModel(
 
     private suspend fun executeSandboxPull(args: JSONObject, toolTitle: String): ToolExecutionResult = runCatching {
         val destination = args.getString("destination")
-        val result = (context.applicationContext as com.openminis.app.MinisApp).sandboxTransferService.pull(
+        val result = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway.pull(
             context, activeSessionId, args.getString("sandbox"), args.getString("source"), destination,
             args.optString("overwrite", "fail"), args.optBoolean("directory", false),
         )
@@ -8258,7 +8258,7 @@ class ChatViewModel(
         runCatching {
             val path = args.getString("path")
             val maxLength = args.optInt("max_length", 15_000).coerceIn(1, 80_000)
-            val remote = (context.applicationContext as com.openminis.app.MinisApp).sandboxFileService
+            val remote = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway
                 .read(sandbox, path, 0, 1_048_576)
             if (remote.bytes.take(8192).any { it == 0.toByte() }) {
                 ToolExecutionResult("[$sandbox:$path | ${remote.bytes.size} bytes | binary file]", true, toolTitle = toolTitle)
@@ -8278,7 +8278,7 @@ class ChatViewModel(
         runCatching {
             val path = args.getString("path")
             val bytes = args.optString("content", "").toByteArray(Charsets.UTF_8)
-            (context.applicationContext as com.openminis.app.MinisApp).sandboxFileService.write(
+            (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway.write(
                 sandbox, path, bytes, args.optBoolean("append", false), args.optBoolean("create_dirs", false),
             )
             ToolExecutionResult("Wrote to $sandbox:$path (${bytes.size} bytes)", true, toolTitle = toolTitle)
@@ -8290,7 +8290,7 @@ class ChatViewModel(
             val old = args.getString("old_string")
             require(old.isNotEmpty()) { "old_string cannot be empty" }
             val new = args.optString("new_string", "")
-            val remote = (context.applicationContext as com.openminis.app.MinisApp).sandboxFileService
+            val remote = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway
             val read = remote.read(sandbox, path)
             val content = read.bytes.toString(Charsets.UTF_8)
             val count = Regex(Regex.escape(old)).findAll(content).count()

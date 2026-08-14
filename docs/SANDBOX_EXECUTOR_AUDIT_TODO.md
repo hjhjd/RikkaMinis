@@ -205,10 +205,10 @@ capabilities / dispatch / cancel
 
 - [x] 冻结 Android 端现有 `exec`、`fs.*`、`transfer.*` 业务功能，不再新增调用点。
 - [x] 新版服务端可通过可配置 Python dispatch 插件定义任意 payload DSL；Android 新路径只调用 `dispatch`。
-- [ ] 迁移期旧协议放入单独适配层；shell_execute 已迁入 `LegacyShellExecutionGateway`，文件/transfer 调用仍待隔离。
+- [x] 迁移期旧协议放入单独适配层；shell_execute 使用 `LegacyShellExecutionGateway`，文件/transfer 使用 `LegacyExecPlaneFileGateway`。
 - [ ] 明确旧协议弃用窗口和服务端最低兼容版本。
 - [ ] 文本 dispatch 稳定后，移除 WS `shell_execute`、远端 `file_read/write/edit` 的 Android 特殊分支。
-- [ ] `transfer.*` 在通用 resource 通道落地前保留，仅用于兼容旧客户端/服务端，不作为新架构入口。
+- [x] `transfer.*` 在通用 resource 通道落地前保留，仅用于兼容旧客户端/服务端，不作为新架构入口。
 - [x] 显式 WS dispatch 永不降级到 PRoot；通道失败只返回通道错误。
 
 **阶段 3 完成条件**
