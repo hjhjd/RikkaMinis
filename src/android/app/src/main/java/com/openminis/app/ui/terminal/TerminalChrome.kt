@@ -6,12 +6,12 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -79,7 +79,7 @@ internal fun TerminalTabStrip(
         tabs.forEach { tab ->
             val active = tab.id == activeTabId
             Column(
-                modifier = Modifier.width(144.dp).fillMaxSize().clickable { onSelect(tab.id) },
+                modifier = Modifier.fillMaxHeight().clickable { onSelect(tab.id) },
             ) {
                 Row(
                     modifier = Modifier.weight(1f).padding(start = 8.dp),
@@ -93,7 +93,6 @@ internal fun TerminalTabStrip(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                         ),
-                        modifier = Modifier.weight(1f),
                         maxLines = 1,
                     )
                     Icon(
@@ -109,7 +108,6 @@ internal fun TerminalTabStrip(
                 )
             }
         }
-        Box(modifier = Modifier.width(32.dp).fillMaxSize().background(TerminalColors.background))
     }
 }
 

@@ -2,6 +2,7 @@ package com.openminis.app.ui.terminal
 
 import android.view.KeyEvent
 import android.view.MotionEvent
+import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
@@ -64,6 +65,7 @@ private class MinisTerminalViewClient(
     private val getControlDown: () -> Boolean,
     private val getAltDown: () -> Boolean,
 ) : TerminalViewClient {
+    private var textSizePx = DEFAULT_TEXT_SIZE_PX
     override fun onSingleTapUp(e: MotionEvent) {
         view.requestFocus()
         val imm = view.context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
@@ -72,7 +74,18 @@ private class MinisTerminalViewClient(
     }
 
     override fun onLongPress(event: MotionEvent): Boolean = false
-    override fun onScale(scale: Float): Float = scale
+
+    override fun onScale(scale: Float): Float {
+        val nextSize = (textSizePx * scale).roundToInt()
+            .coerceIn(MIN_TEXT_SIZE_PX, MAX_TEXT_SIZE_PX)
+        if (nextSize != textSizePx) {
+            textSizePx = nextSize
+            view.setTextSize(nextSize)
+            view.invalidate()
+        }
+        // TerminalView stores the returned value as its next scale baseline.
+        return 1f
+    }
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: com.termux.terminal.TerminalSession): Boolean = false
     override fun onKeyDown(keyCode: Int, event: KeyEvent, session: com.termux.terminal.TerminalSession): Boolean = false
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
@@ -93,4 +106,10 @@ private class MinisTerminalViewClient(
     override fun logVerbose(tag: String, message: String) {}
     override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {}
     override fun logStackTrace(tag: String, e: Exception) {}
+
+    private companion object {
+        const val DEFAULT_TEXT_SIZE_PX = 24
+        const val MIN_TEXT_SIZE_PX = 12
+        const val MAX_TEXT_SIZE_PX = 48
+    }
 }
