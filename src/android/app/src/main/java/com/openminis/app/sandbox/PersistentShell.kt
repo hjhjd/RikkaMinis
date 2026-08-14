@@ -50,6 +50,7 @@ class PersistentShell(
         // runaway commands flooding the agent context window and app memory.
         // Mirrors RikkaHub's WorkspaceShellRunner.MAX_OUTPUT_CHARS.
         private const val MAX_OUTPUT_CHARS = 128 * 1024
+        private val pidWarningEmitted = AtomicBoolean(false)
     }
 
     @Volatile
@@ -92,7 +93,12 @@ class PersistentShell(
     fun nativeRssMB(): Long {
         val proc = process ?: return 0L
         val pid = processPid(proc)
-        if (pid <= 0) return 0L
+        if (pid <= 0) {
+            if (pidWarningEmitted.compareAndSet(false, true)) {
+                Log.w(TAG, "Unable to resolve PRoot PID; child RSS monitoring is unavailable")
+            }
+            return 0L
+        }
         return try {
             val status = File("/proc/$pid/status").readText()
             val m = Regex("""VmRSS:\s+(\d+) kB""").find(status) ?: return 0L

@@ -477,8 +477,6 @@ object ExecutionCoordinator {
                 state.recycleRequested = false
                 state.closeRequested = true
             }
-            @Suppress("DEPRECATION")
-            ShellExecutor.destroyCurrent()
         }
     }
 

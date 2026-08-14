@@ -159,6 +159,7 @@ class ExecPlaneBridge(
         payload: String,
         timeoutMs: Long = 600_000,
         outputCallback: ((String) -> Unit)? = null,
+        resources: List<ResourceReference> = emptyList(),
     ): RemoteDispatchResult {
         val resolvedName = connections.resolveOnlineName(name)
             ?: throw RemoteChannelException(
@@ -174,6 +175,10 @@ class ExecPlaneBridge(
                 params = buildJsonObject {
                     put("payload", payload)
                     put("timeoutMs", timeoutMs)
+                    put("resources", buildJsonArray { resources.forEach { r -> add(buildJsonObject {
+                        put("resourceId", r.resourceId); put("name", r.name); put("size", r.size)
+                        put("sha256", r.sha256); r.mimeType?.let { put("mimeType", it) }
+                    }) } })
                 },
                 timeoutMs = timeoutMs,
             ) { _, data ->

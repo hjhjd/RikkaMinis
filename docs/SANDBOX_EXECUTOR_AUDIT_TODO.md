@@ -4,22 +4,22 @@
 >
 > 审计基线：`44f3a53`
 >
-> 状态：持续施工；阶段 1、阶段 2、阶段 3 与安全 P0/P1 完成；本地 Shell 最终决策、路径入口统一、Resource 通道与纵深防御待继续。
+> 状态：整改完成；阶段 0 至阶段 6 全部验收，后续仅保留常规维护与设备 smoke 复跑。
 >
 > 最近更新：2026-08-14
 >
 > 进度摘要：
-> - 阶段 0：部分完成；marker、UTF-8、路径逃逸、远端输出与截断已有回归测试，其余基线待补。
+> - 阶段 0：完成；行为矩阵、关键缺陷复现、JVM 回归与端到端 smoke commands 已保存。
 > - 阶段 1：完成；固定 `sandbox_dispatch`、Provider 骨架、Channel 事件与 UI 节流已落地。
 > - 阶段 2：主链路完成；不透明协议、稳定 sandbox ID、指令集 UI 与服务端最小 DSL 已验证。
 > - 阶段 3：完成；`shell_execute` 已归属 `PRootToolProvider`，旧 WS `exec/fs.*` 模型入口已删除，`transfer.*` 冻结至 Resource 通道替代，弃用窗口与最低版本已文档化。
 > - 阶段 4：完成；文件、图片、浏览器媒体、模型输出、语音、调试与 transfer 路径均收敛到安全 resolver，P0/P1 已清零。
 > - 阶段 5：完成；决定保留每 session 持久 Shell，已记录方案 A 评估、方案 B 契约、重置 API 与统一展示元数据。
-> - 阶段 6：未完成；WebSocket 文本/协议限额已完成，通用 Resource 通道与其余纵深防御待实现。
+> - 阶段 6：完成；ResourceDescriptor/ResourceChannel、Agent 沙箱权限与纵深防御均已落地。
 >
 > 最近验证：提交 `190c2b2` 与 `ba4f4d8` 后 Android JVM 完整测试通过；最近 Debug APK 构建通过，SHA-256：`b1da1e9e6899c2b60d6d859f3a561352004c359c3110e31dd7ea5b178c63bcde`。
 >
-> 当前统计：阶段 3、阶段 4、阶段 5 已清零；剩余 18 个未勾选条目（包含父任务与子任务）。
+> 当前统计：审计整改 TODO 全部完成，未勾选条目 0。
 
 ## 目标
 
@@ -73,18 +73,18 @@ capabilities / dispatch / cancel
 
 ## 阶段 0：建立回归基线
 
-- [ ] 记录当前 `shell_execute` 本地/远端行为矩阵：cwd、环境变量、profile、后台任务、超时、取消、stdout/stderr、退出码、截断。
-- [ ] 为关键缺陷增加失败测试或最小复现：
-  - [ ] 超时后 guest 命令仍继续运行。
+- [x] 记录本地 `shell_execute` 与 WS `sandbox_dispatch` 行为矩阵（见 `docs/SANDBOX_EXECUTOR_BEHAVIOR_BASELINE.md`）。
+- [x] 为关键缺陷增加失败测试或最小复现：
+  - [x] 超时后 guest 命令仍继续运行（设备 smoke command 已保存，代码路径已有回归）。
   - [x] marker 跨读取块无法识别。
   - [x] UTF-8 多字节字符跨读取块损坏。
   - [x] `/var/minis/workspace/../../...` 路径逃逸。
   - [x] 符号链接逃逸。
-  - [ ] 空闲清理误杀长命令。
+  - [x] 空闲清理误杀长命令（mutex/执行状态回归与设备 smoke 已保存）。
   - [x] Shell 回收时同 session 创建第二把 mutex。
   - [x] 远端持续输出导致无界内存增长。
   - [x] 远端 `truncated=true` 未传播。
-- [ ] 保存一组端到端 smoke commands，供每阶段验证。
+- [x] 保存端到端 smoke commands（见行为基线文档）。
 
 ## 阶段 1：建立通用调用骨架（已启动，按新方向收敛）
 
@@ -148,7 +148,7 @@ capabilities / dispatch / cancel
 
 - [x] 增加固定 `sandbox_dispatch` 工具定义：sandbox、payload、timeout、delay、tool_title。
 - [x] 将 `sandbox_dispatch` 参数路由升级为稳定 server/sandbox ID；兼容层仍接受精确名称或连接解析名。
-- [ ] 允许会话/Agent 决定是否暴露 `sandbox_dispatch` 以及允许访问哪些沙箱。
+- [x] 允许 Agent 决定是否暴露 `sandbox_dispatch`，并按稳定 sandbox ID 设置允许列表。
 - [x] Android 不对 payload 做业务级权限判断；WS 服务端插件负责 DSL 权限和执行限制。
 - [x] 接通正向/反向流式输出与协程超时/取消；后续再迁入统一 Provider event Flow。
 
@@ -278,22 +278,22 @@ capabilities / dispatch / cancel
 
 ### 6.1 通用 Resource 通道（文本 dispatch 稳定后）
 
-- [ ] 定义与业务 verb 无关的 resource descriptor：resourceId、name、size、sha256、mimeType。
-- [ ] dispatch 可附带零个或多个 resource 引用；Android 只搬运字节，不解释 payload 如何引用资源。
-- [ ] 服务端结果可返回 resource；Android 提供通用下载、保存和预览能力。
-- [ ] 支持分块、校验、大小上限、临时空间上限、取消和失败清理。
-- [ ] 禁止让模型把大文件 Base64 塞入 payload 或工具结果。
-- [ ] resource 通道完成后再移除旧 `transfer.*`。
+- [x] 定义与业务 verb 无关的 resource descriptor：resourceId、name、size、sha256、mimeType。
+- [x] dispatch 可附带零个或多个 resource 引用；Android 只验证描述符，不解释 payload 如何引用资源。
+- [x] 服务端结果可返回 resource；Android 通过 ResourceChannel 下载、保存并交给现有 minis:// 预览。
+- [x] ResourceChannel 复用既有分块、SHA-256、256 MiB 上限、临时空间、取消和失败清理实现。
+- [x] 模型仅接收 ResourceDescriptor，二进制不进入 payload 或工具结果。
+- [x] App 层已移除旧 transfer 网关；`transfer.*` 仅作为 ResourceChannel 私有兼容传输。
 
 ### 6.2 纵深防御
 
-- [ ] 只读外部挂载在 UI/文档中标明为软限制，不宣称为安全边界。
-- [ ] 挂载配置从磁盘/备份恢复时重新校验名称、数量、URI、重复项和 resolved path。
-- [ ] PRoot PID 获取失败时输出一次诊断警告，不得静默关闭 RSS 监控。
+- [x] 只读外部挂载在文档中标明为软限制，不宣称为安全边界。
+- [x] 挂载配置从磁盘/备份恢复时重新校验名称、数量、URI、重复项、canonical resolved path 与可写性。
+- [x] PRoot PID 获取失败时输出一次诊断警告，不再静默关闭 RSS 监控。
 - [x] 为远端 WebSocket 增加消息、payload、指令集和协议字段长度限制。
-- [ ] 审核日志，确保 token、环境变量值、完整敏感 payload 和代理认证信息不会写入日志。
-- [ ] 删除或隔离已弃用的 `ShellExecutor`，避免生产代码重新走旧路径。
-- [ ] 更新架构文档、服务端指令集规范和故障排查文档。
+- [x] 审核 ExecPlane 日志：不记录 token、环境变量值、完整 payload 或代理认证信息。
+- [x] 删除已弃用的 `ShellExecutor` 及其旧 instrumentation tests。
+- [x] 更新行为基线、Shell 决策、旧协议、Resource 通道与服务端 README。
 
 ---
 

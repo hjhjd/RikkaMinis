@@ -22,9 +22,10 @@ object AgentTools {
         memoryEnabled: Boolean = true,
         sandboxPrompt: String? = null,
         includeShellExecute: Boolean = true,
+        includeSandboxDispatch: Boolean = true,
     ): List<AgentToolDefinition> = buildList {
         if (includeShellExecute) add(shellExecuteDefinition())
-        add(sandboxDispatchDefinition(sandboxPrompt))
+        if (includeSandboxDispatch) add(sandboxDispatchDefinition(sandboxPrompt))
         add(FileReadTool.definition())
         add(FileWriteTool.definition())
         add(FileEditTool.definition())

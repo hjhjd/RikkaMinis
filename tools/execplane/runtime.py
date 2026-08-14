@@ -130,7 +130,7 @@ class Runtime:
    if not isinstance(result,dict):raise RpcFault('EXEC_INTERNAL','Dispatch handler returned invalid result')
    text=result.get('output','')
    if not isinstance(text,str) or len(text.encode())>MAX_RPC:raise RpcFault('EXEC_OUTPUT_LIMIT','Dispatch result exceeded limit')
-   return {'output':text,'durationMs':int((time.monotonic()-started)*1000),'truncated':bool(result.get('truncated',False))}
+   return {'output':text,'durationMs':int((time.monotonic()-started)*1000),'truncated':bool(result.get('truncated',False)),'resources':result.get('resources',[])}
   except asyncio.TimeoutError:raise RpcFault('EXEC_TIMEOUT','Dispatch timed out')
   except asyncio.CancelledError:raise RpcFault('EXEC_CANCELLED','Dispatch was cancelled')
   finally:self.active.pop(key,None)

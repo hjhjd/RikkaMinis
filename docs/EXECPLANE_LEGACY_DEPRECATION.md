@@ -26,3 +26,10 @@
 
 参考服务端可暂时继续实现 `exec` 与 `fs.*`，用于旧版 App；这不代表当前 Android
 客户端仍公开对应入口。部署方应以 `dispatch` capability 作为新架构最低要求。
+
+## Resource 通道
+
+Android 现通过 `ResourceDescriptor`（resourceId/name/size/sha256/mimeType）描述跨边界字节，
+`ResourceChannel` 负责分块、校验、临时文件和失败清理。旧 `transfer.*` 仅是当前 0.2 服务端
+的私有承载实现，不再暴露为 App 架构或模型业务语义。二进制不得 Base64 内嵌到 dispatch
+payload 或工具结果。

@@ -46,6 +46,7 @@ import com.openminis.app.agent.shell.BashismDetector
 import com.openminis.app.agent.shell.BashismReminder
 import com.openminis.app.agent.shell.OnDemandBash
 import com.openminis.app.sandbox.ExecutionCoordinator
+import com.openminis.app.execplane.SandboxDispatchAccessPolicy
 import com.openminis.app.terminal.MinisOpenUrlBroker
 import com.openminis.app.terminal.MinisUrlMarker
 import com.openminis.app.tools.AgentTools
@@ -909,6 +910,7 @@ class ChatViewModel(
      * provider at a time without changing the model-facing aggregation path.
      */
     private val prootToolProvider = PRootToolProvider()
+    private val sandboxDispatchAccess = SandboxDispatchAccessPolicy(context)
 
     private val toolRegistry = ToolRegistry(listOf(
         prootToolProvider,
@@ -917,6 +919,7 @@ class ChatViewModel(
                 memoryEnabled = _memoryEnabled.value,
                 sandboxPrompt = sandboxRuntimeSnapshot().toolDescription,
                 includeShellExecute = false,
+                includeSandboxDispatch = sandboxDispatchAccess.isExposed(_activeAgentId.value),
             )
         },
     ))
@@ -8134,6 +8137,9 @@ class ChatViewModel(
             val timeoutMs = args.optLong("timeout", 900L).coerceIn(1L, 3600L) * 1000L
             val delaySec = args.optLong("delay", 0L).coerceIn(0L, 86_400L)
             require(sandbox.isNotEmpty() && !sandbox.equals("proot", true)) { "An explicit WebSocket sandbox is required" }
+            require(sandboxDispatchAccess.isAllowed(_activeAgentId.value, sandbox)) {
+                "Agent '${_activeAgentId.value}' is not allowed to access sandbox '$sandbox'"
+            }
             require(payload.isNotEmpty()) { "Payload cannot be empty" }
             if (delaySec > 0) kotlinx.coroutines.delay(delaySec * 1000L)
 
@@ -8164,9 +8170,10 @@ class ChatViewModel(
                         sandbox = sandbox,
                         payload = payload,
                         timeoutMs = timeoutMs,
-                    ) { chunk ->
-                        if (chunks.trySend(chunk).isFailure) uiDropped.set(true)
-                    }
+                        outputCallback = { chunk ->
+                            if (chunks.trySend(chunk).isFailure) uiDropped.set(true)
+                        },
+                    )
                 } finally {
                     chunks.close()
                     uiJob.join()
@@ -8188,24 +8195,24 @@ class ChatViewModel(
 
 
     private suspend fun executeSandboxPush(args: JSONObject, toolTitle: String): ToolExecutionResult = runCatching {
-        val result = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneTransferGateway.push(
+        val result = (context.applicationContext as com.openminis.app.MinisApp).resourceChannel.upload(
             context, activeSessionId, args.getString("sandbox"), args.getString("source"),
             args.getString("destination"), args.optString("overwrite", "fail"),
         )
         ToolExecutionResult(
-            "Pushed to ${args.getString("sandbox")}:${result.path} (${result.size} bytes, sha256=${result.sha256})",
+            "Pushed to ${args.getString("sandbox")}:${result.path} (${result.descriptor.size} bytes, sha256=${result.descriptor.sha256})",
             true, toolTitle = toolTitle,
         )
     }.getOrElse { ToolExecutionResult("Push failed: ${it.message}", false, toolTitle = toolTitle) }
 
     private suspend fun executeSandboxPull(args: JSONObject, toolTitle: String): ToolExecutionResult = runCatching {
         val destination = args.getString("destination")
-        val result = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneTransferGateway.pull(
+        val result = (context.applicationContext as com.openminis.app.MinisApp).resourceChannel.download(
             context, activeSessionId, args.getString("sandbox"), args.getString("source"), destination,
             args.optString("overwrite", "fail"), args.optBoolean("directory", false),
         )
         ToolExecutionResult(
-            "Pulled to ${result.path} (${result.size} bytes, sha256=${result.sha256})",
+            "Pulled to ${result.path} (${result.descriptor.size} bytes, sha256=${result.descriptor.sha256})",
             true, toolTitle = toolTitle,
         )
     }.getOrElse { ToolExecutionResult("Pull failed: ${it.message}", false, toolTitle = toolTitle) }

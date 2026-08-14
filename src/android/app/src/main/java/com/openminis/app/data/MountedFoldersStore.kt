@@ -323,7 +323,19 @@ class MountedFoldersStore(private val context: Context) {
         runCatching {
             val text = storeFile.readText()
             val parsed = JSON.decodeFromString<List<Entry>>(text)
-            _entries.value = parsed
+            val seenIds = mutableSetOf<String>()
+            val seenNames = mutableSetOf<String>()
+            _entries.value = parsed.asSequence().mapNotNull { entry ->
+                val name = sanitizeName(entry.name)
+                val uri = runCatching { Uri.parse(entry.treeUri) }.getOrNull()
+                val host = entry.resolvedHostPath?.let(::File)?.canonicalFile
+                if (name.isEmpty() || uri?.authority != EXTERNALSTORAGE_AUTHORITY ||
+                    !seenIds.add(entry.id) || !seenNames.add(name.lowercase()) ||
+                    host?.isDirectory != true) null
+                else entry.copy(name = name, resolvedHostPath = host.absolutePath,
+                    isWritable = probeWritable(host.absolutePath))
+            }.take(MAX_MOUNTS).toList()
+            if (_entries.value != parsed) storeFile.writeText(JSON.encodeToString(_entries.value))
         }
     }
 
