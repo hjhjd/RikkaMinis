@@ -16,6 +16,7 @@ import com.openminis.app.provider.DirectAttachment
 import com.openminis.app.provider.LLMRequestContext
 import com.openminis.app.provider.applyUserAgentOverride
 import com.openminis.app.provider.safeOptString
+import com.openminis.app.provider.SseEventReader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import okhttp3.Call
@@ -749,27 +751,26 @@ class OpenAIProvider private constructor(
         var sawFinishReason = false
         var sawUsageBlock = false
 
+        var sawProtocolTerminal = false
+        val firstEventSeen = java.util.concurrent.atomic.AtomicBoolean(false)
+        val firstEventWatchdog = launch {
+            delay(180_000L)
+            if (!firstEventSeen.get()) call.cancel()
+        }
         try {
             send(LLMStreamChunk.Started)
-            var line: String?
             var finishReason: String? = null
 
             // Branch streaming parser based on API format
             val isResponsesAPI = !usesChatCompletionsAPI
+            val events = SseEventReader(reader)
 
-            while (reader.readLine().also { line = it } != null) {
-                val l = line ?: continue
-                // Tolerate `data:` with or without the optional space — the
-                // HTML5 SSE spec only treats one leading space as ignorable,
-                // and some OpenAI-compatible servers (e.g. China Telecom's
-                // eaichat.ctyun.cn deepseek-v4-oc endpoint) emit `data:{...}`
-                // with no space. Strict `data: ` matching dropped every
-                // chunk on those providers, surfacing as empty-stream errors.
-                if (!l.startsWith("data:")) continue
-                val payload = l.removePrefix("data:").let {
-                    if (it.startsWith(" ")) it.removePrefix(" ") else it
-                }
+            while (true) {
+                val payload = events.readData() ?: break
+                firstEventSeen.set(true)
+                firstEventWatchdog.cancel()
                 if (payload == "[DONE]") {
+                    sawProtocolTerminal = true
                     // Flush any remaining buffered content from think tag extraction
                     if (hasThinkTags && thinkTagBuffer.isNotEmpty()) {
                         val remaining = thinkTagBuffer.toString()
@@ -794,11 +795,9 @@ class OpenAIProvider private constructor(
                     )
                     continue
                 }
-                android.util.Log.d("ToolChain[Provider]", "RAW SSE: $payload")
                 sseEventCount++
 
-                // T321: per-event delta-field summary. Only counts/lengths,
-                // never the actual delta text — keeps log volume bounded.
+                // Per-event counters only; never log token-by-token on the network hot path.
                 run {
                     val ev = event
                     val delta = ev.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta")
@@ -809,24 +808,12 @@ class OpenAIProvider private constructor(
                         val rLen = delta.optString("reasoning", "").length
                         val tcLen = delta.optJSONArray("tool_calls")?.length() ?: 0
                         val role = delta.optString("role", "")
-                        if (cLen + rcLen + rLen + tcLen > 0 || delta.has("role")) {
-                            com.openminis.app.logging.AppLogger.debug(
-                                "OpenAIProvider",
-                                "[T321] SSE delta: contentLen=$cLen rcLen=$rcLen rLen=$rLen toolCalls=$tcLen role='$role'"
-                            )
-                        }
                         contentLen += cLen
                         reasoningLen += rcLen + rLen
                         if (tcLen > 0) toolCallEventCount += tcLen
                     } else if (type.isNotEmpty()) {
                         // Responses API event-typed diagnostics
                         val dLen = ev.optString("delta", "").length
-                        if (type.contains("delta") || type == "response.completed" || type == "response.output_item.added" || type == "response.output_item.done") {
-                            com.openminis.app.logging.AppLogger.debug(
-                                "OpenAIProvider",
-                                "[T321] SSE responses type=$type deltaLen=$dLen"
-                            )
-                        }
                         if (type == "response.output_text.delta") contentLen += dLen
                         if (type.startsWith("response.reasoning_")) reasoningLen += dLen
                     }
@@ -884,7 +871,7 @@ class OpenAIProvider private constructor(
                             if (acc != null && delta.isNotEmpty()) {
                                 acc.args.append(delta)
                                 val combined = combineResponsesAPIIds(acc.callId, itemId)
-                                send(LLMStreamChunk.ToolInputDelta(combined, acc.args.toString()))
+                                send(LLMStreamChunk.ToolInputDelta(combined, delta))
                             } else if (acc == null) {
                                 // Pre-T107 this branch silently dropped the entire tool call
                                 // because no accumulator was set up — leaving the model with
@@ -960,6 +947,7 @@ class OpenAIProvider private constructor(
                             )
                         }
                         type == "response.completed" -> {
+                            sawProtocolTerminal = true
                             val resp = event.optJSONObject("response")
                             val status = resp?.optString("status", "")
                             // When the model emitted tool calls the API returns status=completed
@@ -1076,10 +1064,10 @@ class OpenAIProvider private constructor(
                                 val acc = toolCallAccumulators.getOrPut(idx) { ToolCallAccumulator() }
 
                                 tc.safeOptString("id", "").let { if (it.isNotEmpty()) acc.id = it }
-                                tc.optJSONObject("function")?.let { fn ->
+                                val argumentDelta = tc.optJSONObject("function")?.let { fn ->
                                     fn.safeOptString("name", "").let { if (it.isNotEmpty()) acc.name = it }
-                                    fn.safeOptString("arguments", "").let { if (it.isNotEmpty()) acc.args.append(it) }
-                                }
+                                    fn.safeOptString("arguments", "").also { if (it.isNotEmpty()) acc.args.append(it) }
+                                }.orEmpty()
 
                                 // Emit start exactly once per tool call
                                 if (!acc.started && acc.id.isNotEmpty() && acc.name.isNotEmpty()) {
@@ -1090,7 +1078,7 @@ class OpenAIProvider private constructor(
                                 // Emit input delta
                                 if (acc.id.isNotEmpty() && acc.args.isNotEmpty()) {
                                     android.util.Log.d("ToolChain[Provider]", "→ ToolInputDelta id=${acc.id} accumulated=${acc.args.length}chars")
-                                    send(LLMStreamChunk.ToolInputDelta(acc.id, acc.args.toString()))
+                                    send(LLMStreamChunk.ToolInputDelta(acc.id, argumentDelta))
                                 }
                             }
                         }
@@ -1119,6 +1107,10 @@ class OpenAIProvider private constructor(
                         send(LLMStreamChunk.Usage(parseChatCompletionsUsage(usage)))
                     }
                 }
+            }
+
+            if (!sawProtocolTerminal) {
+                throw LLMError.TransientError("OpenAI SSE closed before terminal event")
             }
 
             // Flush any remaining buffered content
@@ -1186,11 +1178,12 @@ class OpenAIProvider private constructor(
             )
             cancel("Stream error", mapError(e))
         } finally {
+            firstEventWatchdog.cancel()
             reader.close()
             response.close()
         }
         channel.close()
-    }
+    }.flowOn(Dispatchers.IO)
 
     /**
      * Best-effort VCPToolBox cascade stop. The interrupt call is deliberately

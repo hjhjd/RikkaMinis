@@ -18,7 +18,7 @@ sealed class LLMStreamChunk {
 
     /** Tool use streaming events */
     data class ToolUseStart(val id: String, val name: String) : LLMStreamChunk()
-    data class ToolInputDelta(val id: String, val accumulated: String) : LLMStreamChunk()
+    data class ToolInputDelta(val id: String, val delta: String) : LLMStreamChunk()
     data class ToolCallComplete(val id: String, val name: String, val args: JSONObject) : LLMStreamChunk()
 
     /**

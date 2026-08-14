@@ -6705,6 +6705,7 @@ class ChatViewModel(
         // can reconstruct how the model assembled (or failed to assemble) the
         // args.
         val toolInputChunkRings: MutableMap<String, MutableList<String>> = mutableMapOf()
+        val liveToolInputBuffers: MutableMap<String, StringBuilder> = mutableMapOf()
         var accumulatedText = ""
         var lastContextTokens = 0  // updated each turn from API usage
 
@@ -7144,59 +7145,33 @@ class ChatViewModel(
                         }
                     }
                     is LLMStreamChunk.ToolInputDelta -> {
-                        // [T-dedupe-toolcallid] Translate to the currently-in-flight
-                        // renamed id so the per-tool ring + block lookup match
-                        // the block that ToolUseStart created.
                         val toolInputId = dedupeToolInputId(chunk.id)
-                        android.util.Log.d("ToolChain[VM]", "[turn=$turn] ToolInputDelta id=$toolInputId len=${chunk.accumulated.length}")
-                        // Maintain a per-tool ring of the most recent `accumulated`
-                        // snapshots so the preflight validator below can dump them
-                        // when an empty/invalid call is detected. Cheap (single
-                        // append + bounded trim) and lives outside any throttle so
-                        // every delta lands here.
-                        val ring = toolInputChunkRings.getOrPut(toolInputId) { mutableListOf() }
-                        ring.add(chunk.accumulated)
-                        if (ring.size > TOOL_INPUT_CHUNK_RING_MAX) {
-                            // Drop from the front so we keep the most recent N.
-                            ring.subList(0, ring.size - TOOL_INPUT_CHUNK_RING_MAX).clear()
-                        }
+                        val inputBuffer = liveToolInputBuffers
+                            .getOrPut(toolInputId) { StringBuilder() }
+                            .append(chunk.delta)
                         val idx = allToolBlocks.indexOfFirst { it.id == toolInputId }
                         if (idx >= 0) {
                             val prev = allToolBlocks[idx]
-                            // Stream-parse partial JSON (mirrors iOS extractPartialStringValue):
-                            //   - pull "tool_title" out early so the pill header updates live
-                            //   - keep the raw accumulated JSON in toolArgs so detail-sheet
-                            //     renderers (extractShellCommand, args.optString("command"), …)
-                            //     can pick up fields as they appear.
-                            //   - leave content empty during streaming (real output arrives
-                            //     after ToolCallComplete).
-                            val partialTitle = extractPartialStringValue("tool_title", chunk.accumulated)
-                            val liveTitle = when {
-                                !partialTitle.isNullOrEmpty() -> partialTitle
-                                prev.toolTitle.isNotEmpty() && prev.toolTitle != prev.toolName -> prev.toolTitle
-                                else -> friendlyToolTitle(prev.toolName)
-                            }
-                            allToolBlocks[idx] = prev.copy(
-                                toolArgs = chunk.accumulated,
-                                toolTitle = liveTitle,
-                                content = "",
-                            )
-                            // T256 tier 2: gate UI push by tool kind. file_write/file_edit
-                            // pump multi-KB JSON through the SSE — pushing every delta
-                            // pegs the UI thread for no readable benefit (the user can't
-                            // skim a partial JSON blob anyway). Mirrors iOS
-                            // AIChatViewModel.swift:6229-6259 (1s file / 200ms other).
-                            // Local state above is mutated unconditionally so when the
-                            // gate eventually opens — or ToolCallComplete force-flushes —
-                            // the latest accumulated args are pushed.
-                            val toolName = prev.toolName
-                            val isHeavyFileTool = toolName == "file_write" || toolName == "file_edit"
+                            val isHeavyFileTool = prev.toolName == "file_write" || prev.toolName == "file_edit"
                             val gateMs = if (isHeavyFileTool) 1_000L else 200L
                             val nowMs = System.currentTimeMillis()
                             val lastTs = if (isHeavyFileTool) lastFileToolInputMs else lastOtherToolInputMs
                             if (nowMs - lastTs >= gateMs) {
-                                if (isHeavyFileTool) lastFileToolInputMs = nowMs
-                                else lastOtherToolInputMs = nowMs
+                                if (isHeavyFileTool) lastFileToolInputMs = nowMs else lastOtherToolInputMs = nowMs
+                                // 只在 UI 发布边界物化累计字符串，避免每个网络片段 O(n) 复制。
+                                val accumulatedInput = inputBuffer.toString()
+                                val ring = toolInputChunkRings.getOrPut(toolInputId) { mutableListOf() }
+                                ring.add(accumulatedInput)
+                                if (ring.size > TOOL_INPUT_CHUNK_RING_MAX) {
+                                    ring.subList(0, ring.size - TOOL_INPUT_CHUNK_RING_MAX).clear()
+                                }
+                                val partialTitle = extractPartialStringValue("tool_title", accumulatedInput)
+                                val liveTitle = when {
+                                    !partialTitle.isNullOrEmpty() -> partialTitle
+                                    prev.toolTitle.isNotEmpty() && prev.toolTitle != prev.toolName -> prev.toolTitle
+                                    else -> friendlyToolTitle(prev.toolName)
+                                }
+                                allToolBlocks[idx] = prev.copy(toolArgs = accumulatedInput, toolTitle = liveTitle, content = "")
                                 withContext(Dispatchers.Main) {
                                     updateAssistantMessage(assistantId, accumulatedText + turnTextSb.toString(), true, allToolBlocks)
                                 }
@@ -7209,6 +7184,12 @@ class ChatViewModel(
                         // the downstream tool-result join all key on the
                         // same value (matches the rename applied at start).
                         val toolCompleteId = dedupeToolCompleteId(chunk.id)
+                        liveToolInputBuffers.remove(toolCompleteId)?.let { buffer ->
+                            val finalRaw = buffer.toString()
+                            val ring = toolInputChunkRings.getOrPut(toolCompleteId) { mutableListOf() }
+                            if (ring.lastOrNull() != finalRaw) ring.add(finalRaw)
+                            if (ring.size > TOOL_INPUT_CHUNK_RING_MAX) ring.subList(0, ring.size - TOOL_INPUT_CHUNK_RING_MAX).clear()
+                        }
                         android.util.Log.d("ToolChain[VM]", "[turn=$turn] ToolCallComplete id=$toolCompleteId name=${chunk.name} args=${chunk.args.toString().take(300)}")
                         toolCalls.add(Triple(toolCompleteId, chunk.name, chunk.args))
                         val idx = allToolBlocks.indexOfFirst { it.id == toolCompleteId }

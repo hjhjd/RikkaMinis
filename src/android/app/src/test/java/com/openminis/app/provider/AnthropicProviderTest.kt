@@ -310,6 +310,27 @@ class AnthropicProviderTest {
     }
 
     @Test
+    fun `streamMessage accepts data without optional space`() = runBlocking {
+        val body = """data:{"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}
+
+data:{"type":"message_delta","delta":{"stop_reason":"end_turn"}}
+
+"""
+        server.enqueue(MockResponse().setBody(body).setHeader("Content-Type", "text/event-stream"))
+        val chunks = provider.streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "Hi")), null, 1024).toList()
+        assertEquals("ok", chunks.filterIsInstance<LLMStreamChunk.Text>().single().text)
+    }
+
+    @Test
+    fun `streamMessage rejects partial EOF`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"partial"}}
+
+""").setHeader("Content-Type", "text/event-stream"))
+        val thrown = runCatching { provider.streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "Hi")), null, 1024).toList() }.exceptionOrNull()
+        assertTrue(generateSequence(thrown) { it.cause }.any { it is LLMError.TransientError })
+    }
+
+    @Test
     fun `streamMessage includes temperature in request`() = runBlocking {
         val sseBody = buildString {
             appendLine("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}")

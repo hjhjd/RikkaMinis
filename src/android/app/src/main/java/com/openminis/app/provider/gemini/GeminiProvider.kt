@@ -16,8 +16,12 @@ import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.DirectAttachment
 import com.openminis.app.provider.LLMRequestContext
 import com.openminis.app.provider.safeOptString
+import com.openminis.app.provider.SseEventReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -126,7 +130,19 @@ class GeminiProvider(
             activeCall.compareAndSet(call, null)
             try { call.cancel() } catch (_: Exception) {}
         }
-        val response = call.execute()
+        val headersArrived = java.util.concurrent.atomic.AtomicBoolean(false)
+        val headerTimedOut = java.util.concurrent.atomic.AtomicBoolean(false)
+        val headerWatchdog = launch {
+            delay(30_000L)
+            if (!headersArrived.get()) { headerTimedOut.set(true); call.cancel() }
+        }
+        val response = try { call.execute() } catch (e: java.io.IOException) {
+            if (headerTimedOut.get()) throw LLMError.TransientError("No response headers after 30s")
+            throw e
+        } finally {
+            headersArrived.set(true)
+            headerWatchdog.cancel()
+        }
         if (!response.isSuccessful) {
             val errorBody = response.body?.string() ?: ""
             response.close()
@@ -134,16 +150,22 @@ class GeminiProvider(
         }
 
         val reader = BufferedReader(InputStreamReader(response.body!!.byteStream()))
+        val firstEventSeen = java.util.concurrent.atomic.AtomicBoolean(false)
+        val firstEventWatchdog = launch {
+            delay(180_000L)
+            if (!firstEventSeen.get()) call.cancel()
+        }
         try {
             var started = false
             var lastFinishReason: String? = null
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                val l = line ?: continue
-                if (!l.startsWith("data: ")) continue
-                val payload = l.removePrefix("data: ")
-
-                val json = try { JSONObject(payload) } catch (_: Exception) { continue }
+            val events = SseEventReader(reader)
+            while (true) {
+                val payload = events.readData() ?: break
+                firstEventSeen.set(true)
+                firstEventWatchdog.cancel()
+                val json = try { JSONObject(payload) } catch (e: Exception) {
+                    throw LLMError.TransientError("Malformed Gemini SSE event: ${e.message}")
+                }
 
                 if (!started) {
                     send(LLMStreamChunk.Started)
@@ -175,15 +197,18 @@ class GeminiProvider(
                     lastFinishReason = reason
                 }
             }
-            send(LLMStreamChunk.Finished(lastFinishReason ?: "end_turn"))
+            val terminal = lastFinishReason
+                ?: throw LLMError.TransientError("Gemini SSE closed before finishReason")
+            send(LLMStreamChunk.Finished(terminal))
         } catch (e: Exception) {
             cancel("Stream error", mapError(e))
         } finally {
+            firstEventWatchdog.cancel()
             reader.close()
             response.close()
         }
         channel.close()
-    }
+    }.flowOn(Dispatchers.IO)
 
     private fun buildRequestBody(
         messages: List<LLMMessage>,

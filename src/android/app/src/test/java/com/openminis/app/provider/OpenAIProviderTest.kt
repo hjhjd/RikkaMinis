@@ -310,6 +310,15 @@ class OpenAIProviderTest {
     // -- Streaming --
 
     @Test
+    fun `streamMessage rejects partial EOF without DONE`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""data:{"choices":[{"delta":{"content":"partial"}}]}
+
+""").setHeader("Content-Type", "text/event-stream"))
+        val thrown = runCatching { provider.streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "Hi")), null, 1024).toList() }.exceptionOrNull()
+        assertTrue(generateSequence(thrown) { it.cause }.any { it is LLMError.TransientError })
+    }
+
+    @Test
     fun `streamMessage parses SSE events with DONE`() = runBlocking {
         val streamBody = buildString {
             appendLine("data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}")
@@ -361,6 +370,8 @@ class OpenAIProviderTest {
         val starts = chunks.filterIsInstance<LLMStreamChunk.ToolUseStart>()
         assertEquals(listOf("call_a", "call_b"), starts.map { it.id })
         assertEquals(listOf("read_file", "search_web"), starts.map { it.name })
+        val deltas = chunks.filterIsInstance<LLMStreamChunk.ToolInputDelta>()
+        assertEquals(listOf("{\"path\":\"", "{\"query\":\"", "kotlin\"}", "README.md\"}"), deltas.map { it.delta })
         val completes = chunks.filterIsInstance<LLMStreamChunk.ToolCallComplete>()
         assertEquals(2, completes.size)
         assertEquals("README.md", completes[0].args.getString("path"))

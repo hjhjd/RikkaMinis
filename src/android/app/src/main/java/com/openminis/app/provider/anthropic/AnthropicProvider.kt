@@ -17,8 +17,12 @@ import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.LLMRequestContext
 import com.openminis.app.provider.applyUserAgentOverride
 import com.openminis.app.provider.safeOptString
+import com.openminis.app.provider.SseEventReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -153,7 +157,19 @@ class AnthropicProvider(
             activeCall.compareAndSet(call, null)
             try { call.cancel() } catch (_: Exception) {}
         }
-        val response = call.execute()
+        val headersArrived = java.util.concurrent.atomic.AtomicBoolean(false)
+        val headerTimedOut = java.util.concurrent.atomic.AtomicBoolean(false)
+        val headerWatchdog = launch {
+            delay(30_000L)
+            if (!headersArrived.get()) { headerTimedOut.set(true); call.cancel() }
+        }
+        val response = try { call.execute() } catch (e: java.io.IOException) {
+            if (headerTimedOut.get()) throw LLMError.TransientError("No response headers after 30s")
+            throw e
+        } finally {
+            headersArrived.set(true)
+            headerWatchdog.cancel()
+        }
         val durationMs = System.currentTimeMillis() - startTime
 
         if (!response.isSuccessful) {
@@ -200,16 +216,23 @@ class AnthropicProvider(
         var currentToolName: String? = null
         val toolInputBuffer = StringBuilder()
 
+        var sawTerminal = false
+        val firstEventSeen = java.util.concurrent.atomic.AtomicBoolean(false)
+        val firstEventWatchdog = launch {
+            delay(180_000L)
+            if (!firstEventSeen.get()) call.cancel()
+        }
         try {
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                val l = line ?: continue
-                if (!l.startsWith("data: ")) continue
-                val payload = l.removePrefix("data: ")
-                if (payload == "[DONE]") break
+            val events = SseEventReader(reader)
+            while (true) {
+                val payload = events.readData() ?: break
+                firstEventSeen.set(true)
+                firstEventWatchdog.cancel()
+                if (payload == "[DONE]") { sawTerminal = true; break }
 
-                val event = try { JSONObject(payload) } catch (_: Exception) { continue }
-                android.util.Log.d("ToolChain[Provider]", "RAW SSE: $payload")
+                val event = try { JSONObject(payload) } catch (e: Exception) {
+                    throw LLMError.TransientError("Malformed Anthropic SSE event: ${e.message}")
+                }
                 val eventType = event.safeOptString("type", "")
 
                 when (eventType) {
@@ -245,7 +268,7 @@ class AnthropicProvider(
                                 if (partial.isNotEmpty() && currentToolId != null) {
                                     toolInputBuffer.append(partial)
                                     android.util.Log.d("ToolChain[Provider]", "→ ToolInputDelta id=$currentToolId accumulated=${toolInputBuffer.length}chars")
-                                    send(LLMStreamChunk.ToolInputDelta(currentToolId!!, toolInputBuffer.toString()))
+                                    send(LLMStreamChunk.ToolInputDelta(currentToolId!!, partial))
                                 }
                             }
                         }
@@ -271,17 +294,21 @@ class AnthropicProvider(
                         val stopReason = event.optJSONObject("delta")
                             ?.safeOptString("stop_reason", "")?.ifEmpty { null }
                         send(LLMStreamChunk.Finished(stopReason))
+                        sawTerminal = true
                     }
+                    "message_stop" -> sawTerminal = true
                 }
             }
+            if (!sawTerminal) throw LLMError.TransientError("Anthropic SSE closed before terminal event")
         } catch (e: Exception) {
             cancel("Stream error", mapError(e))
         } finally {
+            firstEventWatchdog.cancel()
             reader.close()
             response.close()
         }
         channel.close()
-    }
+    }.flowOn(Dispatchers.IO)
 
     /**
      * Build the `system` field as a JSON array of content blocks.
