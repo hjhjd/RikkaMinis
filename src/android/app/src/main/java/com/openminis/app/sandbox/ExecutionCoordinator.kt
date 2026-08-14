@@ -100,12 +100,19 @@ object ExecutionCoordinator {
         timeout: Long = 600_000L,
         lineCallback: ((String) -> Unit)? = null
     ): CommandResult {
-        // ConcurrentHashMap.getOrPut is not atomic, use putIfAbsent pattern
+        // Count both the active command and callers queued on the session mutex.
+        // Final state removal is forbidden until this count returns to zero.
         val state = sessions.get(sessionId)
         val mutex = state.mutex
+        state.inFlightCalls.incrementAndGet()
 
-        return mutex.withLock {
-            val startTime = System.currentTimeMillis()
+        try {
+            return mutex.withLock {
+                if (state.closeRequested) {
+                finalizeClosedSession(sessionId, state)
+                    throw kotlinx.coroutines.CancellationException("PRoot session '$sessionId' is closed")
+                }
+                val startTime = System.currentTimeMillis()
 
             // Auto-boot PRoot if not already booted
             if (!PRootKernel.isBooted) {
@@ -207,9 +214,8 @@ object ExecutionCoordinator {
                 )
             }
             if (nativeOversized || javaPressured || cmdOverLimit || state.recycleRequested) {
-                sessionDidTerminate(sessionId)
+                recycleShell(state)
             }
-
             CommandResult(
                 output = output,
                 exitCode = result.exitCode,
@@ -217,6 +223,12 @@ object ExecutionCoordinator {
                 truncated = outputTruncated,
                 timedOut = result.exitCode == 124,
             )
+            }
+        } finally {
+            if (state.inFlightCalls.decrementAndGet() == 0 && state.closeRequested &&
+                state.mutex.tryLock()) {
+                try { finalizeClosedSession(sessionId, state) } finally { state.mutex.unlock() }
+            }
         }
     }
 
@@ -352,11 +364,8 @@ object ExecutionCoordinator {
     internal fun hasActiveShell(sessionId: String): Boolean =
         sessions.existing(sessionId)?.shell?.isAlive == true
 
-    /**
-     * Called when a session is closed. Stops and removes the shell.
-     */
-    fun sessionDidTerminate(sessionId: String) {
-        val state = sessions.existing(sessionId) ?: return
+    /** Stop a shell but retain the stable session state and mutex. */
+    private fun recycleShell(state: SessionExecutionState) {
         val shell = state.shell
         state.activeExecution?.cancel()
         state.activeExecution = null
@@ -365,7 +374,27 @@ object ExecutionCoordinator {
         state.lastActivityMs = 0L
         state.recycleRequested = false
         shell?.stop()
-        if (shell != null) Log.i(TAG, "[$sessionId] Shell terminated")
+    }
+
+    /** Remove a state only after it is closed and has no active execution. */
+    private fun finalizeClosedSession(sessionId: String, state: SessionExecutionState): Boolean {
+        if (!state.closeRequested || state.isExecuting || state.inFlightCalls.get() != 0) return false
+        recycleShell(state)
+        return sessions.remove(sessionId, state)
+    }
+
+    /** Called when the owning chat session truly ends. */
+    fun sessionDidTerminate(sessionId: String) {
+        val state = sessions.existing(sessionId) ?: return
+        state.closeRequested = true
+        state.activeExecution?.cancel()
+        if (state.mutex.tryLock()) {
+            try {
+                finalizeClosedSession(sessionId, state)
+            } finally {
+                state.mutex.unlock()
+            }
+        }
     }
 
     /**
@@ -383,7 +412,7 @@ object ExecutionCoordinator {
                 if (!state.isExecuting && !shell.isExecuting && last != 0L &&
                     (now - last) > SHELL_IDLE_TIMEOUT_MS) {
                     Log.w(TAG, "[$sessionId] shell idle ${(now - last) / 1000}s — recycling")
-                    sessionDidTerminate(sessionId)
+                    recycleShell(state)
                 }
             } finally {
                 state.mutex.unlock()
@@ -430,7 +459,11 @@ object ExecutionCoordinator {
      */
     fun stopCurrentCommand(sessionId: String? = null) {
         if (sessionId != null) {
-            sessionDidTerminate(sessionId)
+            val state = sessions.existing(sessionId)
+            state?.activeExecution?.cancel()
+            if (state != null && state.mutex.tryLock()) {
+                try { recycleShell(state) } finally { state.mutex.unlock() }
+            }
             Log.i(TAG, "[$sessionId] Shell stopped by user")
         } else {
             // Stop all sessions (legacy/fallback)
@@ -442,6 +475,7 @@ object ExecutionCoordinator {
                 state.injectedEnvKeys = emptySet()
                 state.lastActivityMs = 0L
                 state.recycleRequested = false
+                state.closeRequested = true
             }
             @Suppress("DEPRECATION")
             ShellExecutor.destroyCurrent()

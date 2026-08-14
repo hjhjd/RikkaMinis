@@ -1,6 +1,8 @@
 package com.openminis.app.sandbox
 
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
@@ -27,6 +29,28 @@ class SessionExecutionStateRegistryTest {
             assertSame(states.first(), it)
             assertSame(states.first().mutex, it.mutex)
         }
+    }
+
+    @Test
+    fun removeRequiresExactStateIdentity() {
+        val registry = SessionExecutionStateRegistry()
+        val registered = registry.get("session")
+        val impostor = SessionExecutionState()
+
+        assertFalse(registry.remove("session", impostor))
+        assertSame(registered, registry.existing("session"))
+        assertTrue(registry.remove("session", registered))
+        assertNull(registry.existing("session"))
+    }
+
+    @Test
+    fun stateTracksQueuedAndActiveCallsSeparately() {
+        val state = SessionExecutionStateRegistry().get("session")
+        state.inFlightCalls.incrementAndGet()
+        assertFalse(state.isExecuting)
+        state.activeExecution = ActiveExecutionHandle { }
+        assertTrue(state.isExecuting)
+        assertTrue(state.inFlightCalls.get() == 1)
     }
 
     @Test

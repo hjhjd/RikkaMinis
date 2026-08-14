@@ -12,14 +12,14 @@
 > - 阶段 0：部分完成；marker、UTF-8、路径逃逸、远端输出与截断已有回归测试，其余基线待补。
 > - 阶段 1：完成；固定 `sandbox_dispatch`、Provider 骨架、Channel 事件与 UI 节流已落地。
 > - 阶段 2：主链路完成；不透明协议、稳定 sandbox ID、指令集 UI 与服务端最小 DSL 已验证。
-> - 阶段 3：进行中；`shell_execute` 已归属 `PRootToolProvider` 且仅执行本地 PRoot，旧 WS exec 特殊路由已删除；旧 `fs.*`/`transfer.*` 仍隔离在兼容网关，状态最终回收待继续。
+> - 阶段 3：进行中；`shell_execute` 已归属 `PRootToolProvider`，会话状态仅在关闭且无活动/排队调用时最终删除；旧 `fs.*`/`transfer.*` 兼容协议下线策略待继续。
 > - 阶段 4：P0 完成；P1 路径 containment、空闲执行检查、marker、UTF-8 与 mutex 回收竞态均已修复。
 > - 阶段 5：未完成；本地 Shell 最终语义与工具契约待确定。
 > - 阶段 6：未完成；WebSocket 文本/协议限额已完成，通用 Resource 通道与其余纵深防御待实现。
 >
 > 最近验证：提交 `190c2b2` 与 `ba4f4d8` 后 Android JVM 完整测试通过；最近 Debug APK 构建通过，SHA-256：`b1da1e9e6899c2b60d6d859f3a561352004c359c3110e31dd7ea5b178c63bcde`。
 >
-> 当前统计：剩余 33 个未勾选条目（包含父任务与子任务）；阶段 3 剩余 4 项。
+> 当前统计：剩余 26 个未勾选条目（包含父任务与子任务）；阶段 3 剩余 2 项。
 
 ## 目标
 
@@ -200,7 +200,7 @@ capabilities / dispatch / cancel
   - recycleRequested；
   - injectedEnvKeys。
 - [x] Shell 回收与 mutex 生命周期分离。
-- [ ] 只有会话真正结束且无活动执行时才删除 session state。
+- [x] 只有会话真正结束且无活动或排队执行时才删除 session state。
 - [x] 资源监控只请求回收，由持锁执行路径完成最终清理。
 
 ### 3.3 旧 ExecPlane 迁移
