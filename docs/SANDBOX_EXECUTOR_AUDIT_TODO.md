@@ -4,7 +4,7 @@
 >
 > 审计基线：`44f3a53`
 >
-> 状态：持续施工；阶段 1 与阶段 2 主链路完成，P0 完成，P1 生命周期竞态修复完成；旧协议、PRoot 能力拆分与 Resource 通道待继续。
+> 状态：持续施工；阶段 1、阶段 2 与安全 P0/P1 完成；阶段 3 已统一 PRoot 会话状态并隔离旧 ExecPlane 兼容入口，Provider 化、兼容协议下线与 Resource 通道待继续。
 >
 > 最近更新：2026-08-14
 >
@@ -12,12 +12,14 @@
 > - 阶段 0：部分完成；marker、UTF-8、路径逃逸、远端输出与截断已有回归测试，其余基线待补。
 > - 阶段 1：完成；固定 `sandbox_dispatch`、Provider 骨架、Channel 事件与 UI 节流已落地。
 > - 阶段 2：主链路完成；不透明协议、稳定 sandbox ID、指令集 UI 与服务端最小 DSL 已验证。
-> - 阶段 3：进行中；ExecutionCoordinator 已收敛为本地 PRoot 生命周期，旧远端 shell_execute 已隔离到兼容网关；Provider 拆分、旧文件协议适配与状态最终回收仍待继续。
+> - 阶段 3：进行中；`ExecutionCoordinator` 已收敛为本地 PRoot 生命周期；旧 `shell_execute`、`fs.*`、`transfer.*` 已分别隔离到兼容网关，Provider 拆分、兼容协议下线与状态最终回收仍待继续。
 > - 阶段 4：P0 完成；P1 路径 containment、空闲执行检查、marker、UTF-8 与 mutex 回收竞态均已修复。
 > - 阶段 5：未完成；本地 Shell 最终语义与工具契约待确定。
 > - 阶段 6：未完成；WebSocket 文本/协议限额已完成，通用 Resource 通道与其余纵深防御待实现。
 >
-> 最近验证：Android JVM 完整测试与 Debug APK 构建通过；Debug APK SHA-256：`b1da1e9e6899c2b60d6d859f3a561352004c359c3110e31dd7ea5b178c63bcde`。
+> 最近验证：提交 `190c2b2` 与 `ba4f4d8` 后 Android JVM 完整测试通过；最近 Debug APK 构建通过，SHA-256：`b1da1e9e6899c2b60d6d859f3a561352004c359c3110e31dd7ea5b178c63bcde`。
+>
+> 当前统计：剩余 33 个未勾选条目（包含父任务与子任务）；阶段 3 剩余 4 项。
 
 ## 目标
 
