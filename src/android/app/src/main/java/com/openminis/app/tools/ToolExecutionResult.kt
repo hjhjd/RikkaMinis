@@ -30,6 +30,8 @@ data class ToolExecutionResult(
     val cancelled: Boolean = false,
     val truncated: Boolean = false,
     val sandboxName: String? = null,
+    val durationMs: Long? = null,
+    val exitCode: Int? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -40,7 +42,8 @@ data class ToolExecutionResult(
             pageURL == other.pageURL && imageFilePath == other.imageFilePath &&
             imageLinuxPath == other.imageLinuxPath &&
             timedOut == other.timedOut && cancelled == other.cancelled &&
-            truncated == other.truncated && sandboxName == other.sandboxName
+            truncated == other.truncated && sandboxName == other.sandboxName &&
+            durationMs == other.durationMs && exitCode == other.exitCode
     }
 
     override fun hashCode(): Int {
@@ -56,6 +59,8 @@ data class ToolExecutionResult(
         result = 31 * result + cancelled.hashCode()
         result = 31 * result + truncated.hashCode()
         result = 31 * result + (sandboxName?.hashCode() ?: 0)
+        result = 31 * result + (durationMs?.hashCode() ?: 0)
+        result = 31 * result + (exitCode ?: 0)
         return result
     }
 }

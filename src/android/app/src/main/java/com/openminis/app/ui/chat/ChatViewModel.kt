@@ -8167,7 +8167,9 @@ class ChatViewModel(
             when (event) {
                 is ToolInvocationEvent.Started -> title = event.title ?: title
                 is ToolInvocationEvent.Output -> {
-                    preview.append(event.text)
+                    val (visible, urls) = MinisUrlMarker.extract(event.text)
+                    urls.forEach(MinisOpenUrlBroker::offer)
+                    preview.append(visible)
                     if (preview.length > DISPATCH_UI_TAIL_CHARS) preview.delete(0, preview.length - DISPATCH_UI_TAIL_CHARS)
                     val now = android.os.SystemClock.elapsedRealtime()
                     if (now - lastFlush >= DISPATCH_UI_FLUSH_MS) {
@@ -8185,10 +8187,14 @@ class ChatViewModel(
         }
         failure?.let { return ToolExecutionResult(it, false, toolTitle = title, sandboxName = sandboxName) }
         val r = final ?: return ToolExecutionResult("Invocation ended without a terminal result", false, toolTitle = title, sandboxName = sandboxName)
+        val body = r.output.ifBlank { "(no output)" }
+        val exit = r.exitCode?.takeIf { it != 0 }?.let { " (exit code $it)" }.orEmpty()
+        val truncation = if (r.truncated) "\n[output truncated]" else ""
         return ToolExecutionResult(
-            output = "[sandbox: ${r.sandboxName ?: sandboxName}]\n${r.output.ifBlank { "(no output)" }}",
+            output = "[sandbox: ${r.sandboxName ?: sandboxName}]\n$body$exit$truncation",
             success = r.success, toolTitle = title, timedOut = r.timedOut, cancelled = r.cancelled,
             truncated = r.truncated, sandboxName = r.sandboxName ?: sandboxName,
+            durationMs = r.durationMs, exitCode = r.exitCode,
         )
     }
 
@@ -8352,33 +8358,20 @@ class ChatViewModel(
                 }
             }
 
-            var result = prootToolProvider.execute(
-                sessionId = dispatchSessionId,
-                command = command,
-                timeoutMs = timeoutSec * 1000L,
-                lineCallback = lc@{ rawLine ->
-                    // Strip any OSC MinisOpenURL markers emitted by
-                    // /usr/local/bin/minis-open and forward the captured
-                    // URLs to the broker so the chat screen can present the
-                    // in-app preview. Lines that were *entirely* a marker
-                    // (nothing visible afterwards) are dropped so the tool
-                    // output doesn't grow blank rows.
-                    val (cleanedLine, capturedUrls) = MinisUrlMarker.extract(rawLine)
-                    for (raw in capturedUrls) MinisOpenUrlBroker.offer(raw)
-                    if (cleanedLine.isEmpty() && rawLine.isNotEmpty()) return@lc
-
-                    val idx = toolBlocks.indexOfFirst { it.id == toolId }
-                    if (idx >= 0) {
-                        val current = toolBlocks[idx].content
-                        val updated = if (current.isEmpty()) cleanedLine else "$current\n$cleanedLine"
-                        // Keep last 50 lines for display
-                        val trimmed = updated.lines().takeLast(50).joinToString("\n")
-                        toolBlocks[idx] = toolBlocks[idx].copy(content = trimmed)
-                        viewModelScope.launch(Dispatchers.Main) {
-                            updateAssistantMessage(assistantId, currentText, true, toolBlocks)
-                        }
-                    }
-                },
+            var unifiedResult = consumeInvocationEvents(
+                provider = prootToolProvider,
+                invocation = ToolInvocation(
+                    ToolIdentity(PRootToolProvider.ID, PRootToolProvider.TOOL_NAME),
+                    toolId, dispatchSessionId, JSONObject(argsJson).put("command", command).toString(),
+                ),
+                toolId = toolId, toolBlocks = toolBlocks, assistantId = assistantId, currentText = currentText,
+                fallbackTitle = toolTitle, sandboxName = "proot",
+            )
+            var result = ExecutionCoordinator.CommandResult(
+                output = unifiedResult.output.substringAfter('\n', unifiedResult.output),
+                exitCode = unifiedResult.exitCode ?: if (unifiedResult.success) 0 else 1,
+                durationMs = unifiedResult.durationMs ?: 0L, truncated = unifiedResult.truncated,
+                timedOut = unifiedResult.timedOut, cancelled = unifiedResult.cancelled, sandboxName = "proot",
             )
 
             // [T-bash-on-demand] M5 self-heal: our bash wrapper returns sentinel
@@ -8399,10 +8392,18 @@ class ChatViewModel(
                 }
                 val healed = OnDemandBash.ensureBash(context, executor)
                 command = if (healed is OnDemandBash.Outcome.Available) wrapForBash(bashScript!!) else bashScript!!
-                result = prootToolProvider.execute(
-                    sessionId = dispatchSessionId,
-                    command = command,
-                    timeoutMs = timeoutSec * 1000L,
+                unifiedResult = consumeInvocationEvents(
+                    provider = prootToolProvider,
+                    invocation = ToolInvocation(ToolIdentity(PRootToolProvider.ID, PRootToolProvider.TOOL_NAME),
+                        toolId, dispatchSessionId, JSONObject(argsJson).put("command", command).toString()),
+                    toolId = toolId, toolBlocks = toolBlocks, assistantId = assistantId, currentText = currentText,
+                    fallbackTitle = toolTitle, sandboxName = "proot",
+                )
+                result = ExecutionCoordinator.CommandResult(
+                    output = unifiedResult.output.substringAfter('\n', unifiedResult.output),
+                    exitCode = unifiedResult.exitCode ?: if (unifiedResult.success) 0 else 1,
+                    durationMs = unifiedResult.durationMs ?: 0L, truncated = unifiedResult.truncated,
+                    timedOut = unifiedResult.timedOut, cancelled = unifiedResult.cancelled, sandboxName = "proot",
                 )
             }
 
@@ -8455,6 +8456,8 @@ class ChatViewModel(
                 cancelled = result.cancelled,
                 truncated = result.truncated,
                 sandboxName = result.sandboxName,
+                durationMs = result.durationMs,
+                exitCode = result.exitCode,
             )
         } catch (e: Exception) {
             ToolExecutionResult("Error: ${e.message}", false)

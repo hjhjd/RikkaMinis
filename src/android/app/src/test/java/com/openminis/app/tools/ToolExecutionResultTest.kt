@@ -13,5 +13,7 @@ class ToolExecutionResultTest {
         assertNotEquals(base, base.copy(cancelled = true))
         assertNotEquals(base, base.copy(truncated = true))
         assertNotEquals(base, base.copy(sandboxName = "remote"))
+        assertNotEquals(base, base.copy(durationMs = 1))
+        assertNotEquals(base, base.copy(exitCode = 7))
     }
 }

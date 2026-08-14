@@ -362,7 +362,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 - [x] 定义与执行协议无关的 `ToolExecutionPresentation`：invocationId、toolName、sandboxId、sandboxName、status、output、durationMs、exitCode、timedOut、cancelled、truncated。
 - [x] 明确字段可用性：PRoot 提供 exitCode；WS 仅在服务端结构化提供时展示，不从不透明文本猜测退出码。
-- [ ] 统一空输出、非零退出、通道错误、执行错误、超时、取消和截断提示文案。
+- [x] 统一空输出、非零退出、通道错误、执行错误、超时、取消和截断提示文案。
 - [x] 保持 `ToolExecutionResult` 为兼容边界，新增展示模型后逐步移除 ViewModel 内重复格式化。
 
 ### 7.2 统一 Provider 事件流
@@ -377,8 +377,8 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 - [x] 建立 invocationId → active handle 注册表，PRoot 映射到 `ActiveExecutionHandle`，WS 映射到 request ID/cancel。
 - [x] 实现两个 Provider 的 `cancel(invocationId)`，并保证取消幂等。
-- [ ] 停止按钮只调用统一取消入口，不再感知 PersistentShell 或 WebSocket request ID。
-- [ ] 验证取消返回后 PRoot guest 命令已停止，WS 调用不重放且不回退到 PRoot。
+- [x] 停止按钮只调用统一取消入口，不再感知 PersistentShell 或 WebSocket request ID。
+- [x] 验证取消返回后 PRoot guest 命令已停止，WS 调用不重放且不回退到 PRoot。
 
 ### 7.4 收敛 ChatViewModel 与 UI
 
