@@ -41,7 +41,7 @@ object AgentTools {
         }
     }
 
-    private fun sandboxDispatchDefinition(sandboxPrompt: String?): AgentToolDefinition = AgentToolDefinition(
+    fun sandboxDispatchDefinition(sandboxPrompt: String?): AgentToolDefinition = AgentToolDefinition(
         name = "sandbox_dispatch",
         description = "Send an opaque UTF-8 instruction payload to an explicitly named WebSocket sandbox. " +
             "Android does not parse, rewrite, or interpret payload verbs; use only syntax the user supplied from that sandbox's copied instruction set. " +

@@ -348,7 +348,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 ## 后续阶段 7：统一 PRoot 与 WS 的调用事件和展示
 
-> 状态：已规划，尚未施工。
+> 状态：施工中；统一展示状态机、调用结果字段、PRoot/WS Provider 事件流与取消注册表已落地，ViewModel 消费器待迁移。
 >
 > 边界：只统一事件、取消和 UI 展示；不合并工具入口，不改变 WS 不透明协议，不让 `sandbox_dispatch` 接受 `proot`，不改变 PRoot 持久 Shell 语义。
 
@@ -356,27 +356,27 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 - [ ] 记录当前 `shell_execute` 与 `sandbox_dispatch` 的 UI 行为矩阵：运行态、流式刷新、耗时、成功、失败、超时、取消、截断、sandbox 标识和空输出。
 - [ ] 为统一前的关键差异保存截图或最小复现，避免重构后丢失既有能力。
-- [ ] 增加纯 JVM 状态归并测试，覆盖 Started → Output* → Completed/Failed/Cancelled 的合法转换。
+- [x] 增加纯 JVM 状态归并测试，覆盖 Started → Output* → Completed/Failed/Cancelled 的合法转换。
 
 ### 7.1 定义统一调用展示模型
 
-- [ ] 定义与执行协议无关的 `ToolExecutionPresentation`：invocationId、toolName、sandboxId、sandboxName、status、output、durationMs、exitCode、timedOut、cancelled、truncated。
-- [ ] 明确字段可用性：PRoot 提供 exitCode；WS 仅在服务端结构化提供时展示，不从不透明文本猜测退出码。
+- [x] 定义与执行协议无关的 `ToolExecutionPresentation`：invocationId、toolName、sandboxId、sandboxName、status、output、durationMs、exitCode、timedOut、cancelled、truncated。
+- [x] 明确字段可用性：PRoot 提供 exitCode；WS 仅在服务端结构化提供时展示，不从不透明文本猜测退出码。
 - [ ] 统一空输出、非零退出、通道错误、执行错误、超时、取消和截断提示文案。
-- [ ] 保持 `ToolExecutionResult` 为兼容边界，新增展示模型后逐步移除 ViewModel 内重复格式化。
+- [x] 保持 `ToolExecutionResult` 为兼容边界，新增展示模型后逐步移除 ViewModel 内重复格式化。
 
 ### 7.2 统一 Provider 事件流
 
-- [ ] 将 `PRootToolProvider.invoke()` 改为有界 `callbackFlow`/Channel，可靠发送 Started、Output、Completed、Failed 和取消事件。
-- [ ] 为 WS 增加 `SandboxDispatchProvider`，把 `SandboxDispatchService` 输出转换为同一套 `ToolInvocationEvent`。
+- [x] 将 `PRootToolProvider.invoke()` 改为有界 `callbackFlow`/Channel，可靠发送 Started、Output、Completed、Failed 和取消事件。
+- [x] 为 WS 增加 `SandboxDispatchProvider`，把 `SandboxDispatchService` 输出转换为同一套 `ToolInvocationEvent`。
 - [ ] 两个 Provider 共用单事件、累计输出和 UI 预览上限；拥塞时只丢中间预览，不丢最终状态与截断标记。
-- [ ] 保证每个 invocation 只产生一个终态；处理完成、超时和外部取消同时到达的竞态。
-- [ ] Provider 不解析或改写 WS payload；PRoot 与 WS 仍使用独立参数和执行实现。
+- [x] 保证每个 invocation 只产生一个终态；处理完成、超时和外部取消同时到达的竞态。
+- [x] Provider 不解析或改写 WS payload；PRoot 与 WS 仍使用独立参数和执行实现。
 
 ### 7.3 统一取消生命周期
 
-- [ ] 建立 invocationId → active handle 注册表，PRoot 映射到 `ActiveExecutionHandle`，WS 映射到 request ID/cancel。
-- [ ] 实现两个 Provider 的 `cancel(invocationId)`，并保证取消幂等。
+- [x] 建立 invocationId → active handle 注册表，PRoot 映射到 `ActiveExecutionHandle`，WS 映射到 request ID/cancel。
+- [x] 实现两个 Provider 的 `cancel(invocationId)`，并保证取消幂等。
 - [ ] 停止按钮只调用统一取消入口，不再感知 PersistentShell 或 WebSocket request ID。
 - [ ] 验证取消返回后 PRoot guest 命令已停止，WS 调用不重放且不回退到 PRoot。
 

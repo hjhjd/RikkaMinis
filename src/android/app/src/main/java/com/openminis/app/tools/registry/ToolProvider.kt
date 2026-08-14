@@ -67,6 +67,10 @@ data class ToolInvocationResult(
     val timedOut: Boolean = false,
     val cancelled: Boolean = false,
     val truncated: Boolean = false,
+    val durationMs: Long? = null,
+    val exitCode: Int? = null,
+    val sandboxId: String? = null,
+    val sandboxName: String? = null,
 )
 
 /**
