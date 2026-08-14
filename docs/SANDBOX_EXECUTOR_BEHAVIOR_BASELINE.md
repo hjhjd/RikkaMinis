@@ -42,3 +42,12 @@ PRoot 与 WS 继续使用独立工具和执行协议，但现统一转换为 `To
 - WS：不从 payload 或输出文本推断 exitCode；显示请求使用的稳定 sandbox ID。
 - `shell_execute` 仍只执行本地 PRoot；`sandbox_dispatch` 仍拒绝 `proot` 且不解析 payload。
 - Provider 通过 invocationId 注册取消句柄；UI 不接触 PersistentShell 或 WS request ID。
+
+### 阶段 7 验收结果（2026-08-14）
+
+- Android JVM 完整测试：通过；
+- Debug APK：构建通过；
+- Python ExecPlane：25 项通过；
+- APK SHA-256：`f8bb70a1a25980f002d06f84385ba145f2e7430a48d43e4f379de76a15cf8c67`；
+- 尚待设备复跑：PRoot/WS 并行取消、会话切换与前后台恢复；
+- 尚待代码清理：移除两个旧包装函数，使 ChatViewModel 只保留通用事件消费入口。

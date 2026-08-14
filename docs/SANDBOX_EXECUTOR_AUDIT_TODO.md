@@ -4,9 +4,9 @@
 >
 > 审计基线：`44f3a53`
 >
-> 状态：原审计整改完成；阶段 0 至阶段 6 全部验收。后续阶段 7（统一 PRoot/WS 调用事件与展示）已规划，尚未施工。
+> 状态：阶段 0 至阶段 6 已完成；阶段 7 主体完成，剩余旧包装函数清理与设备 smoke。
 >
-> 最近更新：2026-08-14（收官校准）
+> 最近更新：2026-08-14（阶段 7 主体完成）
 >
 > 进度摘要：
 > - 阶段 0：完成；行为矩阵、关键缺陷复现、JVM 回归与端到端 smoke commands 已保存。
@@ -17,9 +17,9 @@
 > - 阶段 5：完成；决定保留每 session 持久 Shell，已记录方案 A 评估、方案 B 契约、重置 API 与统一展示元数据。
 > - 阶段 6：完成；ResourceDescriptor/ResourceChannel、Agent 沙箱权限与纵深防御均已落地。
 >
-> 最近验证：收官改造后 Android JVM 完整测试、Debug APK 构建及 Python ExecPlane 25 项测试均通过；最新 Debug APK SHA-256：`69de034d7730187bdfad6e311a17e5d9d0a1f1d60e54dca250f1152702df486a`。
+> 最近验证：阶段 7 改造后 Android JVM 完整测试、Debug APK 构建及 Python ExecPlane 25 项测试均通过；最新 Debug APK SHA-256：`f8bb70a1a25980f002d06f84385ba145f2e7430a48d43e4f379de76a15cf8c67`。
 >
-> 当前统计：原审计整改未勾选条目 0；新增后续阶段 7 计划，不计入原审计欠项。WS 指令集为 `vcpminis-dsl-2`。
+> 当前统计：原审计整改未勾选条目 0；阶段 7 剩余 3 项（包装层清理、ViewModel 完全收敛、设备 smoke）。WS 指令集为 `vcpminis-dsl-2`。
 
 ## 目标
 
@@ -354,8 +354,8 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 ### 7.0 建立展示回归基线
 
-- [ ] 记录当前 `shell_execute` 与 `sandbox_dispatch` 的 UI 行为矩阵：运行态、流式刷新、耗时、成功、失败、超时、取消、截断、sandbox 标识和空输出。
-- [ ] 为统一前的关键差异保存截图或最小复现，避免重构后丢失既有能力。
+- [x] 记录 `shell_execute` 与 `sandbox_dispatch` 的统一 UI 行为矩阵（见 `SANDBOX_EXECUTOR_BEHAVIOR_BASELINE.md`）。
+- [x] 保存统一前关键差异的最小复现与 smoke commands（见行为基线文档）；未强制保留 UI 截图。
 - [x] 增加纯 JVM 状态归并测试，覆盖 Started → Output* → Completed/Failed/Cancelled 的合法转换。
 
 ### 7.1 定义统一调用展示模型
