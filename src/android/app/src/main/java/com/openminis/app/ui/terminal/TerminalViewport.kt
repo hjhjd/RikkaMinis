@@ -1,9 +1,12 @@
 package com.openminis.app.ui.terminal
 
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import kotlin.math.roundToInt
+import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
@@ -12,6 +15,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.openminis.app.sandbox.TerminalSession
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 /** Native Termux viewport and its Android input bridge. */
 @Composable
@@ -29,7 +34,7 @@ internal fun TerminalViewport(
 
     AndroidView(
         factory = { context ->
-            TerminalView(context, null).apply {
+            val terminal = TerminalView(context, null).apply {
                 setTextSize(24)
                 setTypeface(jetBrainsMonoTypeface(context))
                 val terminalView = this
@@ -42,13 +47,12 @@ internal fun TerminalViewport(
                 )
                 isFocusable = true
                 isFocusableInTouchMode = true
-                isVerticalScrollBarEnabled = true
-                isScrollbarFadingEnabled = false
-                scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
                 terminalSession.attachView(this)
             }
+            TerminalViewportLayout(context, terminal)
         },
-        update = { view ->
+        update = { layout ->
+            val view = layout.terminal
             // The PTY boots asynchronously. State is deliberately read by the
             // caller so this update runs again when the session becomes ready.
             val session = terminalSession.termuxSession
@@ -59,9 +63,55 @@ internal fun TerminalViewport(
             }
             terminalSession.attachView(view)
         },
-        onRelease = { view -> terminalSession.detachView(view) },
+        onRelease = { layout -> terminalSession.detachView(layout.terminal) },
         modifier = modifier,
     )
+}
+
+private class TerminalViewportLayout(
+    context: android.content.Context,
+    val terminal: TerminalView,
+) : FrameLayout(context) {
+    private val indicator = TerminalScrollIndicator(context, terminal)
+
+    init {
+        addView(terminal, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        addView(indicator, LayoutParams(dp(4), LayoutParams.MATCH_PARENT, android.view.Gravity.END))
+        terminal.setOnTouchListener { _, _ ->
+            indicator.invalidate()
+            false
+        }
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
+}
+
+private class TerminalScrollIndicator(
+    context: android.content.Context,
+    private val terminal: TerminalView,
+) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(196, 167, 245) }
+    private val density = resources.displayMetrics.density
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val emulator = terminal.mEmulator ?: return scheduleNextFrame()
+        val totalRows = emulator.screen.activeRows
+        val visibleRows = emulator.mRows
+        val scrollableRows = totalRows - visibleRows
+        if (scrollableRows > 0 && height > 0) {
+            val thumbHeight = max(24f * density, height * visibleRows.toFloat() / totalRows)
+                .coerceAtMost(height.toFloat())
+            val offsetRows = (totalRows + terminal.topRow - visibleRows).coerceIn(0, scrollableRows)
+            val top = (height - thumbHeight) * offsetRows.toFloat() / scrollableRows
+            canvas.drawRoundRect(0f, top, width.toFloat(), top + thumbHeight, width / 2f, width / 2f, paint)
+        }
+        scheduleNextFrame()
+    }
+
+    private fun scheduleNextFrame() {
+        if (isAttachedToWindow) postInvalidateDelayed(120L)
+    }
 }
 
 private class MinisTerminalViewClient(
