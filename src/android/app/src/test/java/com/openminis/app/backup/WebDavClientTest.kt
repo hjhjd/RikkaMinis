@@ -35,7 +35,7 @@ class WebDavClientTest {
             url = server.url("/dav/").toString().trimEnd('/'),
             username = "alice",
             password = "s3cret",
-            path = "RikkaMinis_backups",
+            path = "VCPMinis_backups",
         )
     }
 
@@ -60,20 +60,20 @@ class WebDavClientTest {
     private val multistatus = """<?xml version="1.0" encoding="utf-8"?>
         <d:multistatus xmlns:d="DAV:">
           <d:response>
-            <d:href>/dav/RikkaMinis_backups/</d:href>
+            <d:href>/dav/VCPMinis_backups/</d:href>
             <d:propstat>
               <d:prop>
-                <d:displayname>RikkaMinis_backups</d:displayname>
+                <d:displayname>VCPMinis_backups</d:displayname>
                 <d:resourcetype><d:collection/></d:resourcetype>
               </d:prop>
               <d:status>HTTP/1.1 200 OK</d:status>
             </d:propstat>
           </d:response>
           <d:response>
-            <d:href>/dav/RikkaMinis_backups/rikkaminis-backup-20260804-1530.json</d:href>
+            <d:href>/dav/VCPMinis_backups/vcpminis-backup-20260804-1530.json</d:href>
             <d:propstat>
               <d:prop>
-                <d:displayname>rikkaminis-backup-20260804-1530.json</d:displayname>
+                <d:displayname>vcpminis-backup-20260804-1530.json</d:displayname>
                 <d:getcontentlength>1234</d:getcontentlength>
                 <d:getlastmodified>Tue, 04 Aug 2026 07:30:00 GMT</d:getlastmodified>
                 <d:resourcetype/>
@@ -82,7 +82,7 @@ class WebDavClientTest {
             </d:propstat>
           </d:response>
           <d:response>
-            <d:href>/dav/RikkaMinis_backups/notes.txt</d:href>
+            <d:href>/dav/VCPMinis_backups/notes.txt</d:href>
             <d:propstat>
               <d:prop>
                 <d:displayname>notes.txt</d:displayname>
@@ -97,9 +97,9 @@ class WebDavClientTest {
     fun `list parses names sizes and rfc1123 dates and drops the collection itself`() {
         enqueue207(multistatus)
         val items = dav().list()
-        // The collection's own entry (/dav/RikkaMinis_backups/) is filtered out.
+        // The collection's own entry (/dav/VCPMinis_backups/) is filtered out.
         assertEquals(2, items.size)
-        val backup = items.first { it.displayName == "rikkaminis-backup-20260804-1530.json" }
+        val backup = items.first { it.displayName == "vcpminis-backup-20260804-1530.json" }
         assertEquals(1234L, backup.contentLength)
         assertEquals(Instant.parse("2026-08-04T07:30:00Z"), backup.lastModified)
         assertEquals(false, backup.isCollection)
@@ -114,11 +114,11 @@ class WebDavClientTest {
             """<?xml version="1.0" encoding="utf-8"?>
             <D:multistatus xmlns:D="DAV:">
               <D:response>
-                <D:href>${server.url("/")}dav/RikkaMinis_backups/</D:href>
+                <D:href>${server.url("/")}dav/VCPMinis_backups/</D:href>
                 <D:propstat><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
               </D:response>
               <D:response>
-                <D:href>${server.url("/")}dav/RikkaMinis_backups/rikkaminis-backup-20260803-0900.json</D:href>
+                <D:href>${server.url("/")}dav/VCPMinis_backups/vcpminis-backup-20260803-0900.json</D:href>
                 <D:propstat>
                   <D:prop>
                     <D:getcontentlength>42</D:getcontentlength>
@@ -132,7 +132,7 @@ class WebDavClientTest {
         val items = dav().list()
         assertEquals(1, items.size)
         val item = items.first()
-        assertEquals("rikkaminis-backup-20260803-0900.json", item.displayName)
+        assertEquals("vcpminis-backup-20260803-0900.json", item.displayName)
         assertEquals(42L, item.contentLength)
         // ISO-8601 fallback branch of parseLastModified.
         assertEquals(Instant.parse("2026-08-03T09:00:00Z"), item.lastModified)
@@ -144,14 +144,14 @@ class WebDavClientTest {
             """<?xml version="1.0" encoding="utf-8"?>
             <d:multistatus xmlns:d="DAV:">
               <d:response>
-                <d:href>/dav/RikkaMinis_backups/missing.json</d:href>
+                <d:href>/dav/VCPMinis_backups/missing.json</d:href>
                 <d:propstat>
                   <d:prop><d:getcontentlength>0</d:getcontentlength></d:prop>
                   <d:status>HTTP/1.1 404 Not Found</d:status>
                 </d:propstat>
               </d:response>
               <d:response>
-                <d:href>/dav/RikkaMinis_backups/rikkaminis-backup-20260802-0000.json</d:href>
+                <d:href>/dav/VCPMinis_backups/vcpminis-backup-20260802-0000.json</d:href>
                 <d:propstat>
                   <d:prop><d:getcontentlength>7</d:getcontentlength></d:prop>
                   <d:status>HTTP/1.1 200 OK</d:status>
@@ -161,19 +161,19 @@ class WebDavClientTest {
         )
         val items = dav().list()
         assertEquals(1, items.size)
-        assertEquals("rikkaminis-backup-20260802-0000.json", items.first().displayName)
+        assertEquals("vcpminis-backup-20260802-0000.json", items.first().displayName)
     }
 
     @Test
     fun `buildUrl encodes special characters in path segments`() {
         val weird = config.copy(path = "我的 备份/子目录")
-        val url = WebDavClient(weird, client).buildUrl("rikkaminis-backup-1.json")
-        // http://localhost:PORT/dav/%E6%88%91%E7%9A%84%20%E5%A4%87%E4%BB%BD/%E5%AD%90%E7%9B%AE%E5%BD%95/rikkaminis-backup-1.json
+        val url = WebDavClient(weird, client).buildUrl("vcpminis-backup-1.json")
+        // http://localhost:PORT/dav/%E6%88%91%E7%9A%84%20%E5%A4%87%E4%BB%BD/%E5%AD%90%E7%9B%AE%E5%BD%95/vcpminis-backup-1.json
         assertEquals("/dav/", server.url("/dav/").encodedPath)
         assertTrue(url.encodedPath.startsWith("/dav/"))
         assertTrue(url.encodedPath.contains("%E6%88%91")) // 我
         assertTrue(url.encodedPath.contains("%20")) // space
-        assertTrue(url.encodedPath.endsWith("rikkaminis-backup-1.json"))
+        assertTrue(url.encodedPath.endsWith("vcpminis-backup-1.json"))
     }
 
     // ── Upload ─────────────────────────────────────────────────────────────
@@ -181,10 +181,10 @@ class WebDavClientTest {
     @Test
     fun `upload sends PUT with basic auth and payload`() {
         server.enqueue(MockResponse().setResponseCode(201))
-        dav().put("rikkaminis-backup-20260804-1000.json", "{}".toByteArray())
+        dav().put("vcpminis-backup-20260804-1000.json", "{}".toByteArray())
         val request = server.takeRequest()
         assertEquals("PUT", request.method)
-        assertEquals("/dav/RikkaMinis_backups/rikkaminis-backup-20260804-1000.json", request.path)
+        assertEquals("/dav/VCPMinis_backups/vcpminis-backup-20260804-1000.json", request.path)
         assertEquals("Basic YWxpY2U6czNjcmV0", request.getHeader("Authorization"))
         assertEquals("{}", request.body.readUtf8())
     }
@@ -197,7 +197,7 @@ class WebDavClientTest {
         server.enqueue(MockResponse().setResponseCode(404))
         server.enqueue(MockResponse().setResponseCode(201))
         server.enqueue(MockResponse().setResponseCode(201))
-        dav().put("rikkaminis-backup-20260804-1000.json", "{}".toByteArray())
+        dav().put("vcpminis-backup-20260804-1000.json", "{}".toByteArray())
 
         val put1 = server.takeRequest()
         assertEquals("PUT", put1.method)
@@ -205,7 +205,7 @@ class WebDavClientTest {
         assertEquals("PROPFIND", propfind.method)
         val mkcol = server.takeRequest()
         assertEquals("MKCOL", mkcol.method)
-        assertEquals("/dav/RikkaMinis_backups", mkcol.path)
+        assertEquals("/dav/VCPMinis_backups", mkcol.path)
         val put2 = server.takeRequest()
         assertEquals("PUT", put2.method)
     }
@@ -242,7 +242,7 @@ class WebDavClientTest {
     fun `upload maps server errors to WebDavException`() {
         server.enqueue(MockResponse().setResponseCode(500))
         try {
-            dav().put("rikkaminis-backup-20260804-1000.json", "{}".toByteArray())
+            dav().put("vcpminis-backup-20260804-1000.json", "{}".toByteArray())
             fail("expected WebDavException")
         } catch (e: WebDavException) {
             assertEquals(500, e.statusCode)
@@ -254,7 +254,7 @@ class WebDavClientTest {
     @Test
     fun `download returns the payload as utf8`() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("{\"formatVersion\":1}"))
-        val bytes = dav().get("rikkaminis-backup-20260804-1000.json")
+        val bytes = dav().get("vcpminis-backup-20260804-1000.json")
         assertEquals("{\"formatVersion\":1}", String(bytes, Charsets.UTF_8))
         val request = server.takeRequest()
         assertEquals("GET", request.method)
@@ -265,7 +265,7 @@ class WebDavClientTest {
     fun `download maps 401 to WebDavException with status code`() {
         server.enqueue(MockResponse().setResponseCode(401))
         try {
-            dav().get("rikkaminis-backup-20260804-1000.json")
+            dav().get("vcpminis-backup-20260804-1000.json")
             fail("expected WebDavException")
         } catch (e: WebDavException) {
             assertEquals(401, e.statusCode)
@@ -275,10 +275,10 @@ class WebDavClientTest {
     @Test
     fun `delete sends DELETE`() {
         server.enqueue(MockResponse().setResponseCode(204))
-        dav().delete("rikkaminis-backup-20260804-1000.json")
+        dav().delete("vcpminis-backup-20260804-1000.json")
         val request = server.takeRequest()
         assertEquals("DELETE", request.method)
-        assertEquals("/dav/RikkaMinis_backups/rikkaminis-backup-20260804-1000.json", request.path)
+        assertEquals("/dav/VCPMinis_backups/vcpminis-backup-20260804-1000.json", request.path)
     }
 
     @Test
@@ -307,7 +307,7 @@ class WebDavClientTest {
         enqueue207(multistatus) // contains the collection, one backup, notes.txt
         val items = WebDavSync.listBackupFiles(config, client)
         assertEquals(1, items.size)
-        assertEquals("rikkaminis-backup-20260804-1530.json", items.first().displayName)
+        assertEquals("vcpminis-backup-20260804-1530.json", items.first().displayName)
         assertEquals(1234L, items.first().size)
         assertEquals(Instant.parse("2026-08-04T07:30:00Z"), items.first().lastModified)
     }
@@ -317,14 +317,14 @@ class WebDavClientTest {
         val legacy = """<?xml version="1.0"?>
             |<d:multistatus xmlns:d="DAV:">
             |  <d:response>
-            |    <d:href>/dav/RikkaMinis_backups/</d:href>
+            |    <d:href>/dav/VCPMinis_backups/</d:href>
             |    <d:propstat>
             |      <d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop>
             |      <d:status>HTTP/1.1 200 OK</d:status>
             |    </d:propstat>
             |  </d:response>
             |  <d:response>
-            |    <d:href>/dav/RikkaMinis_backups/openminis-backup-20260801-1200.json</d:href>
+            |    <d:href>/dav/VCPMinis_backups/openminis-backup-20260801-1200.json</d:href>
             |    <d:propstat>
             |      <d:prop><d:getcontentlength>99</d:getcontentlength></d:prop>
             |      <d:status>HTTP/1.1 200 OK</d:status>
@@ -348,16 +348,16 @@ class WebDavClientTest {
         assertEquals("PUT", put.method)
         val path = put.path ?: ""
         // Second-precision name keeps same-minute local exports from being
-        // overwritten; convention stays rikkaminis-backup-*.json.
-        assertTrue("unexpected PUT path: $path", path.matches(Regex("^/dav/RikkaMinis_backups/rikkaminis-backup-\\d{8}-\\d{6}\\.json$")))
+        // overwritten; convention stays vcpminis-backup-*.json.
+        assertTrue("unexpected PUT path: $path", path.matches(Regex("^/dav/VCPMinis_backups/vcpminis-backup-\\d{8}-\\d{6}\\.json$")))
         assertEquals("{}", put.body.readUtf8())
     }
 
     @Test
     fun `sync restore downloads and returns the document`() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("{\"formatVersion\":1}"))
-        val json = WebDavSync.restore(config, WebDavBackupItem("h", "rikkaminis-backup-1.json", 17, Instant.EPOCH), client)
+        val json = WebDavSync.restore(config, WebDavBackupItem("h", "vcpminis-backup-1.json", 17, Instant.EPOCH), client)
         assertEquals("{\"formatVersion\":1}", json)
-        assertEquals("/dav/RikkaMinis_backups/rikkaminis-backup-1.json", server.takeRequest().path)
+        assertEquals("/dav/VCPMinis_backups/vcpminis-backup-1.json", server.takeRequest().path)
     }
 }

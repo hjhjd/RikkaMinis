@@ -39,7 +39,7 @@ data class WebDavConfig(
         get() = url.isNotBlank() && username.isNotBlank() && password.isNotBlank()
 
     companion object {
-        const val DEFAULT_BACKUP_DIR = "RikkaMinis_backups"
+        const val DEFAULT_BACKUP_DIR = "VCPMinis_backups"
     }
 }
 

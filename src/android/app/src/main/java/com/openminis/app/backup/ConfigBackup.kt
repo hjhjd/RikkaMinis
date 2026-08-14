@@ -502,7 +502,7 @@ object ConfigBackup {
         }
 
         if (root.optString("format") != "openminis.config.backup") {
-            throw InvalidBackupException("Not a RikkaMinis backup file")
+            throw InvalidBackupException("Not a VCPMinis backup file")
         }
         val version = root.optInt("version", 0)
         if (version > FORMAT_VERSION) {
@@ -1169,11 +1169,11 @@ object ConfigBackup {
      *  named with second precision so two restores in the same minute can't
      *  clobber each other (the old minute-precision [suggestedFileName] did
      *  exactly that — restoring A then B overwrote A's rollback point). The
-     *  distinct `rikkaminis-snapshot-` prefix also keeps them out of the
-     *  WebDAV remote-list matcher (`rikkaminis-backup-*`). */
+     *  distinct `vcpminis-snapshot-` prefix also keeps them out of the
+     *  WebDAV remote-list matcher (`vcpminis-backup-*`). */
     fun snapshotFileName(now: Long = System.currentTimeMillis()): String {
         val fmt = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
-        return "rikkaminis-snapshot-${fmt.format(java.util.Date(now))}.json"
+        return "vcpminis-snapshot-${fmt.format(java.util.Date(now))}.json"
     }
 
     /** Writes [payload] as a fresh snapshot into [dir] and prunes to the
@@ -1186,10 +1186,10 @@ object ConfigBackup {
         return file
     }
 
-    /** Snapshots in [dir], newest first. Only `rikkaminis-snapshot-*.json`. */
+    /** Snapshots in [dir], newest first. Only `vcpminis-snapshot-*.json`. */
     fun listSnapshots(dir: java.io.File): List<java.io.File> =
         dir.listFiles { f ->
-            f.isFile && f.name.startsWith("rikkaminis-snapshot-") && f.name.endsWith(".json")
+            f.isFile && f.name.startsWith("vcpminis-snapshot-") && f.name.endsWith(".json")
         }?.sortedByDescending { it.lastModified() } ?: emptyList()
 
     private val ATTACHED_FILES_REGEX =
@@ -1229,9 +1229,9 @@ object ConfigBackup {
         return if (kept.length() == 0) null else kept.toString()
     }
 
-    /** Default filename for a fresh export, e.g. `rikkaminis-backup-20260802.json`. */
+    /** Default filename for a fresh export, e.g. `vcpminis-backup-20260802.json`. */
     fun suggestedFileName(now: Long = System.currentTimeMillis()): String {
         val fmt = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US)
-        return "rikkaminis-backup-${fmt.format(java.util.Date(now))}.json"
+        return "vcpminis-backup-${fmt.format(java.util.Date(now))}.json"
     }
 }

@@ -2112,7 +2112,7 @@ fun ChatScreen(
                         ) {
                             // Nav title: current session title when one
                             // exists and the toggle is on, else the app name
-                            // ("RikkaMinis"). A fresh draft shows the app
+                            // ("VCPMinis"). A fresh draft shows the app
                             // name — the Soul name stays in the input
                             // placeholder, where it belongs; app_name was
                             // chosen over the Soul name so the top bar reads

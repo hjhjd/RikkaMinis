@@ -9,7 +9,7 @@
 
 ## 1. 背景与目标
 
-RikkaMinis 原有 Android 对话页已经支持原生 Provider 思考块、工具调用、Markdown、KaTeX、表格和媒体，但不能识别 VCP 模型在普通文本中输出的专用块协议，也不能直接展示 VCP 生成的 HTML 气泡。
+VCPMinis 原有 Android 对话页已经支持原生 Provider 思考块、工具调用、Markdown、KaTeX、表格和媒体，但不能识别 VCP 模型在普通文本中输出的专用块协议，也不能直接展示 VCP 生成的 HTML 气泡。
 
 本次改造参考 VCPMobile 的消息 Block 设计，在不替换现有 Compose/Markdown 内核的前提下新增：
 
@@ -22,7 +22,7 @@ RikkaMinis 原有 Android 对话页已经支持原生 Provider 思考块、工�
 - HTML WebView 离屏保活、尺寸持久化和 `#vcp-root` 实时测量；
 - 无外框 HTML 气泡和按需显示的悬浮操作按钮。
 
-本次没有把聊天整体改成 WebView，也没有把 VCP 文本工具块伪装成 RikkaMinis 原生工具调用。
+本次没有把聊天整体改成 WebView，也没有把 VCP 文本工具块伪装成 VCPMinis 原生工具调用。
 
 ---
 
@@ -707,7 +707,7 @@ src/android/app/src/test/java/com/openminis/app/ui/chat/vcp/
 环境：
 
 ```sh
-cd /home/nova/workspace/RikkaMinis/src/android
+cd /home/nova/workspace/VCPMinis/src/android
 export JAVA_HOME=/home/nova/tools/jdk-17.0.20+8
 export PATH="$JAVA_HOME/bin:$PATH"
 ```
@@ -772,11 +772,11 @@ src/android/app/build/outputs/apk/debug/app-debug.apk
 
 ### 14.5 普通链接暂不外跳
 
-WebView顶层导航统一拦截。目前 HTML按钮支持受控消息发送，但普通 `<a href>` 尚未连接到 RikkaMinis `ChatLinkResolver` 或系统浏览器。
+WebView顶层导航统一拦截。目前 HTML按钮支持受控消息发送，但普通 `<a href>` 尚未连接到 VCPMinis `ChatLinkResolver` 或系统浏览器。
 
 ### 14.6 图片点击未进入统一画廊
 
-独立 `<img>` Block支持原生全屏画廊；HTML WebView内部的图片点击尚未接入 RikkaMinis图片画廊。
+独立 `<img>` Block支持原生全屏画廊；HTML WebView内部的图片点击尚未接入 VCPMinis图片画廊。
 
 ### 14.7 VCP Tool Result能力仍有限
 

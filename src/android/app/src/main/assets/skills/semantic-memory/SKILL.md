@@ -7,7 +7,7 @@ version: 1.0.1
 # Semantic Memory Skill
 
 ## 这是什么
-RikkaMinis 应用的外部语义记忆系统。基于 HF Dataset（存储）+ HF Inference / embeddings（检索），实现「用自然语言搜记忆，不依赖关键词匹配」。
+VCPMinis 应用的外部语义记忆系统。基于 HF Dataset（存储）+ HF Inference / embeddings（检索），实现「用自然语言搜记忆，不依赖关键词匹配」。
 
 ## 何时触发
 - **新会话启动时**：自动运行 `python3 /var/minis/skills/semantic-memory/semantic_memory.py search "<当前任务关键词>"` 获取相关经验

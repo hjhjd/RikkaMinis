@@ -2,7 +2,7 @@
 
 ## 1. 定位
 
-RikkaMinis 的 WebSocket 沙箱是一个远程执行平面，不是 Android 内核级沙箱：
+VCPMinis 的 WebSocket 沙箱是一个远程执行平面，不是 Android 内核级沙箱：
 
 ```text
 Agent 工具 / 终端

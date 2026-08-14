@@ -10,7 +10,7 @@ data class DistributedConnectionConfig(
     val enabled: Boolean = false,
     val wsUrl: String = "",
     val vcpKey: String = "",
-    val deviceName: String = "RikkaMinis",
+    val deviceName: String = "VCPMinis",
 )
 
 /** 分布式节点的期望配置。密钥与其他凭据一样存入加密偏好。 */
@@ -48,7 +48,7 @@ class DistributedSettingsRepository(context: Context) {
     )
 
     companion object {
-        const val DEFAULT_DEVICE_NAME = "RikkaMinis"
+        const val DEFAULT_DEVICE_NAME = "VCPMinis"
         private const val PREFS = "distributed_connection_settings"
         private const val KEY_ENABLED = "enabled"
         private const val KEY_WS_URL = "wsUrl"

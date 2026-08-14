@@ -2,13 +2,13 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Android%20arm64-brightgreen.svg)](#安装)
-[![Build](https://github.com/hjhjd/RikkaMinis/actions/workflows/build-apk.yml/badge.svg)](https://github.com/hjhjd/RikkaMinis/actions/workflows/build-apk.yml)
+[![Build](https://github.com/hjhjd/VCPMinis/actions/workflows/build-apk.yml/badge.svg)](https://github.com/hjhjd/VCPMinis/actions/workflows/build-apk.yml)
 
 **面向 VCPToolBox 生态的 Android AI Agent 客户端。**
 
 VCPMinis fork 自 **RikkaMinis**，并沿用其 Android 原生聊天、模型接入、PRoot、浏览器、技能、记忆和系统工具基础。这个分支的主要方向不是继续使用 RikkaMinis 品牌，而是将客户端改造成适配 **VCPToolBox 服务端与 VCP 工作流** 的移动端实现。
 
-项目已使用独立应用名 **VCPMinis** 和独立包名 `com.vcp.rikkaminis`。仓库路径及部分历史构建脚本仍保留 `RikkaMinis` 字样，仅代表 fork 历史，不是当前产品名称。
+项目已使用独立应用名 **VCPMinis** 和独立包名 `com.vcp.rikkaminis`。Android 包名保留 `com.vcp.rikkaminis` 以继承现有安装与数据；该兼容标识不代表当前产品名称。
 
 > 这是一个持续演进的个人 fork。功能以实际代码和 Git 提交记录为准，不承诺与上游同步发布节奏。
 
@@ -31,7 +31,7 @@ VCPMinis 希望在 Android 上提供一套完整的个人 Agent 工作台：
 
 ## 主要改动
 
-以下内容由近期 Git 历史归纳。详细实现、修复和提交边界请直接查看 [`git log`](https://github.com/hjhjd/RikkaMinis/commits/main)。
+以下内容由近期 Git 历史归纳。详细实现、修复和提交边界请直接查看 [`git log`](https://github.com/hjhjd/VCPMinis/commits/main)。
 
 ### 1. Agent 助手与话题体系
 
@@ -219,7 +219,7 @@ PRoot 与 WS 仍是两个工具入口，但已经共用调用事件、取消注�
 
 CI 为 `main` 分支构建 arm64 Release APK，并更新滚动发布：
 
-**[下载最新 Android APK](https://github.com/hjhjd/RikkaMinis/releases/tag/android-latest)**
+**[下载最新 Android APK](https://github.com/hjhjd/VCPMinis/releases/tag/android-latest)**
 
 要求：
 
@@ -243,8 +243,8 @@ CI 为 `main` 分支构建 arm64 Release APK，并更新滚动发布：
 ### 获取源码
 
 ```sh
-git clone --recursive https://github.com/hjhjd/RikkaMinis.git
-cd RikkaMinis
+git clone --recursive https://github.com/hjhjd/VCPMinis.git
+cd VCPMinis
 ```
 
 ### 构建 PRoot

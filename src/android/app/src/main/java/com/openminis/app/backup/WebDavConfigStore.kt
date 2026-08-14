@@ -25,6 +25,7 @@ class WebDavConfigStore(context: Context) {
             username = prefs.getString(KEY_USERNAME, "").orEmpty(),
             password = prefs.getString(KEY_PASSWORD, "").orEmpty(),
             path = prefs.getString(KEY_PATH, WebDavConfig.DEFAULT_BACKUP_DIR)
+                ?.let { if (it == LEGACY_DEFAULT_BACKUP_DIR) WebDavConfig.DEFAULT_BACKUP_DIR else it }
                 ?: WebDavConfig.DEFAULT_BACKUP_DIR,
         )
     }
@@ -55,5 +56,6 @@ class WebDavConfigStore(context: Context) {
         private const val KEY_USERNAME = "username"
         private const val KEY_PASSWORD = "password"
         private const val KEY_PATH = "path"
+        private const val LEGACY_DEFAULT_BACKUP_DIR = "RikkaMinis_backups"
     }
 }

@@ -9,7 +9,7 @@ import java.time.Instant
  *
  * Mirrors rikkahub's WebDavSync (AGPL-3.0) responsibilities — filename
  * convention filtering, descending sort, directory auto-creation — minus the
- * zip packing (RikkaMinis backups are a single self-contained JSON document,
+ * zip packing (VCPMinis backups are a single self-contained JSON document,
  * so upload is a raw PUT and restore a raw GET feeding ConfigBackup.import).
  * Pure JVM, no Android imports, unit-testable against MockWebServer.
  */
@@ -19,11 +19,12 @@ object WebDavSync {
      *  [ConfigBackup.suggestedFileName]. Only files matching this prefix are
      *  shown in the remote list, so unrelated files in the user's WebDAV
      *  folder never surface as backups. */
-    const val BACKUP_PREFIX = "rikkaminis-backup-"
+    const val BACKUP_PREFIX = "vcpminis-backup-"
 
     /** Pre-rename convention (openminis-backup-*). Still matched so copies
      *  pushed before the rename remain visible and restorable. */
-    const val LEGACY_BACKUP_PREFIX = "openminis-backup-"
+    const val LEGACY_BACKUP_PREFIX = "rikkaminis-backup-"
+    const val OLDEST_BACKUP_PREFIX = "openminis-backup-"
 
     const val BACKUP_SUFFIX = ".json"
 
@@ -38,7 +39,7 @@ object WebDavSync {
      * than [ConfigBackup.suggestedFileName]'s minute precision: a local
      * export and a WebDAV push within the same minute would otherwise
      * silently overwrite each other on the server. The shared
-     * `rikkaminis-backup-*.json` convention is kept so local files dropped
+     * `vcpminis-backup-*.json` convention is kept so local files dropped
      * into the folder manually are still picked up by [listBackupFiles].
      */
     fun backup(
@@ -48,7 +49,7 @@ object WebDavSync {
     ) {
         val dav = WebDavClient(config, client)
         dav.ensureCollectionExists()
-        val name = "rikkaminis-backup-${
+        val name = "vcpminis-backup-${
             java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
                 .format(java.util.Date())
         }.json"
@@ -66,7 +67,8 @@ object WebDavSync {
             .filter {
                 !it.isCollection &&
                     (it.displayName.startsWith(BACKUP_PREFIX) ||
-                        it.displayName.startsWith(LEGACY_BACKUP_PREFIX)) &&
+                        it.displayName.startsWith(LEGACY_BACKUP_PREFIX) ||
+                        it.displayName.startsWith(OLDEST_BACKUP_PREFIX)) &&
                     it.displayName.endsWith(BACKUP_SUFFIX)
             }
             .map {

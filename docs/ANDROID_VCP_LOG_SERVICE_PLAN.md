@@ -2,7 +2,7 @@
 
 ## 1. 目标与结论
 
-RikkaMinis Android 已实现与 VCPMobile `vcp_log_service.rs` 协议和生命周期对应的 VCP Log Service：连接桌面端 VCPToolBox 的 `/VCPlog` WebSocket，接收 VCP 系统事件，支持主动发送 JSON、状态观测、运行时配置切换、动态心跳、指数退避、网络恢复重连及前后台策略。
+VCPMinis Android 已实现与 VCPMobile `vcp_log_service.rs` 协议和生命周期对应的 VCP Log Service：连接桌面端 VCPToolBox 的 `/VCPlog` WebSocket，接收 VCP 系统事件，支持主动发送 JSON、状态观测、运行时配置切换、动态心跳、指数退避、网络恢复重连及前后台策略。
 
 当前实现包含应用级连接管理器、有界事件 Store、聊天页右侧事件中心、日志管理详情页、未读提醒和单元测试。VCPLog 仍严格作为远端系统事件通道，不会自动上传 AppLogger、logcat、崩溃文件或认证数据。
 
@@ -10,7 +10,7 @@ RikkaMinis Android 已实现与 VCPMobile `vcp_log_service.rs` 协议和生命�
 
 VCPLog 是 **VCPToolBox 系统事件通道**，不是 AppLogger 的远程日志上传器。VCPMobile 只把 `send_vcp_log_message(payload)` 显式提交的 JSON 发往服务端；它没有自动 tail 本地日志并上传。
 
-因此 RikkaMinis 首版：
+因此 VCPMinis 首版：
 
 - 接收桌面端 `vcp_log` 等 JSON 事件并在应用内展示；
 - 提供显式 `send(payload)`；
@@ -30,7 +30,7 @@ VCPLog 是 **VCPToolBox 系统事件通道**，不是 AppLogger 的远程日志�
 - `VCPMobile-main/src-tauri/src/vcp_modules/infra/settings_manager.rs`
 - `VCPMobile-main/src/core/composables/useNotificationProcessor.ts`
 
-RikkaMinis 可复用基线：
+VCPMinis 可复用基线：
 
 - `logging/AppLogger.kt`：本地诊断日志，不承担 VCPLog 传输
 - `vcpinfo/VcpInfoConnectionManager.kt`：OkHttp WebSocket、状态流、退避和 generation 范式
@@ -119,14 +119,14 @@ VCPMobile 用 `watch::channel<Option<Url>>` 保存最新地址，并用原子标
 - 仅当服务端已返回 HTTP 握手错误（例如 400/404）时，尝试不带 `deviceName` 的旧地址；
 - DNS、拒绝连接和超时不做第二次无意义尝试。
 
-设备名使用用户配置值，空值回退 `RikkaMinis`，不硬编码 `VCPChat-Mobile`。
+设备名使用用户配置值，空值回退 `VCPMinis`，不硬编码 `VCPChat-Mobile`。
 
 ### 3.4 握手头
 
 对齐 VCPMobile：
 
 - `Origin`：`ws → http`、`wss → https`，保留 host/port；
-- `User-Agent`：使用稳定的 RikkaMinis Android UA；
+- `User-Agent`：使用稳定的 VCPMinis Android UA；
 - `Host` 交给 WebSocket 库正确生成，不手工覆盖，避免 IPv6、代理及 TLS SNI 不一致。
 
 连接超时按当前源码采用 **5 秒**，不是文档表格中的 10 秒。测试慢网络后若误报明显，再统一调整为 10 秒。
@@ -243,7 +243,7 @@ Android 不复制这个缺陷：统一使用容量 500、单条 512 KiB 的有�
 
 ### 6.1 直接复用 `DistributedSettingsRepository`
 
-RikkaMinis 已经在设置中持久化了一份可用的 VCPToolBox 服务器配置：
+VCPMinis 已经在设置中持久化了一份可用的 VCPToolBox 服务器配置：
 
 ```kotlin
 data class DistributedConnectionConfig(
@@ -444,7 +444,7 @@ VCP Log 页面不重复提供 URL、Key 和设备名输入框，所有连接参�
 编码阶段使用指定环境：
 
 ```sh
-cd /home/nova/workspace/RikkaMinis/src/android
+cd /home/nova/workspace/VCPMinis/src/android
 export JAVA_HOME=/home/nova/tools/jdk-17.0.20+8
 export PATH="$JAVA_HOME/bin:$PATH"
 ./gradlew testDebugUnitTest

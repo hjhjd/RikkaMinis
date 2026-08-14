@@ -1,5 +1,5 @@
 <!--
-  Thanks for contributing to RikkaMinis!
+  Thanks for contributing to VCPMinis!
 
   This is a personal Android-only fork that hybridizes two projects:
   the codebase comes from OpenMinis, the UI design is inspired by RikkaHub.
@@ -7,7 +7,7 @@
   What helps:
 
     • Bugs and feature requests → open an issue here:
-      https://github.com/logicflow-GYW/RikkaMinis/issues
+      https://github.com/hjhjd/VCPMinis/issues
 
     • Upstream issues (things that exist in the original app too)
       → https://github.com/OpenMinis/OpenMinis/issues

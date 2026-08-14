@@ -95,7 +95,7 @@ object TarvenInjectionEngine {
         var content = rule.content
         placeholders.forEach { (key, value) -> content = content.replace("{{$key}}", value) }
         return if (rule.wrap != 0) {
-            "<minis_injection description=\"由 RikkaMinis 规则系统注入\">\n$content\n</minis_injection>"
+            "<minis_injection description=\"由 VCPMinis 规则系统注入\">\n$content\n</minis_injection>"
         } else content
     }
 

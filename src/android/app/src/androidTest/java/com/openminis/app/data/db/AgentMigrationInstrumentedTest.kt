@@ -44,7 +44,7 @@ class AgentMigrationInstrumentedTest {
         db.query("SELECT id, name, is_default FROM agents").use { cursor ->
             assertTrue(cursor.moveToFirst())
             assertEquals(AgentIds.DEFAULT, cursor.getString(0))
-            assertEquals("RikkaMinis", cursor.getString(1))
+            assertEquals("VCPMinis", cursor.getString(1))
             assertEquals(1, cursor.getInt(2))
         }
         db.query("SELECT agent_id FROM sessions WHERE id = 'legacy'").use { cursor ->

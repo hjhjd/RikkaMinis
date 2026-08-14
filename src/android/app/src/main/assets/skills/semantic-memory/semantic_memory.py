@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RikkaMinis 语义记忆引擎
+VCPMinis 语义记忆引擎
 基于 HF Dataset + HF Inference (embeddings) 实现语义搜索
 
 用法:
@@ -175,7 +175,7 @@ def cmd_status():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="RikkaMinis 语义记忆引擎")
+    parser = argparse.ArgumentParser(description="VCPMinis 语义记忆引擎")
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("build", help="提取→向量化→上传")
     sub.add_parser("search").add_argument("query", help="搜索查询")

@@ -1,8 +1,8 @@
 # VCPChatTarven 规则仓
 
-VCPChatTarven 是 RikkaMinis 的请求级上下文注入规则系统。它允许用户声明：**向模型请求注入什么内容、注入到哪里、对哪些 Agent 生效**。
+VCPChatTarven 是 VCPMinis 的请求级上下文注入规则系统。它允许用户声明：**向模型请求注入什么内容、注入到哪里、对哪些 Agent 生效**。
 
-设计灵感来自 SillyTavern Lorebook / World Info 和 VCPChatTarven，但实现完全基于 RikkaMinis 当前的 Kotlin、Room、Jetpack Compose 与 Provider 抽象。
+设计灵感来自 SillyTavern Lorebook / World Info 和 VCPChatTarven，但实现完全基于 VCPMinis 当前的 Kotlin、Room、Jetpack Compose 与 Provider 抽象。
 
 ## 核心原则
 
@@ -149,14 +149,14 @@ user(tool_result)
 | `global` | 对所有 Agent 生效 |
 | `agent` | 仅对绑定的 Agent ID 生效 |
 
-RikkaMinis 当前没有群聊实体，因此第一版不提供无实际作用的 `group` scope。后续加入群聊后可扩展该枚举。
+VCPMinis 当前没有群聊实体，因此第一版不提供无实际作用的 `group` scope。后续加入群聊后可扩展该枚举。
 
 ## XML 包裹
 
 开启“XML 包裹”后，规则内容会变为：
 
 ```xml
-<minis_injection description="由 RikkaMinis 规则系统注入">
+<minis_injection description="由 VCPMinis 规则系统注入">
 规则内容
 </minis_injection>
 ```
@@ -272,7 +272,7 @@ MIGRATION_12_13
 
 ## 备份与恢复
 
-规则包含在 RikkaMinis 配置备份中：
+规则包含在 VCPMinis 配置备份中：
 
 ```json
 {

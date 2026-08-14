@@ -200,7 +200,7 @@ abstract class AppDatabase : RoomDatabase() {
                         is_default, is_archived
                     ) VALUES (?, ?, NULL, '', 'auto', NULL, ?, ?, 0, 1, 0)
                     """.trimIndent(),
-                    arrayOf(AgentIds.DEFAULT, "RikkaMinis", now, now),
+                    arrayOf(AgentIds.DEFAULT, "VCPMinis", now, now),
                 )
                 db.execSQL(
                     "ALTER TABLE sessions ADD COLUMN agent_id TEXT NOT NULL DEFAULT '${AgentIds.DEFAULT}'",
@@ -343,7 +343,7 @@ abstract class AppDatabase : RoomDatabase() {
                         is_default
                     ) VALUES (?, ?, NULL, '', 'auto', NULL, ?, ?, 0, 1)
                     """.trimIndent(),
-                    arrayOf(AgentIds.DEFAULT, "RikkaMinis", now, now),
+                    arrayOf(AgentIds.DEFAULT, "VCPMinis", now, now),
                 )
             }
         }

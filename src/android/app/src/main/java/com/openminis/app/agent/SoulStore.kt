@@ -60,10 +60,10 @@ data class SoulMetadata(
 
         val DEFAULT = SoulMetadata(
             // Default personality name is aligned with the app name
-            // (R.string.app_name = "RikkaMinis"). Kept as a plain literal
+            // (R.string.app_name = "VCPMinis"). Kept as a plain literal
             // here because SoulMetadata.DEFAULT is a Context-free constant;
             // every UI surface falls back to this single source of truth.
-            name = "RikkaMinis",
+            name = "VCPMinis",
             // Default emoji is intentionally empty — UI uses the fixed
             // [displayEmoji] sparkle and [SoulMDParser.serialize] no longer
             // writes the `emoji:` line. The field is kept on the struct only
@@ -288,7 +288,7 @@ object SoulStore {
      * 默认人格正文使用中文；已有 SOUL.md 属于用户数据，升级时不会被覆盖。
      */
     val DEFAULT_CONTENT: String = """---
-name: "RikkaMinis"
+name: "VCPMinis"
 style: ""
 lang: "auto"
 ---

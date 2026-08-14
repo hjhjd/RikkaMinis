@@ -1,14 +1,14 @@
-# RikkaMinis — Android
+# VCPMinis — Android
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Android%20arm64-brightgreen.svg)](#install)
-[![Build](https://github.com/logicflow-GYW/RikkaMinis/actions/workflows/build-apk.yml/badge.svg)](https://github.com/logicflow-GYW/RikkaMinis/actions/workflows/build-apk.yml)
+[![Build](https://github.com/hjhjd/VCPMinis/actions/workflows/build-apk.yml/badge.svg)](https://github.com/hjhjd/VCPMinis/actions/workflows/build-apk.yml)
 
 [简体中文](README.md) · **English**
 
 **Your private, on-device AI agent.**
 
-RikkaMinis is a personal **Android-only** build that hybridizes two projects:
+VCPMinis is an Android AI agent client forked from RikkaMinis and adapted for VCPToolBox workflows. Its foundation combines:
 the engine and codebase come from [OpenMinis](https://github.com/OpenMinis/OpenMinis),
 while the UI and interaction logic are inspired by
 [RikkaHub](https://github.com/rikkahub/rikkahub) — including the chat history
@@ -30,7 +30,7 @@ persistent memory, and deep system integration.
 
 ## Install
 
-**→ [Download the latest APK](https://github.com/logicflow-GYW/RikkaMinis/releases/tag/android-latest)**
+**→ [Download the latest APK](https://github.com/hjhjd/VCPMinis/releases/tag/android-latest)**
 
 Every push to `main` with **code changes** (`src/android/**`,
 `src/shared/**`, `deps/**` or workflow files) builds a release APK and
@@ -189,7 +189,7 @@ prompts and model integrations are unaffected — build normally.
 
 ### In one sentence
 
-RikkaMinis bundles three **platform skills** — each encapsulates the common
+VCPMinis bundles three **platform skills** — each encapsulates the common
 operations of one external platform and declares the env vars it depends on in
 its own `requirements.json`. When the system prompt is assembled the app reads
 the tokens you've configured, derives a per-platform capability tier
@@ -281,8 +281,8 @@ curated collection of use cases and workflows.
 ## Building locally
 
 ```sh
-git clone --recurse-submodules https://github.com/logicflow-GYW/RikkaMinis.git
-cd RikkaMinis/src/android
+git clone --recurse-submodules https://github.com/hjhjd/VCPMinis.git
+cd VCPMinis/src/android
 ../../deps/build_proot.sh        # build the proot sandbox engine from source
 ./gradlew assembleRelease
 ```
@@ -385,7 +385,7 @@ chroot for the Android sandbox, via [OpenMinis' fork](https://github.com/OpenMin
 in-app terminal's ANSI/CSI/OSC parsing and TUI rendering engine.
 
 **Interaction reference** — [RikkaHub](https://github.com/rikkahub/rikkahub)
-(AGPL-3.0), an Android multi-LLM client whose design informed RikkaMinis' chat
+(AGPL-3.0), an Android multi-LLM client whose design informed VCPMinis' chat
 UI and interaction logic (conceptual inspiration, not code reuse).
 
 **Android** — [AndroidX & Jetpack Compose](https://developer.android.com/jetpack),

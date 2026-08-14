@@ -129,7 +129,7 @@ class VcpLogConnectionManager(
         Log.i(TAG, "Connecting VCPLog to ${redact(url)}")
         val headers = mapOf(
             "Origin" to originFor(url),
-            "User-Agent" to "RikkaMinis/Android VCPLog",
+            "User-Agent" to "VCPMinis/Android VCPLog",
         )
         val client = object : WebSocketClient(URI(url), Draft_6455(), headers, CONNECT_TIMEOUT_MS.toInt()) {
             override fun onOpen(handshakedata: ServerHandshake) {
@@ -232,7 +232,7 @@ class VcpLogConnectionManager(
                 .replaceFirst(Regex("^ws://", RegexOption.IGNORE_CASE), "http://").toHttpUrl()
             val builder = http.newBuilder().encodedPath("/").query(null)
                 .addPathSegment("VCPlog").addPathSegment("VCP_Key=$key")
-            if (includeDeviceName) builder.addQueryParameter("deviceName", deviceName.ifBlank { "RikkaMinis" })
+            if (includeDeviceName) builder.addQueryParameter("deviceName", deviceName.ifBlank { "VCPMinis" })
             builder.build().toString().replaceFirst(if (scheme == "wss") "https://" else "http://", "$scheme://")
         }.getOrNull()
 
