@@ -17,6 +17,9 @@ internal class VcpHtmlRenderState {
     var hasMeasured by mutableStateOf(false)
     var showPreview by mutableStateOf(true)
     var hasLoaded by mutableStateOf(false)
+    var loadedOpeningTag: String = ""
+    var committedInner: String = ""
+    var completionDispatched: Boolean = false
 }
 
 internal object VcpHtmlRenderStore {

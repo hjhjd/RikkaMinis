@@ -9,6 +9,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import org.json.JSONObject
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -355,15 +356,17 @@ private fun VcpImageBlock(block: VcpContentBlock.Image) {
 
 @Composable
 private fun VcpHtmlPreviewBlock(messageId: String, blockId: String, block: VcpContentBlock.HtmlPreview) {
-    val canPreview = block.completion == VcpBlockCompletion.STABLE
-    // Stable HTML is message content, not an attachment: render it immediately.
-    // An incomplete streaming fragment remains source code until it closes.
+    val streamSnapshot = remember(block.content) { parseVcpHtmlStreamSnapshot(block.content) }
+    val canPreview = streamSnapshot != null
+    // Start once the root opening tag is complete. Only complete direct children
+    // are committed while the outer div is still streaming.
     val sessionId = LocalMarkdownSessionId.current.orEmpty()
-    val renderKey = remember(sessionId, messageId, blockId, block.hash) {
-        "vcp-html:$sessionId:$messageId:$blockId:${block.hash}"
+    val renderKey = remember(sessionId, messageId, blockId) {
+        "vcp-html:$sessionId:$messageId:$blockId"
     }
     val renderState = remember(renderKey) { VcpHtmlRenderStore.state(renderKey) }
-    var preview by remember(renderKey) { mutableStateOf(renderState.showPreview && canPreview) }
+    val fullscreenState = remember(renderKey) { VcpHtmlRenderStore.state("$renderKey:fullscreen") }
+    var preview by remember(renderKey) { mutableStateOf(renderState.showPreview) }
     var fullscreen by remember(renderKey) { mutableStateOf(false) }
     var controlsVisible by remember(renderKey) { mutableStateOf(false) }
     var controlsGeneration by remember(renderKey) { mutableIntStateOf(0) }
@@ -381,16 +384,17 @@ private fun VcpHtmlPreviewBlock(messageId: String, blockId: String, block: VcpCo
 
     val body: @Composable (Modifier, Boolean) -> Unit = { modifier, isFullscreen ->
         if (preview && canPreview) {
+            val activeState = if (isFullscreen) fullscreenState else renderState
             // WebView CSS px map to Android dp under the injected device-width viewport.
             // Include an authored top margin in the viewport extent; using only
             // rect.height clips the same number of pixels from the bubble bottom.
             // Do not cap stable HTML: a hard 560dp ceiling clips legitimate
             // VCP bubbles. Extra 24dp preserves shadows outside root bounds.
-            val rootHeightDp = (renderState.rootTopCss + renderState.rootHeightCss + 24).coerceAtLeast(80)
+            val rootHeightDp = (activeState.rootTopCss + activeState.rootHeightCss + 24).coerceAtLeast(80)
             SandboxedHtml(
                 renderKey = if (isFullscreen) "$renderKey:fullscreen" else renderKey,
-                renderState = renderState,
-                content = block.content,
+                renderState = activeState,
+                snapshot = requireNotNull(streamSnapshot),
                 modifier = if (isFullscreen) modifier else modifier.height(rootHeightDp.dp),
                 onInteraction = { revealControls() },
                 fullscreen = isFullscreen,
@@ -484,12 +488,14 @@ private fun HtmlOverlayIcon(
 private fun SandboxedHtml(
     renderKey: String,
     renderState: VcpHtmlRenderState,
-    content: String,
+    snapshot: VcpHtmlStreamSnapshot,
     modifier: Modifier,
     onInteraction: () -> Unit = {},
     fullscreen: Boolean = false,
 ) {
-    val document = remember(content, fullscreen) { sandboxDocument(content, fullscreen) }
+    val document = remember(snapshot.openingTag, fullscreen) {
+        sandboxDocument(snapshot.documentContent, fullscreen)
+    }
     val currentInteraction by rememberUpdatedState(onInteraction)
     val buttonHandler = LocalVcpHtmlButtonHandler.current
     val currentButtonHandler by rememberUpdatedState(buttonHandler)
@@ -550,15 +556,64 @@ private fun SandboxedHtml(
                 if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) currentInteraction()
                 false
             }
-            if (created || !renderState.hasLoaded) {
+            if (created || !renderState.hasLoaded || renderState.loadedOpeningTag != snapshot.openingTag) {
+                renderState.hasLoaded = false
+                renderState.loadedOpeningTag = snapshot.openingTag
+                renderState.committedInner = snapshot.committedInner
+                renderState.completionDispatched = snapshot.complete
                 webView.loadDataWithBaseURL("https://html-preview.invalid/", document, "text/html", "utf-8", null)
             }
             webView
         },
-        update = { },
+        update = { webView ->
+            updateStreamingHtml(webView, renderState, snapshot, document)
+        },
         // LazyColumn disposal only detaches. The six-entry LRU owns destruction.
         onRelease = { VcpHtmlWebViewPool.retain(renderKey, it, leaseGeneration[0]) },
     )
+}
+
+private fun updateStreamingHtml(
+    webView: WebView,
+    state: VcpHtmlRenderState,
+    snapshot: VcpHtmlStreamSnapshot,
+    document: String,
+) {
+    if (!state.hasLoaded || state.loadedOpeningTag != snapshot.openingTag) return
+    if (!snapshot.committedInner.startsWith(state.committedInner)) {
+        state.hasLoaded = false
+        state.loadedOpeningTag = snapshot.openingTag
+        state.committedInner = snapshot.committedInner
+        state.completionDispatched = snapshot.complete
+        webView.loadDataWithBaseURL("https://html-preview.invalid/", document, "text/html", "utf-8", null)
+        return
+    }
+    val delta = snapshot.committedInner.substring(state.committedInner.length)
+    val dispatchComplete = snapshot.complete && !state.completionDispatched
+    if (delta.isEmpty() && !dispatchComplete) return
+    state.committedInner = snapshot.committedInner
+    state.completionDispatched = state.completionDispatched || snapshot.complete
+    val quoted = JSONObject.quote(delta)
+    val js = """
+        (function(html,complete){
+          var root=document.querySelector('#vcp-root')||document.querySelector('[data-vcp-root]')||document.body.firstElementChild;
+          if(!root)return;
+          if(html){
+            var range=document.createRange();range.selectNodeContents(root);
+            var fragment=range.createContextualFragment(html);
+            var scripts=Array.prototype.slice.call(fragment.querySelectorAll('script'));
+            root.appendChild(fragment);
+            scripts.forEach(function(oldScript){
+              var script=document.createElement('script');
+              Array.prototype.forEach.call(oldScript.attributes,function(a){script.setAttribute(a.name,a.value)});
+              script.text=oldScript.textContent||'';oldScript.parentNode.replaceChild(script,oldScript);
+            });
+            window.dispatchEvent(new CustomEvent('vcp:updated'));
+          }
+          if(complete)window.dispatchEvent(new CustomEvent('vcp:complete'));
+        })($quoted,${if (dispatchComplete) "true" else "false"});
+    """.trimIndent()
+    webView.evaluateJavascript(js, null)
 }
 
 internal fun sandboxDocument(content: String, fullscreen: Boolean = false): String {
