@@ -34,7 +34,6 @@ internal object TerminalColors {
     val muted = Color(0xFFD9D3DE)
     val accent = Color(0xFFD7C2FF)
     val divider = Color(0xFF454149)
-    val selectedTab = Color(0xFF241D2E)
 }
 
 internal val TerminalHeaderHeight = 52.dp
@@ -79,7 +78,7 @@ internal fun TerminalTabStrip(
     ) {
         // Full-width boundary keeps the tab strip visually separate from the terminal.
         Box(
-            modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.BottomCenter)
+            modifier = Modifier.fillMaxWidth().height(1.dp).align(Alignment.BottomCenter)
                 .background(TerminalColors.divider),
         )
         Row(
@@ -89,7 +88,7 @@ internal fun TerminalTabStrip(
                 val active = tab.id == activeTabId
                 Column(
                     modifier = Modifier.fillMaxHeight()
-                        .background(if (active) TerminalColors.selectedTab else TerminalColors.background)
+                        .background(TerminalColors.background)
                         .clickable { onSelect(tab.id) },
                 ) {
                     Row(
@@ -114,7 +113,7 @@ internal fun TerminalTabStrip(
                         )
                     }
                     Box(
-                        modifier = Modifier.fillMaxWidth().height(2.dp)
+                        modifier = Modifier.fillMaxWidth().height(3.dp)
                             .background(if (active) TerminalColors.accent else Color.Transparent),
                     )
                 }
