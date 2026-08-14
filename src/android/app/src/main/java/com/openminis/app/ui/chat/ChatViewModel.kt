@@ -8089,12 +8089,7 @@ class ChatViewModel(
 
         return when (name) {
             FileReadTool.NAME -> {
-                val fileArgs = JSONObject(argsJson)
-                val sandbox = fileArgs.optString("sandbox", "").trim()
-                val result = if (sandbox.isNotEmpty() && !sandbox.equals("proot", true)) {
-                    executeRemoteFileRead(fileArgs, sandbox, toolTitle)
-                } else FileReadTool.execute(argsJson, activeSessionId, context)
-                // Record skill usage when SKILL.md under /var/minis/skills/<id>/ is read.
+                val result = FileReadTool.execute(argsJson, activeSessionId, context)
                 if (result.success) {
                     runCatching {
                         val readPath = JSONObject(argsJson).optString("path", "")
@@ -8107,36 +8102,13 @@ class ChatViewModel(
                 }
                 result
             }
-            FileWriteTool.NAME -> {
-                val fileArgs = JSONObject(argsJson)
-                val sandbox = fileArgs.optString("sandbox", "").trim()
-                val result = if (sandbox.isNotEmpty() && !sandbox.equals("proot", true)) {
-                    executeRemoteFileWrite(fileArgs, sandbox, toolTitle)
-                } else FileWriteTool.execute(argsJson, activeSessionId, context)
-                result.also { if (it.success && sandbox.isEmpty()) maybeReloadSkillsForPath(argsJson) }
-            }
-            FileEditTool.NAME -> {
-                val fileArgs = JSONObject(argsJson)
-                val sandbox = fileArgs.optString("sandbox", "").trim()
-                val result = if (sandbox.isNotEmpty() && !sandbox.equals("proot", true)) {
-                    executeRemoteFileEdit(fileArgs, sandbox, toolTitle)
-                } else FileEditTool.execute(argsJson, activeSessionId, context)
-                result.also { if (it.success && sandbox.isEmpty()) maybeReloadSkillsForPath(argsJson) }
-            }
+            FileWriteTool.NAME -> FileWriteTool.execute(argsJson, activeSessionId, context)
+                .also { if (it.success) maybeReloadSkillsForPath(argsJson) }
+            FileEditTool.NAME -> FileEditTool.execute(argsJson, activeSessionId, context)
+                .also { if (it.success) maybeReloadSkillsForPath(argsJson) }
             SandboxFilePushTool.NAME -> executeSandboxPush(JSONObject(argsJson), toolTitle)
             SandboxFilePullTool.NAME -> executeSandboxPull(JSONObject(argsJson), toolTitle)
-            // T178: pass sessionId + context so read_image routes through
-            // resolveSessionHostPath like file_read/write/edit do — without
-            // these, the tool consults the global last-writer-wins
-            // bindMounts map and would surface another session's
-            // /var/minis/{workspace,attachments,offloads,browser} files.
-            ReadImageTool.NAME -> {
-                val imageArgs = JSONObject(argsJson)
-                val sandbox = imageArgs.optString("sandbox", "").trim()
-                if (sandbox.isNotEmpty() && !sandbox.equals("proot", true)) {
-                    executeRemoteReadImage(imageArgs, sandbox, toolTitle)
-                } else ReadImageTool.execute(argsJson, activeSessionId, context)
-            }
+            ReadImageTool.NAME -> ReadImageTool.execute(argsJson, activeSessionId, context)
             "shell_execute" -> executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText)
             "sandbox_dispatch" -> executeSandboxDispatch(argsJson, toolId, toolBlocks, assistantId, currentText)
             "browser_use" -> executeBrowserUseTool(argsJson)
@@ -8212,31 +8184,9 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun executeRemoteReadImage(args: JSONObject, sandbox: String, toolTitle: String): ToolExecutionResult = runCatching {
-        val path = args.getString("path")
-        val bytes = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway
-            .readAll(sandbox, path, 16 * 1024 * 1024)
-        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-        require(options.outWidth > 0 && options.outHeight > 0) { "Cannot decode remote image" }
-        val original = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            ?: error("Cannot decode remote image")
-        val maxEdge = 2000
-        val scaled = if (maxOf(original.width, original.height) > maxEdge) {
-            val scale = maxEdge.toFloat() / maxOf(original.width, original.height)
-            android.graphics.Bitmap.createScaledBitmap(original, (original.width * scale).toInt(), (original.height * scale).toInt(), true)
-        } else original
-        val output = java.io.ByteArrayOutputStream()
-        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, output)
-        if (scaled !== original) scaled.recycle(); original.recycle()
-        ToolExecutionResult(
-            "[$sandbox:$path | ${options.outWidth}x${options.outHeight} | ${bytes.size} bytes]",
-            true, imageData = output.toByteArray(), imageMimeType = "image/jpeg", toolTitle = toolTitle,
-        )
-    }.getOrElse { ToolExecutionResult("Error reading image $sandbox:${args.optString("path")}: ${it.message}", false, toolTitle = toolTitle) }
 
     private suspend fun executeSandboxPush(args: JSONObject, toolTitle: String): ToolExecutionResult = runCatching {
-        val result = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway.push(
+        val result = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneTransferGateway.push(
             context, activeSessionId, args.getString("sandbox"), args.getString("source"),
             args.getString("destination"), args.optString("overwrite", "fail"),
         )
@@ -8248,7 +8198,7 @@ class ChatViewModel(
 
     private suspend fun executeSandboxPull(args: JSONObject, toolTitle: String): ToolExecutionResult = runCatching {
         val destination = args.getString("destination")
-        val result = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway.pull(
+        val result = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneTransferGateway.pull(
             context, activeSessionId, args.getString("sandbox"), args.getString("source"), destination,
             args.optString("overwrite", "fail"), args.optBoolean("directory", false),
         )
@@ -8258,52 +8208,8 @@ class ChatViewModel(
         )
     }.getOrElse { ToolExecutionResult("Pull failed: ${it.message}", false, toolTitle = toolTitle) }
 
-    private suspend fun executeRemoteFileRead(args: JSONObject, sandbox: String, toolTitle: String): ToolExecutionResult =
-        runCatching {
-            val path = args.getString("path")
-            val maxLength = args.optInt("max_length", 15_000).coerceIn(1, 80_000)
-            val remote = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway
-                .read(sandbox, path, 0, 1_048_576)
-            if (remote.bytes.take(8192).any { it == 0.toByte() }) {
-                ToolExecutionResult("[$sandbox:$path | ${remote.bytes.size} bytes | binary file]", true, toolTitle = toolTitle)
-            } else {
-                val text = remote.bytes.toString(Charsets.UTF_8)
-                val lines = text.lines()
-                val offset = args.optInt("offset", 1).coerceAtLeast(1)
-                val count = if (args.has("lines")) args.optInt("lines").coerceAtLeast(0) else lines.size
-                val selected = if (args.optString("direction", "head") == "tail") lines.takeLast(count)
-                    else lines.drop(offset - 1).take(count)
-                val body = selected.joinToString("\n").take(maxLength)
-                ToolExecutionResult("[$sandbox:$path | ${remote.bytes.size} bytes | ${lines.size} lines]\n$body", true, toolTitle = toolTitle)
-            }
-        }.getOrElse { ToolExecutionResult("Error reading $sandbox:${args.optString("path")}: ${it.message}", false, toolTitle = toolTitle) }
 
-    private suspend fun executeRemoteFileWrite(args: JSONObject, sandbox: String, toolTitle: String): ToolExecutionResult =
-        runCatching {
-            val path = args.getString("path")
-            val bytes = args.optString("content", "").toByteArray(Charsets.UTF_8)
-            (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway.write(
-                sandbox, path, bytes, args.optBoolean("append", false), args.optBoolean("create_dirs", false),
-            )
-            ToolExecutionResult("Wrote to $sandbox:$path (${bytes.size} bytes)", true, toolTitle = toolTitle)
-        }.getOrElse { ToolExecutionResult("Error writing $sandbox:${args.optString("path")}: ${it.message}", false, toolTitle = toolTitle) }
 
-    private suspend fun executeRemoteFileEdit(args: JSONObject, sandbox: String, toolTitle: String): ToolExecutionResult =
-        runCatching {
-            val path = args.getString("path")
-            val old = args.getString("old_string")
-            require(old.isNotEmpty()) { "old_string cannot be empty" }
-            val new = args.optString("new_string", "")
-            val remote = (context.applicationContext as com.openminis.app.MinisApp).legacyExecPlaneFileGateway
-            val read = remote.read(sandbox, path)
-            val content = read.bytes.toString(Charsets.UTF_8)
-            val count = Regex(Regex.escape(old)).findAll(content).count()
-            require(count > 0) { "old_string not found" }
-            require(args.optBoolean("replace_all", false) || count == 1) { "old_string found $count times; use replace_all=true" }
-            val updated = if (args.optBoolean("replace_all", false)) content.replace(old, new) else content.replaceFirst(old, new)
-            remote.write(sandbox, path, updated.toByteArray(Charsets.UTF_8), expectedRevision = read.revision)
-            ToolExecutionResult("Edited $sandbox:$path (${if (args.optBoolean("replace_all", false)) count else 1} replacement(s))", true, toolTitle = toolTitle)
-        }.getOrElse { ToolExecutionResult("Error editing $sandbox:${args.optString("path")}: ${it.message}", false, toolTitle = toolTitle) }
 
     /**
      * Mirror of iOS AIChatViewModel post-tool hook (Agent/Chat/AIChatViewModel.swift:5387 / :5408):

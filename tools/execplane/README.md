@@ -9,7 +9,7 @@
 
 两个入口复用相同的数据面实现：
 
-- `runtime.py`：不透明 dispatch、旧命令执行、状态、远程文件 RPC、单次环境变量注入；
+- `runtime.py`：不透明 dispatch、状态，以及仅供旧版 App 的命令/文件兼容 RPC；
 - `dispatch-plugin-example.py`：参考 DSL 插件，当前实现 `help/status/exec`；
 - `transfer_runtime.py`：文件和目录 Push/Pull、分块校验、冲突处理和断点状态。
 
@@ -35,15 +35,13 @@ transfer.pull
 env.inject
 ```
 
-对应用户功能：
+当前 Android 用户入口：
 
 - `sandbox_dispatch` 将不透明 payload 发送给服务端 DSL；参考插件支持 `help/status/exec`；
-- 旧兼容路径在指定 WS 沙箱执行 Shell 命令；
-- `file_read`、`file_write`、`file_edit` 显式操作 WS 文件；
-- `sandbox_file_push` 将 App/PRoot 文件或目录推入 WS；
-- `sandbox_file_pull` 将 WS 文件或目录拉回 App/PRoot；
-- `read_image(sandbox=...)` 直接读取远程图片；
-- 将 App 授权的环境变量仅注入单次子进程。
+- `sandbox_file_push` / `sandbox_file_pull` 暂时通过冻结的 `transfer.*` 兼容通道搬运文件；
+- 本地 `shell_execute`、`file_read/write/edit`、`read_image` 只操作 Android/PRoot。
+
+`exec`、`fs.*` 与 `env.inject` 仅为旧版 App 兼容能力，当前 Android 不再路由模型工具到这些 RPC。详见 `docs/EXECPLANE_LEGACY_DEPRECATION.md`。
 
 WS 与手机 App/PRoot **不共享文件系统**。即使两边都有 `/var/minis`，同名路径也不是同一文件。跨边界移动文件必须显式 Push/Pull。
 
@@ -304,23 +302,14 @@ merge_directory
 
 ## 新容器验收
 
-连接后建议完成以下检查：
+新架构只要求并验证：
 
-1. App 显示 `exec`、`fs.read`、`fs.write`、`transfer.push`、`transfer.pull`、`env.inject`；
-2. `shell_execute(sandbox=...)` 返回正确容器的 `uname -a` 和 `pwd`；
-3. `file_write/read/edit(sandbox=...)` 与 WS Shell 看到同一个文件；
-4. Push 一个超过 256 KiB 的文件，远端和本地 SHA-256 一致；
-5. Push/Pull 一个含中文文件名、嵌套目录和空目录的目录树；
-6. 测试 `overwrite=fail`、`replace_file`、`replace_directory`；
-7. `read_image(sandbox=...)` 能读取远程 PNG/JPEG；
-8. 访问允许根之外的路径返回 `FS_PERMISSION_DENIED`；
-9. 冲突或失败后没有遗留 `.part` 或 `.minis-*.dir`。
+1. capability 包含 `dispatch`，App 能展示并复制服务端指令集；
+2. `sandbox_dispatch` 的 `help/status/exec`、错误、非零退出与取消语义正确；
+3. 显式沙箱失败不回退到 PRoot；
+4. 若启用临时 transfer 兼容通道，Push/Pull 后 SHA-256 一致且失败无临时残留。
 
-检查临时残留：
-
-```sh
-find "$HOME/workspace" /tmp \( -name '*.part' -o -name '*.minis-*.dir' \) -print
-```
+旧版 App 如仍使用 `exec`/`fs.*`，应单独按旧客户端版本做兼容验收，不得把这些 RPC 作为新 Android 的依赖。
 
 ## 安全边界
 

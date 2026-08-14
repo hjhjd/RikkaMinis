@@ -15,7 +15,6 @@ object FileReadTool {
         description = "Read a file from the Linux filesystem. Faster than shell_execute for reading files — no shell overhead. Returns file content with metadata. Rejects binary files.",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Read Python script contents', 'Check system configuration file'). Use the same language as the user."),
-            "sandbox" to AgentToolParam("string", "Optional target sandbox. Omit for the App/PRoot file space, use 'proot' explicitly for local files, or provide an online WebSocket sandbox name to read that remote filesystem."),
             "path" to AgentToolParam("string", "Absolute Linux path to read (e.g. /var/minis/workspace/data.csv)"),
             "offset" to AgentToolParam("integer", "1-based line number to start reading from (default: 1). Ignored when direction is 'tail'."),
             "lines" to AgentToolParam("integer", "Maximum number of lines to return (default: all lines up to max_length)"),
@@ -23,7 +22,7 @@ object FileReadTool {
             "direction" to AgentToolParam("string", "Read direction: 'head' (from start, default) or 'tail' (from end of file)"),
         ),
         required = listOf("tool_title", "path"),
-        propertyOrdering = listOf("tool_title", "sandbox", "path", "offset", "lines", "direction", "max_length"),
+        propertyOrdering = listOf("tool_title", "path", "offset", "lines", "direction", "max_length"),
     )
 
     fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {

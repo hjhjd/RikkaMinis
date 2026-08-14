@@ -14,14 +14,13 @@ object FileWriteTool {
         description = "Write content to a file on the Linux filesystem. Faster than shell_execute for writing files. Creates the file if it doesn't exist. Use append mode to add to existing files.",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Create Python statistics script', 'Write configuration file'). Use the same language as the user."),
-            "sandbox" to AgentToolParam("string", "Optional target sandbox. Omit for App/PRoot files, or provide an online WebSocket sandbox name to write its remote filesystem."),
             "path" to AgentToolParam("string", "Absolute Linux path to write (e.g. /root/test.txt)"),
             "content" to AgentToolParam("string", "The text content to write to the file"),
             "append" to AgentToolParam("boolean", "If true, append to existing file instead of overwriting (default: false)"),
             "create_dirs" to AgentToolParam("boolean", "If true, create parent directories if they don't exist (default: false)"),
         ),
         required = listOf("tool_title", "path", "content"),
-        propertyOrdering = listOf("tool_title", "sandbox", "path", "content", "append", "create_dirs"),
+        propertyOrdering = listOf("tool_title", "path", "content", "append", "create_dirs"),
     )
 
     fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {

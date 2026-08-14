@@ -4,7 +4,7 @@
 >
 > 审计基线：`44f3a53`
 >
-> 状态：持续施工；阶段 1、阶段 2 与安全 P0/P1 完成；阶段 3 已统一 PRoot 会话状态并隔离旧 ExecPlane 兼容入口，Provider 化、兼容协议下线与 Resource 通道待继续。
+> 状态：持续施工；阶段 1、阶段 2、阶段 3 与安全 P0/P1 完成；本地 Shell 最终决策、路径入口统一、Resource 通道与纵深防御待继续。
 >
 > 最近更新：2026-08-14
 >
@@ -12,14 +12,14 @@
 > - 阶段 0：部分完成；marker、UTF-8、路径逃逸、远端输出与截断已有回归测试，其余基线待补。
 > - 阶段 1：完成；固定 `sandbox_dispatch`、Provider 骨架、Channel 事件与 UI 节流已落地。
 > - 阶段 2：主链路完成；不透明协议、稳定 sandbox ID、指令集 UI 与服务端最小 DSL 已验证。
-> - 阶段 3：进行中；`shell_execute` 已归属 `PRootToolProvider`，会话状态仅在关闭且无活动/排队调用时最终删除；旧 `fs.*`/`transfer.*` 兼容协议下线策略待继续。
+> - 阶段 3：完成；`shell_execute` 已归属 `PRootToolProvider`，旧 WS `exec/fs.*` 模型入口已删除，`transfer.*` 冻结至 Resource 通道替代，弃用窗口与最低版本已文档化。
 > - 阶段 4：P0 完成；P1 路径 containment、空闲执行检查、marker、UTF-8 与 mutex 回收竞态均已修复。
 > - 阶段 5：未完成；本地 Shell 最终语义与工具契约待确定。
 > - 阶段 6：未完成；WebSocket 文本/协议限额已完成，通用 Resource 通道与其余纵深防御待实现。
 >
 > 最近验证：提交 `190c2b2` 与 `ba4f4d8` 后 Android JVM 完整测试通过；最近 Debug APK 构建通过，SHA-256：`b1da1e9e6899c2b60d6d859f3a561352004c359c3110e31dd7ea5b178c63bcde`。
 >
-> 当前统计：剩余 26 个未勾选条目（包含父任务与子任务）；阶段 3 剩余 2 项。
+> 当前统计：阶段 3 已清零；剩余 24 个未勾选条目（包含父任务与子任务）。
 
 ## 目标
 
@@ -207,9 +207,9 @@ capabilities / dispatch / cancel
 
 - [x] 冻结 Android 端现有 `exec`、`fs.*`、`transfer.*` 业务功能，不再新增调用点。
 - [x] 新版服务端可通过可配置 Python dispatch 插件定义任意 payload DSL；Android 新路径只调用 `dispatch`。
-- [x] 迁移期旧协议放入单独适配层；旧 WS shell_execute 路由已删除，文件/transfer 使用 `LegacyExecPlaneFileGateway`。
-- [ ] 明确旧协议弃用窗口和服务端最低兼容版本。
-- [ ] 文本 dispatch 稳定后移除 Android WS 特殊分支：`shell_execute` 已完成；远端 `file_read/write/edit` 待 Resource 通道或正式下线策略。
+- [x] 迁移期旧协议放入单独适配层；旧 WS shell_execute 路由已删除，仅 transfer 使用 `LegacyExecPlaneTransferGateway`。
+- [x] 明确旧协议弃用窗口和服务端最低兼容版本（见 `docs/EXECPLANE_LEGACY_DEPRECATION.md`）。
+- [x] 文本 dispatch 稳定后移除 Android WS 特殊分支：`shell_execute`、远端 `file_read/write/edit` 与 `read_image` 均已下线。
 - [x] `transfer.*` 在通用 resource 通道落地前保留，仅用于兼容旧客户端/服务端，不作为新架构入口。
 - [x] 显式 WS dispatch 永不降级到 PRoot；通道失败只返回通道错误。
 

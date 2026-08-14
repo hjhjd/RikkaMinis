@@ -112,7 +112,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     private lateinit var vcpLogLifecycleObserver: com.openminis.app.vcplog.VcpLogLifecycleObserver
     lateinit var execPlaneBridge: com.openminis.app.execplane.ExecPlaneBridge
-    lateinit var legacyExecPlaneFileGateway: com.openminis.app.execplane.LegacyExecPlaneFileGateway
+    lateinit var legacyExecPlaneTransferGateway: com.openminis.app.execplane.LegacyExecPlaneTransferGateway
     lateinit var sandboxDispatchService: com.openminis.app.execplane.SandboxDispatchService
         private set
     lateinit var backgroundTaskNotifier: BackgroundTaskNotifier
@@ -530,7 +530,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         // outbound command/file RPC, but cannot execute inbound methods on App.
         execPlaneSettingsRepository = com.openminis.app.execplane.ExecPlaneSettingsRepository(this)
         execPlaneBridge = com.openminis.app.execplane.ExecPlaneBridge(execPlaneSettingsRepository)
-        legacyExecPlaneFileGateway = com.openminis.app.execplane.LegacyExecPlaneFileGateway(execPlaneBridge)
+        legacyExecPlaneTransferGateway = com.openminis.app.execplane.LegacyExecPlaneTransferGateway(execPlaneBridge)
         sandboxDispatchService = com.openminis.app.execplane.SandboxDispatchService(execPlaneBridge)
         execPlaneBridge.apply()
         execPlaneSettingsRepository.forwardServers.value.filter { it.enabled }.forEach(execPlaneBridge::connect)

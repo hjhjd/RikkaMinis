@@ -17,11 +17,10 @@ object ReadImageTool {
         description = "Read an image file from the Linux filesystem and return it for visual analysis. Supports PNG, JPEG, GIF, WEBP, and other common image formats. Use this to inspect generated charts, downloaded images, screenshots, or any visual output. The image is returned directly for your analysis along with metadata (dimensions, file size).",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'View generated bar chart', 'Inspect downloaded screenshot'). Use the same language as the user."),
-            "sandbox" to AgentToolParam("string", "Optional target sandbox. Omit for App/PRoot images, or provide an online WebSocket sandbox name to read a remote image."),
             "path" to AgentToolParam("string", "Linux path (e.g. /var/minis/attachments/chart.png) or minis:// URL (e.g. minis://attachments/chart.png)"),
         ),
         required = listOf("tool_title", "path"),
-        propertyOrdering = listOf("tool_title", "sandbox", "path"),
+        propertyOrdering = listOf("tool_title", "path"),
     )
 
     /**
