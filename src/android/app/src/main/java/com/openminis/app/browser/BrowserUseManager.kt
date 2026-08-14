@@ -35,6 +35,7 @@ import java.io.File
 class BrowserUseManager(
     val webView: WebView,
     profile: UserAgentProfile = UserAgentProfile.MOBILE_CHROME,
+    private val sessionIdProvider: () -> String? = { null },
 ) {
     companion object {
         private const val TAG = "BrowserUseManager"
@@ -402,7 +403,13 @@ class BrowserUseManager(
             val host = uri.host ?: return null
             val path = uri.path ?: ""
             val linuxPath = "/var/minis/$host$path"
-            val localFile = com.openminis.app.sandbox.PRootKernel.resolveHostPath(linuxPath)
+            val kernel = com.openminis.app.sandbox.PRootKernel
+            val sessionId = sessionIdProvider()
+            val localFile = if (sessionId != null) {
+                kernel.resolveSessionHostPath(sessionId, linuxPath, webView.context)
+            } else {
+                kernel.resolveHostPath(linuxPath)
+            }
             if (localFile == null || !localFile.exists() || !localFile.isFile) {
                 return android.webkit.WebResourceResponse("text/plain", "UTF-8", 404, "Not Found",
                     emptyMap(), "File not found: $host$path".byteInputStream())

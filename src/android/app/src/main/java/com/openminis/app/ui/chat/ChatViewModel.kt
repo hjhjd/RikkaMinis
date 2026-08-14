@@ -8176,6 +8176,8 @@ class ChatViewModel(
                 output = "[sandbox: $sandbox]\n${result.output.ifBlank { "(no output)" }}",
                 success = true,
                 toolTitle = toolTitle,
+                truncated = result.truncated,
+                sandboxName = sandbox,
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -8443,7 +8445,10 @@ class ChatViewModel(
                 output = withReminder,
                 success = result.exitCode == 0,
                 toolTitle = toolTitle,
-                timedOut = timedOut,
+                timedOut = result.timedOut,
+                cancelled = result.cancelled,
+                truncated = result.truncated,
+                sandboxName = result.sandboxName,
             )
         } catch (e: Exception) {
             ToolExecutionResult("Error: ${e.message}", false)

@@ -482,6 +482,9 @@ object ExecutionCoordinator {
         }
     }
 
+    /** Explicitly reset persistent cwd/export/function/background-task state. */
+    fun resetSession(sessionId: String) = stopCurrentCommand(sessionId)
+
     /** Legacy overload for callers without sessionId. */
     fun stopCurrentCommand() = stopCurrentCommand(sessionId = null)
 

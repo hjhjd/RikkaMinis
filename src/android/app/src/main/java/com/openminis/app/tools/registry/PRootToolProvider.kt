@@ -50,6 +50,11 @@ class PRootToolProvider : ToolProvider {
         }
     }
 
+    /** Drop cwd/export/functions/background-process state for this session. */
+    fun resetSession(sessionId: String) {
+        ExecutionCoordinator.resetSession(sessionId)
+    }
+
     override suspend fun cancel(invocationId: String): Boolean = false
 
     companion object {

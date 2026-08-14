@@ -27,6 +27,9 @@ data class ToolExecutionResult(
      * subclassification iOS handles inline via error-message parsing.
      */
     val timedOut: Boolean = false,
+    val cancelled: Boolean = false,
+    val truncated: Boolean = false,
+    val sandboxName: String? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -36,7 +39,8 @@ data class ToolExecutionResult(
             imageMimeType == other.imageMimeType && toolTitle == other.toolTitle &&
             pageURL == other.pageURL && imageFilePath == other.imageFilePath &&
             imageLinuxPath == other.imageLinuxPath &&
-            timedOut == other.timedOut
+            timedOut == other.timedOut && cancelled == other.cancelled &&
+            truncated == other.truncated && sandboxName == other.sandboxName
     }
 
     override fun hashCode(): Int {
@@ -49,6 +53,9 @@ data class ToolExecutionResult(
         result = 31 * result + (imageFilePath?.hashCode() ?: 0)
         result = 31 * result + (imageLinuxPath?.hashCode() ?: 0)
         result = 31 * result + timedOut.hashCode()
+        result = 31 * result + cancelled.hashCode()
+        result = 31 * result + truncated.hashCode()
+        result = 31 * result + (sandboxName?.hashCode() ?: 0)
         return result
     }
 }

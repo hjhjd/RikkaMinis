@@ -783,7 +783,7 @@ class BrowserTabPool(private val context: Context) {
 
         val id = nextTabId++
         val webView = WebView(context)
-        val manager = BrowserUseManager(webView, userAgentProfile)
+        val manager = BrowserUseManager(webView, userAgentProfile) { sessionId }
         if (userAgentProfile == UserAgentProfile.CUSTOM && !customUserAgentString.isNullOrEmpty()) {
             manager.setUserAgent(userAgentProfile, customUserAgentString)
         }
@@ -884,7 +884,7 @@ class BrowserTabPool(private val context: Context) {
         }
         val id = nextTabId++
         val newWebView = WebView(context)
-        val manager = BrowserUseManager(newWebView, userAgentProfile)
+        val manager = BrowserUseManager(newWebView, userAgentProfile) { sessionId }
         if (userAgentProfile == UserAgentProfile.CUSTOM && !customUserAgentString.isNullOrEmpty()) {
             manager.setUserAgent(userAgentProfile, customUserAgentString)
         }

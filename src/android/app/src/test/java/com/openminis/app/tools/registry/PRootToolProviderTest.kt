@@ -11,5 +11,7 @@ class PRootToolProviderTest {
         assertTrue(definition.description.contains("built-in Android PRoot"))
         assertTrue(definition.description.contains("sandbox_dispatch"))
         assertFalse(definition.parameters.containsKey("sandbox"))
+        assertTrue(definition.description.contains("persistent /bin/sh"))
+        assertTrue(definition.description.contains("Timeout or cancellation"))
     }
 }

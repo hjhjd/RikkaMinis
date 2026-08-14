@@ -233,11 +233,8 @@ class SpeechOffloadHandler(private val context: Context) : NativeOffloadHandler 
         val trimmed = source.trim()
         if (trimmed.isEmpty()) return null
         return try {
-            if (trimmed.startsWith("/")) {
-                PRootKernel.resolveHostPath(trimmed) ?: File(trimmed)
-            } else {
-                File(trimmed)
-            }
+            if (!trimmed.startsWith("/")) return null
+            PRootKernel.resolveHostPath(trimmed)
         } catch (e: Throwable) {
             AppLogger.warning(TAG, "resolveSourcePath('$trimmed') failed: ${e.message}")
             null

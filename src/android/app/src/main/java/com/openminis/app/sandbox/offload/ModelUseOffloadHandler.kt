@@ -1280,10 +1280,7 @@ class ModelUseOffloadHandler(
         if (sessionId == null) return null
         val m = Regex("^/var/minis/(attachments|offloads|workspace|browser)(/.*)?$").find(linuxPath)
             ?: return null
-        val sub = m.groupValues[1]
-        val rest = m.groupValues[2].removePrefix("/")
-        val base = File(context.filesDir, "minis-sessions/$sessionId/$sub")
-        return if (rest.isEmpty()) base else File(base, rest)
+        return PRootKernel.resolveSessionHostPath(sessionId, linuxPath, context)
     }
 
     /** [T-android-model-use-session-scoped-write] One-line audit of a model-use

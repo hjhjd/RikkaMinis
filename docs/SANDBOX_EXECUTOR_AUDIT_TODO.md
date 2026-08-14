@@ -13,13 +13,13 @@
 > - 阶段 1：完成；固定 `sandbox_dispatch`、Provider 骨架、Channel 事件与 UI 节流已落地。
 > - 阶段 2：主链路完成；不透明协议、稳定 sandbox ID、指令集 UI 与服务端最小 DSL 已验证。
 > - 阶段 3：完成；`shell_execute` 已归属 `PRootToolProvider`，旧 WS `exec/fs.*` 模型入口已删除，`transfer.*` 冻结至 Resource 通道替代，弃用窗口与最低版本已文档化。
-> - 阶段 4：P0 完成；P1 路径 containment、空闲执行检查、marker、UTF-8 与 mutex 回收竞态均已修复。
-> - 阶段 5：未完成；本地 Shell 最终语义与工具契约待确定。
+> - 阶段 4：完成；文件、图片、浏览器媒体、模型输出、语音、调试与 transfer 路径均收敛到安全 resolver，P0/P1 已清零。
+> - 阶段 5：完成；决定保留每 session 持久 Shell，已记录方案 A 评估、方案 B 契约、重置 API 与统一展示元数据。
 > - 阶段 6：未完成；WebSocket 文本/协议限额已完成，通用 Resource 通道与其余纵深防御待实现。
 >
 > 最近验证：提交 `190c2b2` 与 `ba4f4d8` 后 Android JVM 完整测试通过；最近 Debug APK 构建通过，SHA-256：`b1da1e9e6899c2b60d6d859f3a561352004c359c3110e31dd7ea5b178c63bcde`。
 >
-> 当前统计：阶段 3 已清零；剩余 24 个未勾选条目（包含父任务与子任务）。
+> 当前统计：阶段 3、阶段 4、阶段 5 已清零；剩余 18 个未勾选条目（包含父任务与子任务）。
 
 ## 目标
 
@@ -240,7 +240,7 @@ capabilities / dispatch / cancel
 
 - [x] **统一安全路径解析器**：PRootKernel 的 Linux → host 路径统一执行 canonical containment。
 - [x] 拒绝 NUL、绝对 relative tail、`..` 逃逸及越界符号链接。
-- [ ] 文件读写编辑、图片、媒体、调试接口和 transfer 共用同一 resolver。
+- [x] 文件读写编辑、图片、浏览器媒体、模型输出、语音、调试接口和 transfer 共用安全 resolver。
 - [x] PRootKernel resolver 对 sessionId 强制安全格式，禁止其参与宿主路径逃逸。
 - [x] 空闲回收检查 `isExecuting=false`，避免回收正在执行的 Shell；活动时间在命令结束更新。
 - [x] 修复执行中回收导致同 session 两把 mutex 的竞态。
@@ -258,19 +258,19 @@ capabilities / dispatch / cancel
 
 ## 阶段 5：明确本地 Shell 语义与工具契约
 
-- [ ] 决定最终 Shell 模型：
+- [x] 决定最终 Shell 模型：
   - 方案 A：每次调用独立进程；
   - 方案 B：每 session 持久 Shell。
-- [ ] 优先评估方案 A。它能删除 marker 协议、持久 Shell 状态泄漏和大量回收竞态。
-- [ ] 若保留方案 B（当前实现）：
+- [x] 已评估方案 A，当前因状态兼容与启动成本不采用（见 `docs/PROOT_SHELL_MODEL.md`）。
+- [x] 保留方案 B（每 session 持久 Shell）：
   - [x] 工具描述明确 cwd、export 和后台任务会在同 session 延续；
   - [x] timeout/cancel 明确会重建 Shell；
   - [x] `shell_execute` 不接受 sandbox 参数；WS 仅使用独立 `sandbox_dispatch`，不共享 Shell 状态；
-  - [ ] 增加状态重置命令或 API。
+  - [x] 增加 `PRootToolProvider.resetSession()` 状态重置 API。
 - [x] WS payload 不承诺任何 `/bin/sh` 语义；具体 DSL 及行为仅由用户复制的服务端指令集说明。
 - [x] 旧 WS `exec` 已从 `shell_execute` 删除；远端执行语义只由服务端 `sandbox_dispatch` 指令集描述。
 - [x] 将 WS 入口从 `shell_execute` 中移出，使用固定 `sandbox_dispatch`；`shell_execute` 只代表本地 PRoot。
-- [ ] 通用展示层统一 timeout、cancelled、truncated、sandboxName；WS dispatch 禁止 fallback。
+- [x] 通用 `ToolExecutionResult` 统一 timedOut、cancelled、truncated、sandboxName；WS dispatch 禁止 fallback。
 
 ---
 

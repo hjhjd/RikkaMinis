@@ -913,7 +913,8 @@ class DebugRPCHandler(private val context: Context) {
         // dir directly when the kernel isn't ready yet.
         val hostFile = PRootKernel.resolveHostPath(path) ?: run {
             val rootfsDir = com.openminis.app.sandbox.RootfsManager.getInstance(context).rootfsDir
-            File(rootfsDir, path.removePrefix("/"))
+            com.openminis.app.sandbox.SafeHostPathResolver.resolve(rootfsDir, path.removePrefix("/"))
+                ?: throw RPCException(-32602, "Invalid or escaping path: $path")
         }
 
         if (hostFile.exists() && !overwrite) {
