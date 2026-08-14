@@ -2,6 +2,7 @@ package com.openminis.app.ui.terminal
 
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
 import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,6 +42,9 @@ internal fun TerminalViewport(
                 )
                 isFocusable = true
                 isFocusableInTouchMode = true
+                isVerticalScrollBarEnabled = true
+                isScrollbarFadingEnabled = false
+                scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
                 terminalSession.attachView(this)
             }
         },
@@ -76,15 +80,17 @@ private class MinisTerminalViewClient(
     override fun onLongPress(event: MotionEvent): Boolean = false
 
     override fun onScale(scale: Float): Float {
-        val nextSize = (textSizePx * scale).roundToInt()
+        // `scale` is cumulative because TerminalView retains our return value.
+        // Accumulating sub-pixel gesture deltas avoids the sticky one-pixel
+        // steps caused by resetting the scale baseline on every callback.
+        val nextSize = (DEFAULT_TEXT_SIZE_PX * scale).roundToInt()
             .coerceIn(MIN_TEXT_SIZE_PX, MAX_TEXT_SIZE_PX)
         if (nextSize != textSizePx) {
             textSizePx = nextSize
             view.setTextSize(nextSize)
             view.invalidate()
         }
-        // TerminalView stores the returned value as its next scale baseline.
-        return 1f
+        return textSizePx.toFloat() / DEFAULT_TEXT_SIZE_PX
     }
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: com.termux.terminal.TerminalSession): Boolean = false
     override fun onKeyDown(keyCode: Int, event: KeyEvent, session: com.termux.terminal.TerminalSession): Boolean = false

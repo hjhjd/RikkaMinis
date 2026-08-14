@@ -33,7 +33,8 @@ internal object TerminalColors {
     val foreground = Color(0xFFE6E2EA)
     val muted = Color(0xFFD9D3DE)
     val accent = Color(0xFFD7C2FF)
-    val divider = Color(0xFF353238)
+    val divider = Color(0xFF454149)
+    val selectedTab = Color(0xFF241D2E)
 }
 
 internal val TerminalHeaderHeight = 52.dp
@@ -72,40 +73,51 @@ internal fun TerminalTabStrip(
     onSelect: (Long) -> Unit,
     onClose: (Long) -> Unit,
 ) {
-    Row(
+    Box(
         modifier = Modifier.fillMaxWidth().height(TerminalTabHeight)
-            .background(TerminalColors.background).horizontalScroll(rememberScrollState()),
+            .background(TerminalColors.background),
     ) {
-        tabs.forEach { tab ->
-            val active = tab.id == activeTabId
-            Column(
-                modifier = Modifier.fillMaxHeight().clickable { onSelect(tab.id) },
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f).padding(start = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+        // Full-width boundary keeps the tab strip visually separate from the terminal.
+        Box(
+            modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.BottomCenter)
+                .background(TerminalColors.divider),
+        )
+        Row(
+            modifier = Modifier.fillMaxHeight().horizontalScroll(rememberScrollState()),
+        ) {
+            tabs.forEach { tab ->
+                val active = tab.id == activeTabId
+                Column(
+                    modifier = Modifier.fillMaxHeight()
+                        .background(if (active) TerminalColors.selectedTab else TerminalColors.background)
+                        .clickable { onSelect(tab.id) },
                 ) {
-                    Text(
-                        tab.title,
-                        color = if (active) TerminalColors.accent else TerminalColors.muted,
-                        style = TextStyle(
-                            fontFamily = JetBrainsMonoFontFamily,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                        maxLines = 1,
-                    )
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "关闭 ${tab.title}",
-                        tint = if (active) TerminalColors.accent else TerminalColors.muted,
-                        modifier = Modifier.clickable { onClose(tab.id) }.padding(7.dp).size(18.dp),
+                    Row(
+                        modifier = Modifier.weight(1f).padding(start = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            tab.title,
+                            color = if (active) TerminalColors.accent else TerminalColors.muted,
+                            style = TextStyle(
+                                fontFamily = JetBrainsMonoFontFamily,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                            maxLines = 1,
+                        )
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "关闭 ${tab.title}",
+                            tint = if (active) TerminalColors.accent else TerminalColors.muted,
+                            modifier = Modifier.clickable { onClose(tab.id) }.padding(7.dp).size(18.dp),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(2.dp)
+                            .background(if (active) TerminalColors.accent else Color.Transparent),
                     )
                 }
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(2.dp)
-                        .background(if (active) TerminalColors.accent else TerminalColors.divider),
-                )
             }
         }
     }
