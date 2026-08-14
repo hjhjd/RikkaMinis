@@ -12,7 +12,7 @@
 > - 阶段 0：部分完成；marker、UTF-8、路径逃逸、远端输出与截断已有回归测试，其余基线待补。
 > - 阶段 1：完成；固定 `sandbox_dispatch`、Provider 骨架、Channel 事件与 UI 节流已落地。
 > - 阶段 2：主链路完成；不透明协议、稳定 sandbox ID、指令集 UI 与服务端最小 DSL 已验证。
-> - 阶段 3：进行中；`ExecutionCoordinator` 已收敛为本地 PRoot 生命周期；旧 `shell_execute`、`fs.*`、`transfer.*` 已分别隔离到兼容网关，Provider 拆分、兼容协议下线与状态最终回收仍待继续。
+> - 阶段 3：进行中；`shell_execute` 已归属 `PRootToolProvider` 且仅执行本地 PRoot，旧 WS exec 特殊路由已删除；旧 `fs.*`/`transfer.*` 仍隔离在兼容网关，状态最终回收待继续。
 > - 阶段 4：P0 完成；P1 路径 containment、空闲执行检查、marker、UTF-8 与 mutex 回收竞态均已修复。
 > - 阶段 5：未完成；本地 Shell 最终语义与工具契约待确定。
 > - 阶段 6：未完成；WebSocket 文本/协议限额已完成，通用 Resource 通道与其余纵深防御待实现。
@@ -178,7 +178,7 @@ capabilities / dispatch / cancel
 
 ### 3.1 本地执行模型
 
-- [ ] PRoot 执行实现为 `PRootToolProvider` 的内部能力，不再要求动态 WS 工具实现 `SandboxExecutor`。
+- [x] PRoot 执行实现为 `PRootToolProvider` 的内部能力，不再要求动态 WS 工具实现 `SandboxExecutor`。
 - [x] 定义本地 Shell 统一结果：
   - stdout/stderr 或规范化 output；
   - exitCode；
@@ -207,9 +207,9 @@ capabilities / dispatch / cancel
 
 - [x] 冻结 Android 端现有 `exec`、`fs.*`、`transfer.*` 业务功能，不再新增调用点。
 - [x] 新版服务端可通过可配置 Python dispatch 插件定义任意 payload DSL；Android 新路径只调用 `dispatch`。
-- [x] 迁移期旧协议放入单独适配层；shell_execute 使用 `LegacyShellExecutionGateway`，文件/transfer 使用 `LegacyExecPlaneFileGateway`。
+- [x] 迁移期旧协议放入单独适配层；旧 WS shell_execute 路由已删除，文件/transfer 使用 `LegacyExecPlaneFileGateway`。
 - [ ] 明确旧协议弃用窗口和服务端最低兼容版本。
-- [ ] 文本 dispatch 稳定后，移除 WS `shell_execute`、远端 `file_read/write/edit` 的 Android 特殊分支。
+- [ ] 文本 dispatch 稳定后移除 Android WS 特殊分支：`shell_execute` 已完成；远端 `file_read/write/edit` 待 Resource 通道或正式下线策略。
 - [x] `transfer.*` 在通用 resource 通道落地前保留，仅用于兼容旧客户端/服务端，不作为新架构入口。
 - [x] 显式 WS dispatch 永不降级到 PRoot；通道失败只返回通道错误。
 
@@ -262,14 +262,14 @@ capabilities / dispatch / cancel
   - 方案 A：每次调用独立进程；
   - 方案 B：每 session 持久 Shell。
 - [ ] 优先评估方案 A。它能删除 marker 协议、持久 Shell 状态泄漏和大量回收竞态。
-- [ ] 若保留方案 B：
-  - [ ] 工具描述明确 cwd、export 和后台任务会在同 session 延续；
-  - [ ] timeout/cancel 明确会重建 Shell；
-  - [ ] 切换 sandbox 不共享 Shell 状态；
+- [ ] 若保留方案 B（当前实现）：
+  - [x] 工具描述明确 cwd、export 和后台任务会在同 session 延续；
+  - [x] timeout/cancel 明确会重建 Shell；
+  - [x] `shell_execute` 不接受 sandbox 参数；WS 仅使用独立 `sandbox_dispatch`，不共享 Shell 状态；
   - [ ] 增加状态重置命令或 API。
 - [x] WS payload 不承诺任何 `/bin/sh` 语义；具体 DSL 及行为仅由用户复制的服务端指令集说明。
-- [ ] 对旧 WS `exec` 兼容路径记录 login/profile、stderr 和独立进程行为，避免伪装成与 PRoot 完全相同。
-- [ ] 将 WS 入口从 `shell_execute` 中移出，使用固定 `sandbox_dispatch`；`shell_execute` 最终只代表本地 PRoot（若保留）。
+- [x] 旧 WS `exec` 已从 `shell_execute` 删除；远端执行语义只由服务端 `sandbox_dispatch` 指令集描述。
+- [x] 将 WS 入口从 `shell_execute` 中移出，使用固定 `sandbox_dispatch`；`shell_execute` 只代表本地 PRoot。
 - [ ] 通用展示层统一 timeout、cancelled、truncated、sandboxName；WS dispatch 禁止 fallback。
 
 ---

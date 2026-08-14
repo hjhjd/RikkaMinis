@@ -534,12 +534,6 @@ class MinisApp : Application(), ImageLoaderFactory {
         sandboxDispatchService = com.openminis.app.execplane.SandboxDispatchService(execPlaneBridge)
         execPlaneBridge.apply()
         execPlaneSettingsRepository.forwardServers.value.filter { it.enabled }.forEach(execPlaneBridge::connect)
-        val sandboxRouter = com.openminis.app.execplane.SandboxCommandRouter(
-            execPlaneSettingsRepository,
-            execPlaneBridge,
-            environmentProvider = envVarRepository::allAsDict,
-        )
-        com.openminis.app.execplane.LegacyShellExecutionGateway.installRemoteExecutor(sandboxRouter::execute)
         backgroundTaskNotifier = BackgroundTaskNotifier(
             context = this,
             chatRepository = chatRepository,

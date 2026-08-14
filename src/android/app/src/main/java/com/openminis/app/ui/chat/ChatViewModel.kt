@@ -46,7 +46,6 @@ import com.openminis.app.agent.shell.BashismDetector
 import com.openminis.app.agent.shell.BashismReminder
 import com.openminis.app.agent.shell.OnDemandBash
 import com.openminis.app.sandbox.ExecutionCoordinator
-import com.openminis.app.execplane.LegacyShellExecutionGateway
 import com.openminis.app.terminal.MinisOpenUrlBroker
 import com.openminis.app.terminal.MinisUrlMarker
 import com.openminis.app.tools.AgentTools
@@ -59,6 +58,7 @@ import com.openminis.app.tools.SandboxFilePullTool
 import com.openminis.app.tools.SandboxFilePushTool
 import com.openminis.app.tools.ToolExecutionResult
 import com.openminis.app.tools.registry.LegacyAgentToolProvider
+import com.openminis.app.tools.registry.PRootToolProvider
 import com.openminis.app.tools.registry.ToolRegistry
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
@@ -908,11 +908,15 @@ class ChatViewModel(
      * invocation still uses the legacy dispatcher below; tools can migrate one
      * provider at a time without changing the model-facing aggregation path.
      */
+    private val prootToolProvider = PRootToolProvider()
+
     private val toolRegistry = ToolRegistry(listOf(
+        prootToolProvider,
         LegacyAgentToolProvider {
             AgentTools.makeAgentTools(
                 memoryEnabled = _memoryEnabled.value,
                 sandboxPrompt = sandboxRuntimeSnapshot().toolDescription,
+                includeShellExecute = false,
             )
         },
     ))
@@ -8356,7 +8360,6 @@ class ChatViewModel(
             val timeoutSec = args.optInt("timeout", 900).coerceIn(1, 900)
             val delaySec = args.optInt("delay", 0).coerceAtLeast(0)
             val toolTitle = args.optString("tool_title", "shell_execute")
-            val requestedSandbox = args.optString("sandbox", "").trim().ifEmpty { null }
 
             if (command.isBlank()) {
                 return ToolExecutionResult("Error: 'command' is required", false, toolTitle = toolTitle)
@@ -8411,11 +8414,10 @@ class ChatViewModel(
             var bashScript: String? = null   // set when we bash-wrapped; enables M5 self-heal retry
             if (bashism.needsBash) {
                 val executor = OnDemandBash.Executor { c, t ->
-                    LegacyShellExecutionGateway.execute(
+                    prootToolProvider.execute(
                         sessionId = dispatchSessionId,
                         command = c,
-                        timeout = t,
-                        sandbox = requestedSandbox,
+                        timeoutMs = t,
                     ).exitCode
                 }
                 when (val outcome = OnDemandBash.ensureBash(context, executor)) {
@@ -8436,10 +8438,10 @@ class ChatViewModel(
                 }
             }
 
-            var result = LegacyShellExecutionGateway.execute(
+            var result = prootToolProvider.execute(
                 sessionId = dispatchSessionId,
                 command = command,
-                timeout = timeoutSec * 1000L,
+                timeoutMs = timeoutSec * 1000L,
                 lineCallback = lc@{ rawLine ->
                     // Strip any OSC MinisOpenURL markers emitted by
                     // /usr/local/bin/minis-open and forward the captured
@@ -8463,7 +8465,6 @@ class ChatViewModel(
                         }
                     }
                 },
-                sandbox = requestedSandbox,
             )
 
             // [T-bash-on-demand] M5 self-heal: our bash wrapper returns sentinel
@@ -8476,20 +8477,18 @@ class ChatViewModel(
                     result.exitCode == (BASH_MISSING_SENTINEL shl 8)) && bashScript != null) {
                 OnDemandBash.markDisappeared()
                 val executor = OnDemandBash.Executor { c, t ->
-                    LegacyShellExecutionGateway.execute(
+                    prootToolProvider.execute(
                         sessionId = dispatchSessionId,
                         command = c,
-                        timeout = t,
-                        sandbox = requestedSandbox,
+                        timeoutMs = t,
                     ).exitCode
                 }
                 val healed = OnDemandBash.ensureBash(context, executor)
                 command = if (healed is OnDemandBash.Outcome.Available) wrapForBash(bashScript!!) else bashScript!!
-                result = LegacyShellExecutionGateway.execute(
+                result = prootToolProvider.execute(
                     sessionId = dispatchSessionId,
                     command = command,
-                    timeout = timeoutSec * 1000L,
-                    sandbox = requestedSandbox,
+                    timeoutMs = timeoutSec * 1000L,
                 )
             }
 
