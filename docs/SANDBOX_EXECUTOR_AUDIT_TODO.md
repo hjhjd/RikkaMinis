@@ -4,7 +4,7 @@
 >
 > 审计基线：`44f3a53`
 >
-> 状态：整改完成；阶段 0 至阶段 6 全部验收，后续仅保留常规维护与设备 smoke 复跑。
+> 状态：原审计整改完成；阶段 0 至阶段 6 全部验收。后续阶段 7（统一 PRoot/WS 调用事件与展示）已规划，尚未施工。
 >
 > 最近更新：2026-08-14（收官校准）
 >
@@ -19,7 +19,7 @@
 >
 > 最近验证：收官改造后 Android JVM 完整测试、Debug APK 构建及 Python ExecPlane 25 项测试均通过；最新 Debug APK SHA-256：`69de034d7730187bdfad6e311a17e5d9d0a1f1d60e54dca250f1152702df486a`。
 >
-> 当前统计：审计整改 TODO 全部完成，未勾选条目 0；WS 指令集已升级为 `vcpminis-dsl-2`，补充稳定 ID、Resource 通道及禁止回退说明。
+> 当前统计：原审计整改未勾选条目 0；新增后续阶段 7 计划，不计入原审计欠项。WS 指令集为 `vcpminis-dsl-2`。
 
 ## 目标
 
@@ -343,3 +343,63 @@ export PATH="$JAVA_HOME/bin:$PATH"
 ```sh
 ./gradlew :app:connectedDebugAndroidTest --no-daemon
 ```
+
+---
+
+## 后续阶段 7：统一 PRoot 与 WS 的调用事件和展示
+
+> 状态：已规划，尚未施工。
+>
+> 边界：只统一事件、取消和 UI 展示；不合并工具入口，不改变 WS 不透明协议，不让 `sandbox_dispatch` 接受 `proot`，不改变 PRoot 持久 Shell 语义。
+
+### 7.0 建立展示回归基线
+
+- [ ] 记录当前 `shell_execute` 与 `sandbox_dispatch` 的 UI 行为矩阵：运行态、流式刷新、耗时、成功、失败、超时、取消、截断、sandbox 标识和空输出。
+- [ ] 为统一前的关键差异保存截图或最小复现，避免重构后丢失既有能力。
+- [ ] 增加纯 JVM 状态归并测试，覆盖 Started → Output* → Completed/Failed/Cancelled 的合法转换。
+
+### 7.1 定义统一调用展示模型
+
+- [ ] 定义与执行协议无关的 `ToolExecutionPresentation`：invocationId、toolName、sandboxId、sandboxName、status、output、durationMs、exitCode、timedOut、cancelled、truncated。
+- [ ] 明确字段可用性：PRoot 提供 exitCode；WS 仅在服务端结构化提供时展示，不从不透明文本猜测退出码。
+- [ ] 统一空输出、非零退出、通道错误、执行错误、超时、取消和截断提示文案。
+- [ ] 保持 `ToolExecutionResult` 为兼容边界，新增展示模型后逐步移除 ViewModel 内重复格式化。
+
+### 7.2 统一 Provider 事件流
+
+- [ ] 将 `PRootToolProvider.invoke()` 改为有界 `callbackFlow`/Channel，可靠发送 Started、Output、Completed、Failed 和取消事件。
+- [ ] 为 WS 增加 `SandboxDispatchProvider`，把 `SandboxDispatchService` 输出转换为同一套 `ToolInvocationEvent`。
+- [ ] 两个 Provider 共用单事件、累计输出和 UI 预览上限；拥塞时只丢中间预览，不丢最终状态与截断标记。
+- [ ] 保证每个 invocation 只产生一个终态；处理完成、超时和外部取消同时到达的竞态。
+- [ ] Provider 不解析或改写 WS payload；PRoot 与 WS 仍使用独立参数和执行实现。
+
+### 7.3 统一取消生命周期
+
+- [ ] 建立 invocationId → active handle 注册表，PRoot 映射到 `ActiveExecutionHandle`，WS 映射到 request ID/cancel。
+- [ ] 实现两个 Provider 的 `cancel(invocationId)`，并保证取消幂等。
+- [ ] 停止按钮只调用统一取消入口，不再感知 PersistentShell 或 WebSocket request ID。
+- [ ] 验证取消返回后 PRoot guest 命令已停止，WS 调用不重放且不回退到 PRoot。
+
+### 7.4 收敛 ChatViewModel 与 UI
+
+- [ ] 抽出单一 invocation event 消费器，统一使用有界 Channel 和 75 ms 聚合刷新。
+- [ ] 删除 `executeShellCommand()` 与 `executeSandboxDispatch()` 中重复的流式预览、状态和结果拼装逻辑。
+- [ ] PRoot 与 WS 统一展示运行状态、沙箱标识、耗时、超时、取消和截断；保留各自工具标题与参数详情。
+- [ ] PRoot 显示 `proot`；WS 显示稳定 sandbox ID 和当前显示名称，不用显示名称作为身份。
+- [ ] 显式标识 WS 通道错误与服务端执行失败；禁止 UI 文案暗示已自动降级。
+- [ ] 保持现有工具 schema：`shell_execute` 仅本地，`sandbox_dispatch` 仅 WS。
+
+### 7.5 回归与验收
+
+- [ ] 单测覆盖 PRoot/WS 正常流输出、空输出、非零退出、失败、超时、取消、截断和高频小 chunk。
+- [ ] 单测覆盖慢 UI 消费者、队列拥塞、终态竞争、重复取消和 ViewModel 销毁。
+- [ ] 运行 Android JVM 完整测试、Python ExecPlane 测试和 Debug APK 构建。
+- [ ] 设备 smoke：并行运行 PRoot 与 WS、分别取消、切换会话、后台/前台恢复，确认状态不串线。
+- [ ] 更新 `SANDBOX_EXECUTOR_BEHAVIOR_BASELINE.md` 和架构文档，记录统一展示后的最终契约。
+
+### 阶段 7 完成条件
+
+- [ ] PRoot 与 WS 只保留执行协议差异，共用一套 invocation event、取消入口和展示状态机。
+- [ ] `ChatViewModel` 不再分别维护 PRoot 与 WS 的输出聚合和终态格式化。
+- [ ] `sandbox_dispatch` 仍完全不透明且不接受 `proot`；`shell_execute` 仍只代表本地 PRoot。
+- [ ] 超时、取消、截断和 sandbox 身份在两条路径中显示一致且可测试。
