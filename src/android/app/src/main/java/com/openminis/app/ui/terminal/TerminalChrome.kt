@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -87,8 +88,7 @@ internal fun TerminalTabStrip(
             tabs.forEach { tab ->
                 val active = tab.id == activeTabId
                 Column(
-                    modifier = Modifier.fillMaxHeight()
-                        .background(TerminalColors.background)
+                    modifier = Modifier.fillMaxHeight().wrapContentWidth()
                         .clickable { onSelect(tab.id) },
                 ) {
                     Row(
@@ -113,7 +113,7 @@ internal fun TerminalTabStrip(
                         )
                     }
                     Box(
-                        modifier = Modifier.fillMaxWidth().height(3.dp)
+                        modifier = Modifier.fillMaxWidth().height(4.dp)
                             .background(if (active) TerminalColors.accent else Color.Transparent),
                     )
                 }
