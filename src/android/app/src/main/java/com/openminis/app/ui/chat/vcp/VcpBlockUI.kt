@@ -389,8 +389,8 @@ private fun VcpHtmlPreviewBlock(messageId: String, blockId: String, block: VcpCo
             // Include an authored top margin in the viewport extent; using only
             // rect.height clips the same number of pixels from the bubble bottom.
             // Do not cap stable HTML: a hard 560dp ceiling clips legitimate
-            // VCP bubbles. Extra 24dp preserves shadows outside root bounds.
-            val rootHeightDp = (activeState.rootTopCss + activeState.rootHeightCss + 24).coerceAtLeast(80)
+            // VCP bubbles. Root shadows are disabled, so no extra shadow extent is needed.
+            val rootHeightDp = (activeState.rootTopCss + activeState.rootHeightCss).coerceAtLeast(80)
             SandboxedHtml(
                 renderKey = if (isFullscreen) "$renderKey:fullscreen" else renderKey,
                 renderState = activeState,
@@ -494,7 +494,7 @@ private fun SandboxedHtml(
     fullscreen: Boolean = false,
 ) {
     val document = remember(snapshot.openingTag, fullscreen) {
-        sandboxDocument(snapshot.documentContent, fullscreen, streaming = !snapshot.complete)
+        sandboxDocument(snapshot.documentContent, fullscreen)
     }
     val currentInteraction by rememberUpdatedState(onInteraction)
     val buttonHandler = LocalVcpHtmlButtonHandler.current
@@ -598,7 +598,6 @@ private fun updateStreamingHtml(
         (function(html,complete){
           var root=document.querySelector('#vcp-root')||document.querySelector('[data-vcp-root]')||document.body.firstElementChild;
           if(!root)return;
-          document.documentElement.classList.toggle('vcp-streaming',!complete);
           if(html){
             var range=document.createRange();range.selectNodeContents(root);
             var fragment=range.createContextualFragment(html);
@@ -617,15 +616,14 @@ private fun updateStreamingHtml(
     webView.evaluateJavascript(js, null)
 }
 
-internal fun sandboxDocument(content: String, fullscreen: Boolean = false, streaming: Boolean = false): String {
+internal fun sandboxDocument(content: String, fullscreen: Boolean = false): String {
     // Android System WebView versions differ substantially in their handling
     // of CSP-governed srcdoc iframes. Load the generated document directly in
     // this dedicated, bridge-free WebView instead. The WebView itself is the
     // isolation boundary: file/content access and storage are disabled, there
     // is no addJavascriptInterface, and every top-level navigation is blocked.
     val overflow = if (fullscreen) "overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch" else "overflow:hidden"
-    val streamingClassScript = "<script>document.documentElement.classList.toggle(\"vcp-streaming\",$streaming)</script>"
-    val head = """$streamingClassScript<meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self' http: https: data: blob:; img-src http: https: data: blob:; style-src 'unsafe-inline' http: https:; font-src http: https: data:; script-src 'unsafe-inline' 'self' http: https:; media-src http: https: data: blob:; connect-src http: https: ws: wss:; frame-src 'self' http: https: data: blob:; form-action 'none'; base-uri 'none'"><style>html,body{box-sizing:border-box;min-height:100%;margin:0;padding:0;background:transparent;$overflow}*,*:before,*:after{box-sizing:inherit}img,video,canvas,svg,iframe{max-width:100%}html.vcp-streaming #vcp-root,html.vcp-streaming [data-vcp-root],html.vcp-streaming body>div:first-child{box-shadow:none!important}</style>"""
+    val head = """<meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self' http: https: data: blob:; img-src http: https: data: blob:; style-src 'unsafe-inline' http: https:; font-src http: https: data:; script-src 'unsafe-inline' 'self' http: https:; media-src http: https: data: blob:; connect-src http: https: ws: wss:; frame-src 'self' http: https: data: blob:; form-action 'none'; base-uri 'none'"><style>html,body{box-sizing:border-box;min-height:100%;margin:0;padding:0;background:transparent;$overflow}*,*:before,*:after{box-sizing:inherit}img,video,canvas,svg,iframe{max-width:100%}#vcp-root,[data-vcp-root],body>div:first-child{box-shadow:none!important}</style>"""
     val headMatch = Regex("<head\\b[^>]*>", RegexOption.IGNORE_CASE).find(content)
     if (headMatch != null) {
         val at = headMatch.range.last + 1

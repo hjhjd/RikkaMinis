@@ -37,6 +37,12 @@ class VcpHtmlSandboxTest {
         assertTrue(fullscreen.contains("overflow-y:auto"))
     }
 
+    @Test fun rootBubbleShadowIsAlwaysDisabled() {
+        val document = sandboxDocument("<div id=\"vcp-root\">content</div>")
+        assertTrue(document.contains("#vcp-root,[data-vcp-root],body>div:first-child{box-shadow:none!important}"))
+        assertFalse(document.contains("vcp-streaming"))
+    }
+
     @Test fun documentAllowsExternalResources() {
         val document = sandboxDocument("<img src='https://cdn.example/a.png'>")
         assertTrue(document.contains("img-src http: https:"))
