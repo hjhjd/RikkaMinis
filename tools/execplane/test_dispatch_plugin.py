@@ -26,7 +26,7 @@ class DispatchPluginTest(unittest.IsolatedAsyncioTestCase):
         help_result, _ = await self.collect("help")
         self.assertIn("exec <shell script>", help_result["output"])
         status, _ = await self.collect("status")
-        self.assertIn("dslRevision=vcpminis-dsl-1", status["output"])
+        self.assertIn("dslRevision=vcpminis-dsl-2", status["output"])
         self.assertIn("commands=help,status,exec", status["output"])
 
     async def test_single_and_multiline_exec(self):

@@ -1,6 +1,6 @@
 # VCPMinis 沙箱 AI 指令集
 
-使用 Android 的 `sandbox_dispatch` 工具。必须把 `sandbox` 明确设为用户指定的沙箱名称，并将下面定义的指令完整写入 `payload`。Android 会逐字转发 UTF-8 payload，不解析、不补全、不转义，也不会在失败时改投 PRoot。
+使用 Android 的 `sandbox_dispatch` 工具。必须把 `sandbox` 明确设为用户指定沙箱的稳定 ID（显示名称只用于旧版兼容），并将下面定义的指令完整写入 `payload`。Android 会逐字转发 UTF-8 payload，不解析、不补全、不转义，也不会在失败时改投 PRoot。
 
 ## 通用规则
 
@@ -9,7 +9,10 @@
 - 复杂 Shell 优先使用多行格式，避免额外的 JSON/Shell 嵌套转义。
 - 每次调用最长 3600 秒；长任务应设置合适的 `timeout`。
 - 命令可能修改服务器文件。执行删除、覆盖、发布等高影响操作前，遵守用户授权范围。
-- 本沙箱文件系统与 Android 内置 PRoot 不共享；不要用 Android 的 `file_read/file_write/file_edit` 假装访问这里。
+- 本沙箱文件系统与 Android 内置 PRoot 不共享；Android 的 `shell_execute`、`file_read/file_write/file_edit` 和 `read_image` 只操作本地 PRoot。
+- 跨边界文件使用 Android 通用 Resource 通道（当前模型工具名仍为 `sandbox_file_push` / `sandbox_file_pull`）；不要把大文件 Base64 塞进 payload。
+- 显式沙箱离线、超时或协议失败时只返回错误，绝不回退到 PRoot，也不自动重放有副作用的调用。
+- Android 对 payload 完全不透明；`exec` 是本服务端 DSL 的语法，不是 Android 内置命令。
 
 ## 查看帮助
 
@@ -50,6 +53,10 @@ git status --short
 ```
 
 非零退出码不会被 Android 改写；应根据尾部退出码和输出判断是否成功。超时或取消会终止该 Shell 的完整进程组。
+
+## 文件与 Resource
+
+需要把 Android/PRoot 文件送入本沙箱时，先调用 `sandbox_file_push`；需要把结果取回 Android 时调用 `sandbox_file_pull`。传输层执行分块、大小限制、SHA-256 校验、取消与失败清理。路径含义分别属于两端文件系统，不能混用。
 
 ## 推荐施工流程
 

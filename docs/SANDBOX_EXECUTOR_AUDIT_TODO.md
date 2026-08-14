@@ -6,7 +6,7 @@
 >
 > 状态：整改完成；阶段 0 至阶段 6 全部验收，后续仅保留常规维护与设备 smoke 复跑。
 >
-> 最近更新：2026-08-14
+> 最近更新：2026-08-14（收官校准）
 >
 > 进度摘要：
 > - 阶段 0：完成；行为矩阵、关键缺陷复现、JVM 回归与端到端 smoke commands 已保存。
@@ -17,9 +17,9 @@
 > - 阶段 5：完成；决定保留每 session 持久 Shell，已记录方案 A 评估、方案 B 契约、重置 API 与统一展示元数据。
 > - 阶段 6：完成；ResourceDescriptor/ResourceChannel、Agent 沙箱权限与纵深防御均已落地。
 >
-> 最近验证：提交 `190c2b2` 与 `ba4f4d8` 后 Android JVM 完整测试通过；最近 Debug APK 构建通过，SHA-256：`b1da1e9e6899c2b60d6d859f3a561352004c359c3110e31dd7ea5b178c63bcde`。
+> 最近验证：收官改造后 Android JVM 完整测试、Debug APK 构建及 Python ExecPlane 25 项测试均通过；最新 Debug APK SHA-256：`69de034d7730187bdfad6e311a17e5d9d0a1f1d60e54dca250f1152702df486a`。
 >
-> 当前统计：审计整改 TODO 全部完成，未勾选条目 0。
+> 当前统计：审计整改 TODO 全部完成，未勾选条目 0；WS 指令集已升级为 `vcpminis-dsl-2`，补充稳定 ID、Resource 通道及禁止回退说明。
 
 ## 目标
 

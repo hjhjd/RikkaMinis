@@ -14,7 +14,7 @@ from collections import deque
 
 from runtime import RpcFault
 
-DSL_REVISION = "vcpminis-dsl-1"
+DSL_REVISION = "vcpminis-dsl-2"
 MAX_FINAL_CHARS = 256 * 1024
 TERMINATE_GRACE_SECONDS = 1.0
 HELP = """VCPMinis DSL commands:
