@@ -46,30 +46,32 @@ class VcpContentParserTest {
         assertEquals("first\n  second", block.details.single().value)
     }
 
-    @Test fun parsesHtmlFenceAndDocument() {
-        val fenced = VcpContentParser.parse("```html\n<div>ok</div>\n```").blocks.single() as VcpContentBlock.HtmlPreview
-        assertEquals("<div>ok</div>", fenced.content)
-        val doc = VcpContentParser.parse("<!DOCTYPE html><html><body>x</body></html>").blocks.single() as VcpContentBlock.HtmlPreview
-        assertEquals(VcpContentBlock.HtmlPreview.Source.DOCUMENT, doc.source)
+    @Test fun htmlFenceAndDocumentRemainMarkdown() {
+        val fenced = VcpContentParser.parse("```html\n<div>ok</div>\n<img src=\"https://example.com/x.png\">\n```").blocks
+        assertEquals(1, fenced.size)
+        assertTrue(fenced.single() is VcpContentBlock.Markdown)
+
+        val document = VcpContentParser.parse(
+            "<!doctype html><html><body><div>no bubble</div><img src=\"https://example.com/x.png\"></body></html>",
+        ).blocks
+        assertEquals(1, document.size)
+        assertTrue(document.single() is VcpContentBlock.Markdown)
     }
 
-    @Test fun htmlCloseInsideRawTextAndCommentDoesNotFinishDocument() {
-        val input = """<!doctype html><html><body>
-<script>const sample = "</html>";</script>
-<!-- example </html> -->
-<div>visible</div>
-</body></html>
-after"""
+    @Test fun onlyDivContainerIsAutoPromoted() {
+        val section = VcpContentParser.parse("<section><p>plain</p></section>").blocks
+        assertEquals(1, section.size)
+        assertTrue(section.single() is VcpContentBlock.Markdown)
+
+        val div = VcpContentParser.parse("<div><section>interactive</section></div>").blocks.single()
+        assertTrue(div is VcpContentBlock.HtmlPreview)
+    }
+
+    @Test fun scriptWithHtmlCloseIsPlainMarkdown() {
+        val input = """<script>const sample = "</html>";</script>"""
         val blocks = VcpContentParser.parse(input).blocks
-        val html = blocks.first() as VcpContentBlock.HtmlPreview
-        assertTrue(html.content.contains("<div>visible</div>"))
-        assertTrue((blocks.last() as VcpContentBlock.Markdown).content.contains("after"))
-    }
-
-    @Test fun streamingDocumentCloseInsideScriptStaysIncomplete() {
-        val input = """<!doctype html><html><script>const sample = "</html>";</script>"""
-        val html = VcpContentParser.parse(input, streaming = true).tailBlock as VcpContentBlock.HtmlPreview
-        assertEquals(VcpBlockCompletion.STREAMING, html.completion)
+        assertEquals(1, blocks.size)
+        assertTrue(blocks.single() is VcpContentBlock.Markdown)
     }
 
     @Test fun finalIncompleteBlockIsPreserved() {
@@ -90,9 +92,10 @@ after"""
         assertEquals("内容", thought.content)
     }
 
-    @Test fun incompleteHtmlNeverBecomesStablePreview() {
-        val block = VcpContentParser.parse("```html\n<script>work()", streaming = true).tailBlock as VcpContentBlock.HtmlPreview
-        assertEquals(VcpBlockCompletion.STREAMING, block.completion)
+    @Test fun incompleteHtmlFenceStaysStreamingMarkdown() {
+        val block = VcpContentParser.parse("```html\n<script>work()", streaming = true).tailBlock
+        assertTrue(block is VcpContentBlock.Markdown)
+        assertEquals(VcpBlockCompletion.STREAMING, requireNotNull(block).completion)
     }
 
     @Test fun parsesNestedHtmlContainerAsOnePreview() {

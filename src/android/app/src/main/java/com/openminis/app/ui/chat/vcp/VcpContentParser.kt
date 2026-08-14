@@ -2,7 +2,7 @@ package com.openminis.app.ui.chat.vcp
 
 /** Parses VCP's textual protocol without interpreting examples inside code fences. */
 internal object VcpContentParser {
-    private enum class Kind { THOUGHT, THINK, TOOL, TOOL_RESULT, TOOL_SUMMARY, ROLE_DIVIDER, HTML_FENCE, HTML_DOCUMENT, HTML_CONTAINER, IMAGE }
+    private enum class Kind { THOUGHT, THINK, TOOL, TOOL_RESULT, TOOL_SUMMARY, ROLE_DIVIDER, HTML_CONTAINER, IMAGE }
     private data class Start(
         val kind: Kind,
         val start: Int,
@@ -17,13 +17,12 @@ internal object VcpContentParser {
     private val resultStart = Regex("^[ \\t]*\\[\\[VCP调用结果信息汇总:\\s*$", RegexOption.IGNORE_CASE)
     private val summaryStart = Regex("^[ \\t]*\\[本轮工具调用摘要:]\\s*$", RegexOption.IGNORE_CASE)
     private val roleDivider = Regex("^[ \\t]*<<<\\[(END_)?ROLE_DIVIDE_(SYSTEM|ASSISTANT|USER)]>>>\\s*$", RegexOption.IGNORE_CASE)
-    private val htmlFence = Regex("^[ \\t]*```html[ \\t]*$", RegexOption.IGNORE_CASE)
     private val genericFence = Regex("^[ \\t]*```.*$")
     private val htmlDoc = Regex("^[ \\t]*(?:<!doctype html>|<html(?:\\s|>))", RegexOption.IGNORE_CASE)
     // Prefix-only patterns: VCP commonly emits long style attributes with the
     // opening tag spread over several lines. Requiring `>` on the first line
     // loses the real outer container and incorrectly promotes its inner divs.
-    private val htmlContainerPrefix = Regex("^[ \\t]*<(div|section|article|header|footer|main|aside|figure|figcaption)\\b", RegexOption.IGNORE_CASE)
+    private val htmlContainerPrefix = Regex("^[ \\t]*<(div)\\b", RegexOption.IGNORE_CASE)
     private val imagePrefix = Regex("^[ \\t]*<img\\b", RegexOption.IGNORE_CASE)
     private val htmlAttribute = Regex("([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))")
     private val toolNameTagged = Regex("<tool_name>([\\s\\S]*?)</tool_name>", RegexOption.IGNORE_CASE)
@@ -67,8 +66,10 @@ internal object VcpContentParser {
         // their own line. Split them into native image blocks while preserving
         // surrounding Markdown order. HTML containers are consumed before this
         // method, so their internal images never reach this path.
+        val protected = protectedMarkdownRanges(text)
         var cursor = 0
         for (match in INLINE_RAW_IMAGE.findAll(text)) {
+            if (protected.any { match.range.first in it }) continue
             if (match.range.first > cursor) out += VcpContentBlock.Markdown(text.substring(cursor, match.range.first))
             out += parseImage(match.value, VcpBlockCompletion.STABLE)
             cursor = match.range.last + 1
@@ -77,6 +78,35 @@ internal object VcpContentParser {
     }
 
     private val INLINE_RAW_IMAGE = Regex("<img\\b[^>]*?/?>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+
+    /** Code fences and full documents are display-only Markdown regions. */
+    private fun protectedMarkdownRanges(text: String): List<IntRange> {
+        val ranges = mutableListOf<IntRange>()
+        var offset = 0
+        var fenceStart: Int? = null
+        while (offset < text.length) {
+            val end = text.indexOf('\n', offset).let { if (it < 0) text.length else it }
+            val line = text.substring(offset, end).trimEnd('\r')
+            if (genericFence.matches(line)) {
+                if (fenceStart == null) fenceStart = offset else {
+                    ranges += fenceStart..(afterLine(text, end) - 1)
+                    fenceStart = null
+                }
+            } else if (fenceStart == null) {
+                val document = htmlDoc.find(line)
+                if (document != null) {
+                    val start = offset + document.range.first
+                    val finish = findHtmlDocumentEnd(text, start)?.second ?: text.length
+                    ranges += start..(finish - 1).coerceAtLeast(start)
+                    offset = finish
+                    continue
+                }
+            }
+            offset = afterLine(text, end)
+        }
+        fenceStart?.let { ranges += it..text.lastIndex }
+        return ranges
+    }
 
     private fun findStart(text: String, from: Int): Start? {
         var offset = from
@@ -92,8 +122,14 @@ internal object VcpContentParser {
                 roleDivider.matchEntire(line)?.let {
                     return Start(Kind.ROLE_DIVIDER, offset, offset, theme = it.groupValues[2].lowercase(), tagName = if (it.groupValues[1].isNotEmpty()) "end" else "start", markerEnd = afterLine(text, end))
                 }
-                htmlFence.matchEntire(line)?.let { return Start(Kind.HTML_FENCE, offset, afterLine(text, end)) }
-                htmlDoc.find(line)?.let { return Start(Kind.HTML_DOCUMENT, offset + it.range.first, offset + it.range.first) }
+                val document = htmlDoc.find(line)
+                if (document != null) {
+                    // Full documents are examples/files, not VCP bubbles. Skip the
+                    // whole document so nested div/img tags are not auto-promoted.
+                    val documentStart = offset + document.range.first
+                    offset = findHtmlDocumentEnd(text, documentStart)?.second ?: text.length
+                    continue
+                }
                 imagePrefix.find(line)?.let {
                     val startAt = offset + it.range.first
                     val openEnd = findTagClose(text, startAt) ?: return Start(Kind.IMAGE, startAt, startAt)
@@ -161,9 +197,7 @@ internal object VcpContentParser {
             Kind.TOOL_RESULT -> lineEnd(text, start.contentStart, Regex("^[ \\t]*VCP调用结果结束]]\\s*$", RegexOption.IGNORE_CASE))
             Kind.TOOL_SUMMARY -> lineEnd(text, start.contentStart, Regex("^[ \\t]*\\[本轮工具调用摘要结束]\\s*$", RegexOption.IGNORE_CASE))
             Kind.ROLE_DIVIDER -> start.start to start.markerEnd
-            Kind.HTML_FENCE -> lineEnd(text, start.contentStart, Regex("^[ \\t]*```[ \\t]*$"))
             Kind.THINK -> tagEnd(text, start.contentStart, Regex("</think(?:ing)?>", RegexOption.IGNORE_CASE))
-            Kind.HTML_DOCUMENT -> findHtmlDocumentEnd(text, start.contentStart)
             Kind.HTML_CONTAINER -> findMatchingContainerEnd(text, start)
             Kind.IMAGE -> if (start.markerEnd > start.start) start.start to start.markerEnd else null
         }
@@ -299,8 +333,6 @@ internal object VcpContentParser {
         Kind.TOOL_RESULT -> parseToolResult(inner, raw, completion)
         Kind.TOOL_SUMMARY -> parseToolSummary(inner, raw, completion)
         Kind.ROLE_DIVIDER -> VcpContentBlock.RoleDivider(start.theme, start.tagName == "end", raw)
-        Kind.HTML_FENCE -> VcpContentBlock.HtmlPreview(inner.trimEnd(), VcpContentBlock.HtmlPreview.Source.FENCE, raw, completion)
-        Kind.HTML_DOCUMENT -> VcpContentBlock.HtmlPreview(raw, VcpContentBlock.HtmlPreview.Source.DOCUMENT, raw, completion)
         Kind.HTML_CONTAINER -> VcpContentBlock.HtmlPreview(
             content = if (completion == VcpBlockCompletion.STABLE) repairMalformedHtml(raw.trimEnd()) else raw.trimEnd(),
             source = VcpContentBlock.HtmlPreview.Source.CONTAINER,
