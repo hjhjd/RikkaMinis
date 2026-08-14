@@ -331,7 +331,7 @@ capabilities / dispatch / cancel
 ## 验收命令
 
 ```sh
-cd /home/nova/workspace/RikkaMinis/src/android
+cd /home/nova/workspace/VCPMinis/src/android
 export JAVA_HOME=/home/nova/tools/jdk-17.0.20+8
 export PATH="$JAVA_HOME/bin:$PATH"
 ./gradlew :app:testDebugUnitTest --no-daemon

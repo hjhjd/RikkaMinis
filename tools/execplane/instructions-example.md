@@ -42,7 +42,7 @@ exec ls -la
 
 ```text
 exec
-cd /home/nova/workspace/RikkaMinis
+cd /home/nova/workspace/VCPMinis
 git status --short
 ```
 
@@ -66,7 +66,7 @@ status
 
 ```text
 exec
-cd /home/nova/workspace/RikkaMinis
+cd /home/nova/workspace/VCPMinis
 git status --short
 ```
 

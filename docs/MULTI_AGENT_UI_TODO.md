@@ -1,6 +1,6 @@
 # Android 多 Agent 与侧栏 UI 重构 TODO
 
-> 工作仓库：`/home/nova/workspace/RikkaMinis`
+> 工作仓库：`/home/nova/workspace/VCPMinis`
 > Android 工程：`src/android`
 > 主要源码：`src/android/app/src/main/java/com/openminis/app`
 > 计划日期：2026-08-11
