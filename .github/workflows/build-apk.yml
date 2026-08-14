@@ -1,14 +1,13 @@
 name: Build VCPMinis Android APK
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'src/android/**'
-      - 'src/shared/**'
-      - 'deps/**'
-      - '.github/workflows/build-apk.yml'
   workflow_dispatch:
+    inputs:
+      build_description:
+        description: '构建说明（将显示在工作流摘要和 Release 页面）'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   build:
@@ -18,6 +17,20 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Record build description
+        env:
+          BUILD_DESCRIPTION: ${{ inputs.build_description }}
+        run: |
+          {
+            echo "## Build description"
+            echo
+            if [ -n "$BUILD_DESCRIPTION" ]; then
+              printf '%s\n' "$BUILD_DESCRIPTION"
+            else
+              echo "No build description provided."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # deps/proot is a git submodule — the proot sandbox engine source. This
       # workflow builds the sandbox binary from source (see the "Build proot
       # from source" step), so the submodule must be checked out.
@@ -258,7 +271,9 @@ jobs:
           tag_name: android-latest
           name: "VCPMinis Android (latest build)"
           body: |
-            Automated Android build — always the newest commit on `main`.
+            Manually triggered Android build from `main`.
+
+            **Build description:** ${{ inputs.build_description || 'No build description provided.' }}
 
             - Version: `${{ steps.stage.outputs.version }}` (versionCode `${{ steps.stage.outputs.versionCode }}`)
             - Commit: ${{ github.sha }}
