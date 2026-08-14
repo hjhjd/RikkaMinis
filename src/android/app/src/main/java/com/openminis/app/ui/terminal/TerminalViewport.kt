@@ -54,6 +54,7 @@ internal fun TerminalViewport(
             }
             terminalSession.attachView(view)
         },
+        onRelease = { view -> terminalSession.detachView(view) },
         modifier = modifier,
     )
 }

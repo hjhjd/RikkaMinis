@@ -13,6 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -20,95 +23,112 @@ import androidx.compose.ui.Modifier
 import com.openminis.app.sandbox.TerminalSession
 import com.openminis.app.terminal.MinisOpenUrlBroker
 
-/**
- * Full-screen terminal — now backed by [Termux TerminalView] instead of the
- * hand-rolled emulator. Ctrl and Alt are persistent toggle states that inject
- * into the [TerminalViewClient] so pressing e.g. Ctrl then 'c' sends 0x03
- * exactly like a physical keyboard.
- */
+private data class ManagedTerminalSession(
+    val id: Long,
+    val session: TerminalSession,
+    val title: String = "vcpminis",
+)
+
 @Composable
 fun TerminalScreen(
     terminalSession: TerminalSession,
     onBack: () -> Unit,
     initCommand: String? = null,
     sessionId: String? = null,
+    createSession: () -> TerminalSession,
 ) {
-    // ── Ctrl / Alt persistent toggles ──────────────────────────────────────
+    val sessions = remember {
+        mutableStateListOf(ManagedTerminalSession(1L, terminalSession))
+    }
+    var nextSessionId by remember { mutableLongStateOf(2L) }
+    var activeSessionId by remember { mutableLongStateOf(1L) }
+    val active = sessions.firstOrNull { it.id == activeSessionId } ?: sessions.first()
+    val activeState by active.session.state.collectAsStateEffect()
     var ctrlDown by remember { mutableStateOf(false) }
     var altDown by remember { mutableStateOf(false) }
+    var initialCommandSent by remember { mutableStateOf(false) }
 
-    // Track terminal session state so Compose re-executes the
-    // AndroidView.update block when the Termux PTY finishes booting.
-    val sessionState by terminalSession.state.collectAsStateEffect()
-
-    // ── Lifecycle ──────────────────────────────────────────────────────────
-    LaunchedEffect(Unit) {
-        if (!terminalSession.isRunning) terminalSession.start(sessionId = sessionId)
-        if (!initCommand.isNullOrBlank()) {
+    LaunchedEffect(active.id) {
+        if (!active.session.isRunning) active.session.start(sessionId = sessionId)
+        if (active.id == 1L && !initialCommandSent && !initCommand.isNullOrBlank()) {
+            initialCommandSent = true
             kotlinx.coroutines.delay(500)
-            terminalSession.sendText(initCommand)
+            active.session.sendText(initCommand)
         }
     }
 
     DisposableEffect(Unit) {
-        onDispose { terminalSession.stop() }
+        onDispose { sessions.forEach { it.session.stop() } }
     }
 
-    // Claim the broker while the fullscreen terminal is up so ChatScreen
-    // (still composed underneath this destination's stack) doesn't try to
-    // present its own preview sheet on top — mirrors iOS ISHTerminalView.
     DisposableEffect(Unit) {
         MinisOpenUrlBroker.setTerminalVisible(true)
         onDispose { MinisOpenUrlBroker.setTerminalVisible(false) }
     }
 
-    // ── OSC 1337 MinisOpenURL ──────────────────────────────────────────────
     var previewUrl by remember { mutableStateOf<String?>(null) }
     val pendingUrl by MinisOpenUrlBroker.pendingUrl.collectAsStateEffect()
     LaunchedEffect(pendingUrl) {
         val uri = pendingUrl ?: return@LaunchedEffect
-        if (MinisOpenUrlBroker.isWebScheme(uri.scheme)) {
-            previewUrl = uri.toString()
-        }
+        if (MinisOpenUrlBroker.isWebScheme(uri.scheme)) previewUrl = uri.toString()
         MinisOpenUrlBroker.consume()
+    }
+
+    fun closeSession(id: Long) {
+        val index = sessions.indexOfFirst { it.id == id }
+        if (index < 0) return
+        if (sessions.size == 1) {
+            sessions[index].session.stop()
+            onBack()
+            return
+        }
+        sessions[index].session.stop()
+        sessions.removeAt(index)
+        if (activeSessionId == id) {
+            activeSessionId = sessions[index.coerceAtMost(sessions.lastIndex)].id
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(TerminalColors.background)) {
         Column(
-            modifier = Modifier.fillMaxSize()
-                .windowInsetsPadding(WindowInsets.systemBars)
-                .imePadding(),
+            modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).imePadding(),
         ) {
             TerminalHeader(
-                onBack = {
-                    terminalSession.stop()
-                    onBack()
-                },
+                onBack = { onBack() },
                 onAdd = {
-                    terminalSession.stop()
-                    terminalSession.start(sessionId = sessionId)
+                    val id = nextSessionId++
+                    sessions.add(ManagedTerminalSession(id, createSession()))
+                    activeSessionId = id
+                    ctrlDown = false
+                    altDown = false
                 },
             )
-            TerminalTab(
-                onClose = {
-                    terminalSession.stop()
-                    onBack()
+            TerminalTabStrip(
+                tabs = sessions.map { TerminalTabUi(it.id, it.title) },
+                activeTabId = activeSessionId,
+                onSelect = {
+                    activeSessionId = it
+                    ctrlDown = false
+                    altDown = false
                 },
+                onClose = ::closeSession,
             )
-            TerminalViewport(
-                terminalSession = terminalSession,
-                sessionState = sessionState,
-                ctrlDown = ctrlDown,
-                altDown = altDown,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            )
+            key(active.id) {
+                TerminalViewport(
+                    terminalSession = active.session,
+                    sessionState = activeState,
+                    ctrlDown = ctrlDown,
+                    altDown = altDown,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+            }
             KeyboardAccessoryBar(
                 ctrlDown = ctrlDown,
                 altDown = altDown,
                 onCtrlToggle = { ctrlDown = !ctrlDown },
                 onAltToggle = { altDown = !altDown },
                 onSendRaw = { bytes ->
-                    terminalSession.sendRawBytes(bytes)
+                    active.session.sendRawBytes(bytes)
                     ctrlDown = false
                     altDown = false
                 },
@@ -116,18 +136,14 @@ fun TerminalScreen(
         }
 
         previewUrl?.let { url ->
-            com.openminis.app.ui.components.UrlPreviewSheet(
-                url = url,
-                onDismiss = { previewUrl = null },
-            )
+            com.openminis.app.ui.components.UrlPreviewSheet(url = url, onDismiss = { previewUrl = null })
         }
     }
 }
 
-
 @Composable
 private fun <T> kotlinx.coroutines.flow.StateFlow<T>.collectAsStateEffect(): androidx.compose.runtime.State<T> {
-    val state = remember { androidx.compose.runtime.mutableStateOf(value) }
+    val state = remember(this) { androidx.compose.runtime.mutableStateOf(value) }
     LaunchedEffect(this) { collect { state.value = it } }
     return state
 }

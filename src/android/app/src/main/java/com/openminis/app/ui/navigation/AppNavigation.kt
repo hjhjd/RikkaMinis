@@ -1155,6 +1155,7 @@ fun AppNavigation(
                 onBack = { navController.safePopBackStack() },
                 initCommand = initCommand,
                 sessionId = sessionId,
+                createSession = { TerminalSession(context.applicationContext) },
             )
         }
 

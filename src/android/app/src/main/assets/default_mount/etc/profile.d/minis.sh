@@ -2,11 +2,11 @@
 # Loaded by /etc/profile via the profile.d mechanism (login shells only).
 
 # Keep the interactive identity stable and match the terminal tab label.
-# ANSI markers color the identity green and the working directory blue.
+# ANSI markers color the host name green and the working directory blue.
 if [ -n "${BASH_VERSION:-}" ]; then
-    export PS1='\[\e[1;32m\]nova@vcpminis\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '
+    export PS1='\[\e[1;32m\]vcpminis\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '
 else
-    export PS1='\e[1;32mnova@vcpminis\e[0m:\e[1;34m\w\e[0m\$ '
+    export PS1='\e[1;32mvcpminis\e[0m:\e[1;34m\w\e[0m\$ '
 fi
 
 # Enable ash command history with arrow keys

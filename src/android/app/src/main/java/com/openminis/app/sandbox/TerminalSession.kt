@@ -293,6 +293,11 @@ class TerminalSession(private val context: Context) {
         }
     }
 
+    /** Stop an inactive tab from retaining and redrawing its disposed AndroidView. */
+    fun detachView(view: TerminalView) {
+        if (attachedView === view) attachedView = null
+    }
+
     // ──────────────────────────────────────────────
     //  Input
     // ──────────────────────────────────────────────

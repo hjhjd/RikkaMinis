@@ -2,7 +2,7 @@ package com.openminis.app.ui.terminal
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -34,9 +36,9 @@ internal object TerminalColors {
     val divider = Color(0xFF353238)
 }
 
-internal val TerminalHeaderHeight = 64.dp
-internal val TerminalTabHeight = 52.dp
-internal val TerminalAccessoryHeight = 112.dp
+internal val TerminalHeaderHeight = 52.dp
+internal val TerminalTabHeight = 42.dp
+internal val TerminalAccessoryHeight = 72.dp
 
 @Composable
 internal fun TerminalHeader(onBack: () -> Unit, onAdd: () -> Unit) {
@@ -51,49 +53,83 @@ internal fun TerminalHeader(onBack: () -> Unit, onAdd: () -> Unit) {
             tint = TerminalColors.foreground,
             modifier = Modifier.clickable(onClick = onBack).padding(4.dp).size(32.dp),
         )
-        Text(
-            text = "VCPMinis-Debian",
-            color = TerminalColors.foreground,
-            style = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.Medium),
-            modifier = Modifier.weight(1f).padding(start = 18.dp),
-        )
+        Box(modifier = Modifier.weight(1f))
         Icon(
             Icons.Default.Add,
-            contentDescription = "新建终端",
+            contentDescription = "新建终端会话",
             tint = TerminalColors.foreground,
             modifier = Modifier.clickable(onClick = onAdd).padding(4.dp).size(32.dp),
         )
     }
 }
 
+internal data class TerminalTabUi(val id: Long, val title: String)
+
 @Composable
-internal fun TerminalTab(onClose: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().height(TerminalTabHeight).background(TerminalColors.background)) {
-        Row(
-            modifier = Modifier.weight(1f).padding(start = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "nova@vcpminis",
-                color = TerminalColors.accent,
-                style = TextStyle(fontFamily = JetBrainsMonoFontFamily, fontSize = 17.sp, fontWeight = FontWeight.Bold),
-            )
-            Icon(
-                Icons.Default.Close,
-                contentDescription = "关闭终端",
-                tint = TerminalColors.accent,
-                modifier = Modifier.clickable(onClick = onClose).padding(10.dp).size(20.dp),
-            )
+internal fun TerminalTabStrip(
+    tabs: List<TerminalTabUi>,
+    activeTabId: Long,
+    onSelect: (Long) -> Unit,
+    onClose: (Long) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(TerminalTabHeight)
+            .background(TerminalColors.background).horizontalScroll(rememberScrollState()),
+    ) {
+        tabs.forEach { tab ->
+            val active = tab.id == activeTabId
+            Column(
+                modifier = Modifier.width(144.dp).fillMaxSize().clickable { onSelect(tab.id) },
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f).padding(start = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        tab.title,
+                        color = if (active) TerminalColors.accent else TerminalColors.muted,
+                        style = TextStyle(
+                            fontFamily = JetBrainsMonoFontFamily,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                    )
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "关闭 ${tab.title}",
+                        tint = if (active) TerminalColors.accent else TerminalColors.muted,
+                        modifier = Modifier.clickable { onClose(tab.id) }.padding(7.dp).size(18.dp),
+                    )
+                }
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(2.dp)
+                        .background(if (active) TerminalColors.accent else TerminalColors.divider),
+                )
+            }
         }
-        Row(modifier = Modifier.fillMaxWidth().height(2.dp)) {
-            Box(modifier = Modifier.weight(0.35f).fillMaxSize().background(TerminalColors.accent))
-            Box(modifier = Modifier.weight(0.65f).fillMaxSize().background(TerminalColors.divider))
-        }
+        Box(modifier = Modifier.width(32.dp).fillMaxSize().background(TerminalColors.background))
     }
 }
 
 private data class TerminalKey(val label: String, val bytes: ByteArray? = null, val modifier: ModifierKey? = null)
 private enum class ModifierKey { CTRL, ALT }
+
+private val terminalKeyRows = listOf(
+    listOf(
+        TerminalKey("ESC", byteArrayOf(0x1B)), TerminalKey("/", byteArrayOf('/'.code.toByte())),
+        TerminalKey("−", byteArrayOf('-'.code.toByte())), TerminalKey("HOME", byteArrayOf(0x1B, 0x5B, 0x48)),
+        TerminalKey("↑", byteArrayOf(0x1B, 0x5B, 0x41)), TerminalKey("END", byteArrayOf(0x1B, 0x5B, 0x46)),
+        TerminalKey("PGUP", byteArrayOf(0x1B, 0x5B, 0x35, 0x7E)),
+    ),
+    listOf(
+        TerminalKey("↹", byteArrayOf(0x09)), TerminalKey("CTRL", modifier = ModifierKey.CTRL),
+        TerminalKey("ALT", modifier = ModifierKey.ALT), TerminalKey("←", byteArrayOf(0x1B, 0x5B, 0x44)),
+        TerminalKey("↓", byteArrayOf(0x1B, 0x5B, 0x42)), TerminalKey("→", byteArrayOf(0x1B, 0x5B, 0x43)),
+        TerminalKey("PGDN", byteArrayOf(0x1B, 0x5B, 0x36, 0x7E)),
+    ),
+)
 
 @Composable
 internal fun KeyboardAccessoryBar(
@@ -103,29 +139,15 @@ internal fun KeyboardAccessoryBar(
     onAltToggle: () -> Unit,
     onSendRaw: (ByteArray) -> Unit,
 ) {
-    val rows = listOf(
-        listOf(
-            TerminalKey("ESC", byteArrayOf(0x1B)), TerminalKey("/", byteArrayOf('/'.code.toByte())),
-            TerminalKey("−", byteArrayOf('-'.code.toByte())), TerminalKey("HOME", byteArrayOf(0x1B, 0x5B, 0x48)),
-            TerminalKey("↑", byteArrayOf(0x1B, 0x5B, 0x41)), TerminalKey("END", byteArrayOf(0x1B, 0x5B, 0x46)),
-            TerminalKey("PGUP", byteArrayOf(0x1B, 0x5B, 0x35, 0x7E)),
-        ),
-        listOf(
-            TerminalKey("↹", byteArrayOf(0x09)), TerminalKey("CTRL", modifier = ModifierKey.CTRL),
-            TerminalKey("ALT", modifier = ModifierKey.ALT), TerminalKey("←", byteArrayOf(0x1B, 0x5B, 0x44)),
-            TerminalKey("↓", byteArrayOf(0x1B, 0x5B, 0x42)), TerminalKey("→", byteArrayOf(0x1B, 0x5B, 0x43)),
-            TerminalKey("PGDN", byteArrayOf(0x1B, 0x5B, 0x36, 0x7E)),
-        ),
-    )
     Column(
-        modifier = Modifier.fillMaxWidth().height(TerminalAccessoryHeight).background(TerminalColors.background)
-            .padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.SpaceEvenly,
+        modifier = Modifier.fillMaxWidth().height(TerminalAccessoryHeight)
+            .background(TerminalColors.background).padding(horizontal = 4.dp, vertical = 2.dp),
     ) {
-        rows.forEach { keys ->
+        terminalKeyRows.forEach { keys ->
             Row(modifier = Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 keys.forEach { key ->
-                    val active = key.modifier == ModifierKey.CTRL && ctrlDown || key.modifier == ModifierKey.ALT && altDown
+                    val active = key.modifier == ModifierKey.CTRL && ctrlDown ||
+                        key.modifier == ModifierKey.ALT && altDown
                     Box(
                         modifier = Modifier.weight(1f).fillMaxSize().clickable {
                             when (key.modifier) {
@@ -139,7 +161,9 @@ internal fun KeyboardAccessoryBar(
                         Text(
                             key.label,
                             color = if (active) TerminalColors.accent else TerminalColors.muted,
-                            style = TextStyle(fontSize = if (key.label in setOf("↑", "↓", "←", "→", "↹")) 24.sp else 16.sp),
+                            style = TextStyle(
+                                fontSize = if (key.label in setOf("↑", "↓", "←", "→", "↹")) 18.sp else 13.sp,
+                            ),
                             maxLines = 1,
                         )
                     }
