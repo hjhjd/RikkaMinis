@@ -93,30 +93,8 @@ object ExecutionCoordinator {
         appContext = context.applicationContext
     }
 
-    /** Optional sandbox router. Returning null means fall back to local PRoot. */
-    @Volatile
-    var externalExecutor: (suspend (String, String, Long, ((String) -> Unit)?, String?) -> CommandResult?)? = null
-
-    /**
-     * Execute a command in the selected sandbox. The external router preserves
-     * this existing API and returns null only for channel-level fallback.
-     */
+    /** Execute a command directly in built-in PRoot. */
     suspend fun execute(
-        sessionId: String,
-        command: String,
-        timeout: Long = 600_000L,
-        lineCallback: ((String) -> Unit)? = null,
-        sandbox: String? = null,
-    ): CommandResult {
-        if (sandbox.equals("proot", ignoreCase = true)) {
-            return executeLocal(sessionId, command, timeout, lineCallback)
-        }
-        externalExecutor?.invoke(sessionId, command, timeout, lineCallback, sandbox)?.let { return it }
-        return executeLocal(sessionId, command, timeout, lineCallback)
-    }
-
-    /** Execute directly in built-in PRoot, bypassing sandbox routing. */
-    suspend fun executeLocal(
         sessionId: String,
         command: String,
         timeout: Long = 600_000L,

@@ -541,7 +541,7 @@ class MinisApp : Application(), ImageLoaderFactory {
             execPlaneBridge,
             environmentProvider = envVarRepository::allAsDict,
         )
-        ExecutionCoordinator.externalExecutor = sandboxRouter::execute
+        com.openminis.app.execplane.LegacyShellExecutionGateway.installRemoteExecutor(sandboxRouter::execute)
         backgroundTaskNotifier = BackgroundTaskNotifier(
             context = this,
             chatRepository = chatRepository,

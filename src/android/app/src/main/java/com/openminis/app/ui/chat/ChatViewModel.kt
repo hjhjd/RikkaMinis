@@ -46,6 +46,7 @@ import com.openminis.app.agent.shell.BashismDetector
 import com.openminis.app.agent.shell.BashismReminder
 import com.openminis.app.agent.shell.OnDemandBash
 import com.openminis.app.sandbox.ExecutionCoordinator
+import com.openminis.app.execplane.LegacyShellExecutionGateway
 import com.openminis.app.terminal.MinisOpenUrlBroker
 import com.openminis.app.terminal.MinisUrlMarker
 import com.openminis.app.tools.AgentTools
@@ -8410,7 +8411,7 @@ class ChatViewModel(
             var bashScript: String? = null   // set when we bash-wrapped; enables M5 self-heal retry
             if (bashism.needsBash) {
                 val executor = OnDemandBash.Executor { c, t ->
-                    ExecutionCoordinator.execute(
+                    LegacyShellExecutionGateway.execute(
                         sessionId = dispatchSessionId,
                         command = c,
                         timeout = t,
@@ -8435,7 +8436,7 @@ class ChatViewModel(
                 }
             }
 
-            var result = ExecutionCoordinator.execute(
+            var result = LegacyShellExecutionGateway.execute(
                 sessionId = dispatchSessionId,
                 command = command,
                 timeout = timeoutSec * 1000L,
@@ -8475,7 +8476,7 @@ class ChatViewModel(
                     result.exitCode == (BASH_MISSING_SENTINEL shl 8)) && bashScript != null) {
                 OnDemandBash.markDisappeared()
                 val executor = OnDemandBash.Executor { c, t ->
-                    ExecutionCoordinator.execute(
+                    LegacyShellExecutionGateway.execute(
                         sessionId = dispatchSessionId,
                         command = c,
                         timeout = t,
@@ -8484,7 +8485,7 @@ class ChatViewModel(
                 }
                 val healed = OnDemandBash.ensureBash(context, executor)
                 command = if (healed is OnDemandBash.Outcome.Available) wrapForBash(bashScript!!) else bashScript!!
-                result = ExecutionCoordinator.execute(
+                result = LegacyShellExecutionGateway.execute(
                     sessionId = dispatchSessionId,
                     command = command,
                     timeout = timeoutSec * 1000L,

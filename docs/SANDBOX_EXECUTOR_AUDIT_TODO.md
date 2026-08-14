@@ -12,7 +12,7 @@
 > - 阶段 0：部分完成；marker、UTF-8、路径逃逸、远端输出与截断已有回归测试，其余基线待补。
 > - 阶段 1：完成；固定 `sandbox_dispatch`、Provider 骨架、Channel 事件与 UI 节流已落地。
 > - 阶段 2：主链路完成；不透明协议、稳定 sandbox ID、指令集 UI 与服务端最小 DSL 已验证。
-> - 阶段 3：进行中；本地结果契约、取消句柄与统一 SessionExecutionState 已落地，Provider 拆分、旧协议适配与状态最终回收仍待继续。
+> - 阶段 3：进行中；ExecutionCoordinator 已收敛为本地 PRoot 生命周期，旧远端 shell_execute 已隔离到兼容网关；Provider 拆分、旧文件协议适配与状态最终回收仍待继续。
 > - 阶段 4：P0 完成；P1 路径 containment、空闲执行检查、marker、UTF-8 与 mutex 回收竞态均已修复。
 > - 阶段 5：未完成；本地 Shell 最终语义与工具契约待确定。
 > - 阶段 6：未完成；WebSocket 文本/协议限额已完成，通用 Resource 通道与其余纵深防御待实现。
@@ -185,7 +185,7 @@ capabilities / dispatch / cancel
   - cancelled；
   - truncated。
 - [x] 定义本地 `ActiveExecutionHandle.cancel()`。
-- [ ] `ExecutionCoordinator` 只管理 PRoot session 状态和执行生命周期，不再承担 WS 路由或 UI 文本格式化。
+- [x] `ExecutionCoordinator` 只管理 PRoot session 状态和执行生命周期，不再承担 WS 路由或 UI 文本格式化。
 
 ### 3.2 PRoot 会话状态
 
@@ -205,7 +205,7 @@ capabilities / dispatch / cancel
 
 - [x] 冻结 Android 端现有 `exec`、`fs.*`、`transfer.*` 业务功能，不再新增调用点。
 - [x] 新版服务端可通过可配置 Python dispatch 插件定义任意 payload DSL；Android 新路径只调用 `dispatch`。
-- [ ] 迁移期旧协议放入单独适配层；主业务层不得直接调用 `SandboxFileService` 或具体 RPC method。
+- [ ] 迁移期旧协议放入单独适配层；shell_execute 已迁入 `LegacyShellExecutionGateway`，文件/transfer 调用仍待隔离。
 - [ ] 明确旧协议弃用窗口和服务端最低兼容版本。
 - [ ] 文本 dispatch 稳定后，移除 WS `shell_execute`、远端 `file_read/write/edit` 的 Android 特殊分支。
 - [ ] `transfer.*` 在通用 resource 通道落地前保留，仅用于兼容旧客户端/服务端，不作为新架构入口。

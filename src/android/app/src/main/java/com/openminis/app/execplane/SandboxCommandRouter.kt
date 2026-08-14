@@ -83,7 +83,7 @@ class SandboxCommandRouter(
                 throw IllegalStateException("Sandbox '$explicit' unavailable: ${error.message}", error)
             }
             Log.w(TAG, "[$sessionId] $targetName unavailable; falling back to PRoot: ${error.message}")
-            ExecutionCoordinator.executeLocal(sessionId, command, timeoutMs, lineCallback)
+            ExecutionCoordinator.execute(sessionId, command, timeoutMs, lineCallback)
                 .copy(degraded = true)
         } catch (error: RemoteExecutionException) {
             ExecutionCoordinator.CommandResult(
