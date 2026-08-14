@@ -11,9 +11,18 @@ internal fun parseVcpHtmlBounds(value: String?): VcpHtmlBounds? {
     val clean = value?.trim()?.trim('"')?.replace("\\\"", "\"") ?: return null
     val parts = clean.split(',')
     if (parts.size != 4) return null
-    val nums = parts.map { it.toDoubleOrNull()?.toInt() ?: return null }
-    return VcpHtmlBounds(nums[0], nums[1], nums[2], nums[3])
+    val values = parts.map { it.toDoubleOrNull() ?: return null }
+    if (values.any { !it.isFinite() }) return null
+    val left = values[0].toInt().coerceIn(-MAX_VCP_HTML_OFFSET_CSS, MAX_VCP_HTML_OFFSET_CSS)
+    val top = values[1].toInt().coerceIn(-MAX_VCP_HTML_OFFSET_CSS, MAX_VCP_HTML_OFFSET_CSS)
+    val width = values[2].toInt().coerceIn(1, MAX_VCP_HTML_WIDTH_CSS)
+    val height = values[3].toInt().coerceIn(1, MAX_VCP_HTML_HEIGHT_CSS)
+    return VcpHtmlBounds(left, top, width, height)
 }
+
+internal const val MAX_VCP_HTML_OFFSET_CSS = 4_096
+internal const val MAX_VCP_HTML_WIDTH_CSS = 8_192
+internal const val MAX_VCP_HTML_HEIGHT_CSS = 20_000
 
 /** JS writes continuously-updated #vcp-root bounds into the document title. */
 internal val VCP_HTML_BOUNDS_SCRIPT = """

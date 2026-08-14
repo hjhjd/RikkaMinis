@@ -53,6 +53,25 @@ class VcpContentParserTest {
         assertEquals(VcpContentBlock.HtmlPreview.Source.DOCUMENT, doc.source)
     }
 
+    @Test fun htmlCloseInsideRawTextAndCommentDoesNotFinishDocument() {
+        val input = """<!doctype html><html><body>
+<script>const sample = "</html>";</script>
+<!-- example </html> -->
+<div>visible</div>
+</body></html>
+after"""
+        val blocks = VcpContentParser.parse(input).blocks
+        val html = blocks.first() as VcpContentBlock.HtmlPreview
+        assertTrue(html.content.contains("<div>visible</div>"))
+        assertTrue((blocks.last() as VcpContentBlock.Markdown).content.contains("after"))
+    }
+
+    @Test fun streamingDocumentCloseInsideScriptStaysIncomplete() {
+        val input = """<!doctype html><html><script>const sample = "</html>";</script>"""
+        val html = VcpContentParser.parse(input, streaming = true).tailBlock as VcpContentBlock.HtmlPreview
+        assertEquals(VcpBlockCompletion.STREAMING, html.completion)
+    }
+
     @Test fun finalIncompleteBlockIsPreserved() {
         val block = VcpContentParser.parse("<think>unfinished").blocks.single() as VcpContentBlock.Thought
         assertEquals(VcpBlockCompletion.INCOMPLETE, block.completion)

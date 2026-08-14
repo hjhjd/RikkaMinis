@@ -3388,6 +3388,7 @@ fun ChatScreen(
                             ) {
                                 com.openminis.app.ui.chat.vcp.VcpBlockView(
                                     messageId = item.messageId,
+                                    blockId = "${item.parentBlockId}:${item.blockIndex}",
                                     block = item.block,
                                     isStreaming = item.messageIsStreaming &&
                                         item.block.completion == com.openminis.app.ui.chat.vcp.VcpBlockCompletion.STREAMING,

@@ -10,6 +10,11 @@ class VcpHtmlBoundsTest {
         assertEquals(VcpHtmlBounds(5, 8, 320, 144), parseVcpHtmlBounds("5,8,320,144"))
         assertEquals(VcpHtmlBounds(5, 8, 320, 144), parseVcpHtmlBounds("\"5,8,320,144\""))
         assertNull(parseVcpHtmlBounds("bad"))
+        assertNull(parseVcpHtmlBounds("0,0,NaN,20"))
+        assertEquals(
+            VcpHtmlBounds(-MAX_VCP_HTML_OFFSET_CSS, MAX_VCP_HTML_OFFSET_CSS, MAX_VCP_HTML_WIDTH_CSS, MAX_VCP_HTML_HEIGHT_CSS),
+            parseVcpHtmlBounds("-999999,999999,999999,999999999"),
+        )
     }
 
     @Test fun observerTargetsVcpRootFirst() {

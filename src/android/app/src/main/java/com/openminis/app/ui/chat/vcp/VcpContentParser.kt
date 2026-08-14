@@ -163,7 +163,7 @@ internal object VcpContentParser {
             Kind.ROLE_DIVIDER -> start.start to start.markerEnd
             Kind.HTML_FENCE -> lineEnd(text, start.contentStart, Regex("^[ \\t]*```[ \\t]*$"))
             Kind.THINK -> tagEnd(text, start.contentStart, Regex("</think(?:ing)?>", RegexOption.IGNORE_CASE))
-            Kind.HTML_DOCUMENT -> tagEnd(text, start.contentStart, Regex("</html>", RegexOption.IGNORE_CASE))
+            Kind.HTML_DOCUMENT -> findHtmlDocumentEnd(text, start.contentStart)
             Kind.HTML_CONTAINER -> findMatchingContainerEnd(text, start)
             Kind.IMAGE -> if (start.markerEnd > start.start) start.start to start.markerEnd else null
         }
@@ -183,6 +183,38 @@ internal object VcpContentParser {
     private fun tagEnd(text: String, from: Int, regex: Regex): Pair<Int, Int>? {
         val m = regex.find(text, from) ?: return null
         return m.range.first to (m.range.last + 1)
+    }
+
+    /** Finds the real document close, ignoring examples inside comments/raw-text elements. */
+    private fun findHtmlDocumentEnd(text: String, from: Int): Pair<Int, Int>? {
+        var i = from
+        while (i < text.length) {
+            val lt = text.indexOf('<', i)
+            if (lt < 0) return null
+            if (text.startsWith("<!--", lt)) {
+                val close = text.indexOf("-->", lt + 4)
+                if (close < 0) return null
+                i = close + 3
+                continue
+            }
+            val openRaw = RAW_TEXT_OPEN.matchAt(text, lt)
+            if (openRaw != null) {
+                val tagName = openRaw.groupValues[1].lowercase()
+                val openEnd = findTagClose(text, lt) ?: return null
+                val close = Regex("</${Regex.escape(tagName)}\\s*>", RegexOption.IGNORE_CASE).find(text, openEnd)
+                    ?: return null
+                i = close.range.last + 1
+                continue
+            }
+            val tokenEnd = findTagClose(text, lt) ?: return null
+            val token = text.substring(lt, tokenEnd)
+            val tag = TAG_NAME.find(token)
+            if (tag != null && tag.groupValues[1] == "/" && tag.groupValues[2].equals("html", true)) {
+                return lt to tokenEnd
+            }
+            i = tokenEnd
+        }
+        return null
     }
 
     /**

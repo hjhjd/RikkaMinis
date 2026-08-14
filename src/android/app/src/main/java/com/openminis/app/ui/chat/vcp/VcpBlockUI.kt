@@ -47,13 +47,14 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.compose.AsyncImagePainter
 import com.openminis.app.ui.chat.MarkdownBlock
+import com.openminis.app.ui.chat.LocalMarkdownSessionId
 import com.openminis.app.ui.DisplayBitmapLimits.limitDisplaySize
 import coil.request.ImageRequest
 
 internal val LocalVcpHtmlButtonHandler = compositionLocalOf<((String) -> Unit)?> { null }
 
 @Composable
-internal fun VcpBlockView(messageId: String, block: VcpContentBlock, isStreaming: Boolean) {
+internal fun VcpBlockView(messageId: String, blockId: String, block: VcpContentBlock, isStreaming: Boolean) {
     when (block) {
         is VcpContentBlock.Markdown -> MarkdownBlock(block.content, isStreaming, shardId = null)
         is VcpContentBlock.Thought -> VcpThoughtBlock(messageId, block)
@@ -62,7 +63,7 @@ internal fun VcpBlockView(messageId: String, block: VcpContentBlock, isStreaming
         is VcpContentBlock.RoleDivider -> VcpRoleDivider(block)
         is VcpContentBlock.Diary -> VcpDiaryBlock(block)
         is VcpContentBlock.ToolCallSummary -> VcpToolSummaryBlock(block)
-        is VcpContentBlock.HtmlPreview -> VcpHtmlPreviewBlock(messageId, block)
+        is VcpContentBlock.HtmlPreview -> VcpHtmlPreviewBlock(messageId, blockId, block)
         is VcpContentBlock.Image -> VcpImageBlock(block)
     }
 }
@@ -353,11 +354,14 @@ private fun VcpImageBlock(block: VcpContentBlock.Image) {
 }
 
 @Composable
-private fun VcpHtmlPreviewBlock(messageId: String, block: VcpContentBlock.HtmlPreview) {
+private fun VcpHtmlPreviewBlock(messageId: String, blockId: String, block: VcpContentBlock.HtmlPreview) {
     val canPreview = block.completion == VcpBlockCompletion.STABLE
     // Stable HTML is message content, not an attachment: render it immediately.
     // An incomplete streaming fragment remains source code until it closes.
-    val renderKey = remember(messageId, block.hash) { "vcp-html:$messageId:${block.hash}" }
+    val sessionId = LocalMarkdownSessionId.current.orEmpty()
+    val renderKey = remember(sessionId, messageId, blockId, block.hash) {
+        "vcp-html:$sessionId:$messageId:$blockId:${block.hash}"
+    }
     val renderState = remember(renderKey) { VcpHtmlRenderStore.state(renderKey) }
     var preview by remember(renderKey) { mutableStateOf(renderState.showPreview && canPreview) }
     var fullscreen by remember(renderKey) { mutableStateOf(false) }
@@ -508,7 +512,9 @@ private fun SandboxedHtml(
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                             val uri = request.url
-                            if (uri.scheme == "vcp-action" && uri.host == "button") {
+                            if (uri.scheme == "vcp-action" && uri.host == "button" &&
+                                request.isForMainFrame && request.hasGesture()
+                            ) {
                                 val text = uri.getQueryParameter("text").orEmpty().take(480)
                                 if (text.isNotBlank()) view.post { currentButtonHandler?.invoke("[[点击按钮:$text]]") }
                             }
