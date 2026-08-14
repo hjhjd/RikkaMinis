@@ -888,6 +888,9 @@
     <string name="model_picker_search_placeholder">모델 검색</string>
     <string name="model_picker_search_clear">지우기</string>
     <string name="model_picker_groups_section">모델 그룹</string>
+    <string name="model_picker_favorite_models">즐겨찾는 모델</string>
+    <string name="model_picker_add_favorite">모델을 즐겨찾기에 추가</string>
+    <string name="model_picker_remove_favorite">모델을 즐겨찾기에서 제거</string>
     <string name="model_picker_groups_footer">자동 폴백 또는 부하 분산을 위해 이 세션을 그룹에 연결합니다.</string>
     <string name="model_picker_all_providers">모든 제공업체</string>
     <string name="model_picker_default_badge">기본값</string>

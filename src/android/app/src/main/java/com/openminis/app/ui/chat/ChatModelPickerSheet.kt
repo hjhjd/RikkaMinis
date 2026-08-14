@@ -41,6 +41,8 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -361,7 +363,9 @@ internal fun ModelPickerSheet(
                 }
                 val filtered = if (searchText.isEmpty()) entries
                 else entries.filter {
-                    fuzzyMatch(it.model.displayName, searchText) || fuzzyMatch(it.model.id, searchText)
+                    fuzzyMatch(it.model.displayName, searchText) ||
+                        fuzzyMatch(it.model.id, searchText) ||
+                        fuzzyMatch(instance.label.ifEmpty { instance.providerType.displayName }, searchText)
                 }
                 val pms = (System.nanoTime() - pt) / 1_000_000.0
                 if (filtered.isNotEmpty()) {
@@ -374,6 +378,15 @@ internal fun ModelPickerSheet(
         val ms = (System.nanoTime() - t0) / 1_000_000.0
         AppLogger.info("ModelPicker", "[ModelPicker] all providers loaded: total $totalCount items, ${"%.1f".format(ms)}ms")
         result
+    }
+
+    // Model favorites are flattened in the same stable provider/model order as
+    // the source config. They render before groups and providers, while each
+    // entry remains in its original provider section for list completeness.
+    val favoriteEntries = remember(allInstancesWithEntries) {
+        allInstancesWithEntries.flatMap { (instance, entries) ->
+            entries.filter { it.pinned }.map { instance to it }
+        }
     }
 
     // [P0-pinned-providers] Split providers into pinned (Favorites) and the rest,
@@ -475,6 +488,81 @@ internal fun ModelPickerSheet(
                     .fillMaxWidth()
                     .weight(1f, fill = false),
             ) {
+                // ── Favorite Models ──
+                if (favoriteEntries.isNotEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    RoundedCornerShape(14.dp),
+                                ),
+                        ) {
+                            Text(
+                                stringResource(R.string.model_picker_favorite_models),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 6.dp),
+                            )
+                            favoriteEntries.forEachIndexed { index, (instance, entry) ->
+                                val isSelected = activeEntryId == entry.id && selectedGroupId == null
+                                val rowShape = if (index == favoriteEntries.lastIndex) {
+                                    RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp)
+                                } else RoundedCornerShape(0.dp)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .clip(rowShape)
+                                        .clickable { onSelectEntry(entry.id) }
+                                        .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                        contentDescription = null,
+                                        tint = if (isSelected) Color(0xFF007AFF)
+                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Box(
+                                        modifier = Modifier.size(6.dp).background(providerDotColor(instance.providerType), CircleShape),
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(entry.model.displayName, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            instance.label.ifEmpty { instance.providerType.displayName },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { providerRepository.setEntryPinned(entry.id, false) },
+                                        modifier = Modifier.size(32.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Star,
+                                            contentDescription = stringResource(R.string.model_picker_remove_favorite),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
+                                }
+                                if (index < favoriteEntries.lastIndex) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(start = 52.dp, end = 16.dp),
+                                        thickness = 0.5.dp,
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // ── Model Groups (grouped section card with embedded header) ──
                 if (filteredGroups.isNotEmpty()) {
                     // Section card: header + rows live in the same surface so
@@ -734,6 +822,21 @@ internal fun ModelPickerSheet(
                                                         )
                                                     }
                                                 }
+                                                IconButton(
+                                                    onClick = { providerRepository.setEntryPinned(entry.id, !entry.pinned) },
+                                                    modifier = Modifier.size(32.dp),
+                                                ) {
+                                                    Icon(
+                                                        if (entry.pinned) Icons.Filled.Star else Icons.Filled.StarBorder,
+                                                        contentDescription = stringResource(
+                                                            if (entry.pinned) R.string.model_picker_remove_favorite
+                                                            else R.string.model_picker_add_favorite,
+                                                        ),
+                                                        tint = if (entry.pinned) MaterialTheme.colorScheme.primary
+                                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                                        modifier = Modifier.size(20.dp),
+                                                    )
+                                                }
                                                 if (isActive) {
                                                     Text(
                                                         stringResource(R.string.model_picker_active_badge),
@@ -938,6 +1041,21 @@ internal fun ModelPickerSheet(
                                                     )
                                                 }
                                             }
+                                            IconButton(
+                                                onClick = { providerRepository.setEntryPinned(displayEntry.id, !displayEntry.pinned) },
+                                                modifier = Modifier.size(32.dp),
+                                            ) {
+                                                Icon(
+                                                    if (displayEntry.pinned) Icons.Filled.Star else Icons.Filled.StarBorder,
+                                                    contentDescription = stringResource(
+                                                        if (displayEntry.pinned) R.string.model_picker_remove_favorite
+                                                        else R.string.model_picker_add_favorite,
+                                                    ),
+                                                    tint = if (displayEntry.pinned) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                            }
                                             Text(
                                                 pluralStringResource(R.plurals.model_picker_models_count, entries.size, entries.size),
                                                 style = MaterialTheme.typography.labelSmall,
@@ -1010,6 +1128,21 @@ internal fun ModelPickerSheet(
                                                         )
                                                     }
                                                 }
+                                            }
+                                            IconButton(
+                                                onClick = { providerRepository.setEntryPinned(entry.id, !entry.pinned) },
+                                                modifier = Modifier.size(32.dp),
+                                            ) {
+                                                Icon(
+                                                    if (entry.pinned) Icons.Filled.Star else Icons.Filled.StarBorder,
+                                                    contentDescription = stringResource(
+                                                        if (entry.pinned) R.string.model_picker_remove_favorite
+                                                        else R.string.model_picker_add_favorite,
+                                                    ),
+                                                    tint = if (entry.pinned) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                                    modifier = Modifier.size(20.dp),
+                                                )
                                             }
                                             if (selectedGroupId != null && activeEntryId == entry.id) {
                                                 Text(

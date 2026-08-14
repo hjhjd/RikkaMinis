@@ -888,6 +888,9 @@
     <string name="model_picker_search_placeholder">Modelle suchen</string>
     <string name="model_picker_search_clear">Löschen</string>
     <string name="model_picker_groups_section">Modellgruppen</string>
+    <string name="model_picker_favorite_models">Favorisierte Modelle</string>
+    <string name="model_picker_add_favorite">Modell zu Favoriten hinzufügen</string>
+    <string name="model_picker_remove_favorite">Modell aus Favoriten entfernen</string>
     <string name="model_picker_groups_footer">Sitzung an eine Gruppe binden, um automatischen Fallback oder Lastverteilung zu nutzen.</string>
     <string name="model_picker_all_providers">Alle Anbieter</string>
     <string name="model_picker_default_badge">Standard</string>

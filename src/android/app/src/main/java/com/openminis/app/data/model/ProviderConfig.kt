@@ -307,6 +307,9 @@ data class ModelEntry(
     val overrides: ModelOverrides = ModelOverrides(),
     val isCustom: Boolean = false,
     val isHidden: Boolean = false,
+    // User favorite shown at the top of the chat model picker. Default false
+    // keeps old JSON mirrors and cross-version imports backward compatible.
+    val pinned: Boolean = false,
     val uuid: String = UUID.randomUUID().toString(),
     val userModifiedAt: Long? = null,
 ) {
@@ -325,7 +328,7 @@ data class ModelEntry(
 
     /** True when this entry carries user intent beyond API-reported defaults. */
     val isUserModified: Boolean
-        get() = isCustom || isHidden || !overrides.isEmpty
+        get() = isCustom || isHidden || pinned || !overrides.isEmpty
 }
 
 @Serializable

@@ -34,6 +34,8 @@ data class ProviderModelEntryEntity(
     @ColumnInfo(name = "overrides_json") val overridesJson: String? = null,
     @ColumnInfo(name = "is_custom") val isCustom: Int = 0,
     @ColumnInfo(name = "is_hidden") val isHidden: Int = 0,
+    // 0/1 model favorite. MIGRATION_6_7 backfills old rows to not pinned.
+    @ColumnInfo(name = "pinned") val pinned: Int = 0,
     @ColumnInfo(name = "sort_order") val sortOrder: Int = 0,
     @ColumnInfo(name = "user_modified_at") val userModifiedAt: Long? = null,
 )

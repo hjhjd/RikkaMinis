@@ -613,6 +613,9 @@
     <string name="model_picker_search_placeholder">搜尋模型</string>
     <string name="model_picker_search_clear">清除</string>
     <string name="model_picker_groups_section">模型分組</string>
+    <string name="model_picker_favorite_models">收藏模型</string>
+    <string name="model_picker_add_favorite">收藏模型</string>
+    <string name="model_picker_remove_favorite">取消收藏模型</string>
     <string name="model_picker_groups_edit">編輯</string>
     <string name="model_picker_groups_footer">將本會話綁定到分組以實現自動回退或負載平衡。</string>
     <string name="model_picker_all_providers">全部提供商</string>

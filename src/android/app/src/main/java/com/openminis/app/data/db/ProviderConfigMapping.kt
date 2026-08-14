@@ -122,6 +122,7 @@ fun ProviderConfig.toSnapshot(
                         else jsonForBlobs.encodeToString(ModelOverrides.serializer(), e.overrides),
                     isCustom = if (e.isCustom) 1 else 0,
                     isHidden = if (e.isHidden) 1 else 0,
+                    pinned = if (e.pinned) 1 else 0,
                     sortOrder = idx,
                     userModifiedAt = e.userModifiedAt,
                 )
@@ -252,6 +253,7 @@ fun ProviderConfigSnapshot.toProviderConfig(jsonForBlobs: Json): ProviderConfig 
             overrides = overrides,
             isCustom = row.isCustom != 0,
             isHidden = row.isHidden != 0,
+            pinned = row.pinned != 0,
             uuid = row.id,
             userModifiedAt = row.userModifiedAt,
         )

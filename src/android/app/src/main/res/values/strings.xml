@@ -1393,6 +1393,9 @@
     <string name="model_picker_search_placeholder">Search models</string>
     <string name="model_picker_search_clear">Clear</string>
     <string name="model_picker_groups_section">Model Groups</string>
+    <string name="model_picker_favorite_models">Favorite Models</string>
+    <string name="model_picker_add_favorite">Add model to favorites</string>
+    <string name="model_picker_remove_favorite">Remove model from favorites</string>
     <string name="model_picker_groups_edit">Edit</string>
     <string name="model_picker_groups_footer">Bind this session to a group for automatic fallback or load balancing.</string>
     <string name="model_picker_all_providers">All Providers</string>

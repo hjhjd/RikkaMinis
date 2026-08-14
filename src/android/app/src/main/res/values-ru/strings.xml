@@ -1003,6 +1003,9 @@
     <string name="model_picker_search_placeholder">Поиск моделей</string>
     <string name="model_picker_search_clear">Очистить</string>
     <string name="model_picker_groups_section">Группы моделей</string>
+    <string name="model_picker_favorite_models">Избранные модели</string>
+    <string name="model_picker_add_favorite">Добавить модель в избранное</string>
+    <string name="model_picker_remove_favorite">Убрать модель из избранного</string>
     <string name="model_picker_groups_footer">Привяжите эту сессию к группе для автоматического резервирования или балансировки нагрузки.</string>
     <string name="model_picker_all_providers">Все провайдеры</string>
     <string name="model_picker_default_badge">По умолчанию</string>

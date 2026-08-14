@@ -968,6 +968,9 @@ class ProviderRepository(private val context: Context) {
                 // their prior isHidden forward so a refresh never resets what
                 // the user already toggled.
                 isHidden = prior?.isHidden ?: true,
+                // A refresh replaces API-backed entries, so explicitly carry
+                // the user's favorite intent across the replacement.
+                pinned = prior?.pinned ?: false,
                 uuid = prior?.id ?: java.util.UUID.randomUUID().toString(),
                 userModifiedAt = prior?.userModifiedAt,
             )
@@ -1054,6 +1057,19 @@ class ProviderRepository(private val context: Context) {
             config.modelEntries[idx] = entry.copy(userModifiedAt = System.currentTimeMillis())
             saveConfig(config)
         }
+    }
+
+    /** Toggle a model entry's favorite state without changing selection. */
+    fun setEntryPinned(entryId: String, pinned: Boolean) = synchronized(configLock) {
+        ensureConfigLoaded()
+        val config = mutationSnapshot(_config.value)
+        val idx = config.modelEntries.indexOfFirst { it.id == entryId }
+        if (idx < 0 || config.modelEntries[idx].pinned == pinned) return@synchronized
+        config.modelEntries[idx] = config.modelEntries[idx].copy(
+            pinned = pinned,
+            userModifiedAt = System.currentTimeMillis(),
+        )
+        saveConfig(config)
     }
 
     fun removeEntry(entryId: String) = synchronized(configLock) {
@@ -1933,6 +1949,7 @@ class ProviderRepository(private val context: Context) {
                     put("modelId", entry.baseModel.id)
                     put("displayName", entry.baseModel.displayName)
                     put("isHidden", entry.isHidden)
+                    if (entry.pinned) put("pinned", true)
                     if (entry.isCustom) put("isCustom", true)
                     entry.baseModel.contextWindow?.let { put("contextWindow", it) }
                     entry.baseModel.maxOutputTokens?.let { put("maxOutputTokens", it) }
@@ -2178,6 +2195,7 @@ class ProviderRepository(private val context: Context) {
             val displayName = m.optString("displayName", modelId)
             val isCustom = m.optBoolean("isCustom", false)
             val isHidden = m.optBoolean("isHidden", false)
+            val pinned = m.optBoolean("pinned", false)
             val contextWindow = if (m.has("contextWindow")) m.optInt("contextWindow").takeIf { it > 0 } else null
             val maxOutputTokens = if (m.has("maxOutputTokens")) m.optInt("maxOutputTokens").takeIf { it > 0 } else null
             val supportsReasoning = if (m.has("supportsReasoning")) m.optBoolean("supportsReasoning") else null
@@ -2222,6 +2240,7 @@ class ProviderRepository(private val context: Context) {
                 overrides = overrides,
                 isCustom = isCustom,
                 isHidden = isHidden,
+                pinned = pinned,
             ))
         }
         return entries
