@@ -149,7 +149,10 @@ class VcpLogConnectionManager(
 
             override fun onClose(code: Int, reason: String, remote: Boolean) {
                 if (!isCurrent(this, generation)) return
-                socket = null
+                // WebSocketClient exposes setSocket() as a Kotlin synthetic property.
+                // Qualify the manager field so this callback never mutates the client's
+                // already-initialized transport socket (which throws IllegalStateException).
+                this@VcpLogConnectionManager.socket = null
                 heartbeatJob?.cancel(); heartbeatJob = null
                 scheduleReconnect("服务器已断开（$code）")
             }
@@ -159,11 +162,11 @@ class VcpLogConnectionManager(
                 val reason = ex.message?.takeIf(String::isNotBlank) ?: ex.javaClass.simpleName
                 Log.w(TAG, "VCPLog connection failed: ${redact(reason)}")
                 if (includeDeviceName && shouldRetryWithoutDeviceName(ex)) {
-                    socket = null
+                    this@VcpLogConnectionManager.socket = null
                     generations.incrementAndGet()
                     open(config, includeDeviceName = false)
                 } else {
-                    socket = null
+                    this@VcpLogConnectionManager.socket = null
                     scheduleReconnect(redact(reason))
                 }
             }
