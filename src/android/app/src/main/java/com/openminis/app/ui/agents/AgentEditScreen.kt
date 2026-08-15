@@ -139,8 +139,8 @@ fun AgentEditScreen(agentId: String?, agentRepository: AgentRepository, provider
         ) {
             Column(Modifier.fillMaxWidth()) {
                 ListItem(
-                    headlineContent = { Text("工具提示词模版") },
-                    supportingContent = { Text("向该 Agent 注入工具、文件、Android 与环境安全规则") },
+                    headlineContent = { Text("工具与工具提示词") },
+                    supportingContent = { Text("关闭后不发送工具定义、技能、MCP、记忆与工具规则") },
                     trailingContent = {
                         Switch(
                             checked = toolPromptEnabled,

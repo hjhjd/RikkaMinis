@@ -558,6 +558,7 @@ class OpenAIProvider private constructor(
         // string for long agent loops with heavy tool outputs. Stacked, that
         // pushed memory-tight devices (HONOR PTP-AN00) past the OOM line.
         val bodyStr = body.toString()
+        requestContext.onFinalRequest?.invoke(name, bodyStr)
         val request = buildRequest(bodyStr)
         val headerMap = mutableMapOf<String, String>()
         for (name in request.headers.names()) {

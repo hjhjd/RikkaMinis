@@ -102,7 +102,7 @@ class GeminiProvider(
         thinkingLevel: ThinkingLevel,
         requestContext: LLMRequestContext,
     ): Flow<LLMStreamChunk> = rawStreamMessage(
-        messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel,
+        messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel, requestContext,
     ).failOnSilentEmptyCompletion(name)
 
     private fun rawStreamMessage(
@@ -113,12 +113,15 @@ class GeminiProvider(
         imageParts: List<LLMMessage.ImagePart>,
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
+        requestContext: LLMRequestContext,
     ): Flow<LLMStreamChunk> = callbackFlow {
         val body = buildRequestBody(messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel)
+        val bodyStr = body.toString()
+        requestContext.onFinalRequest?.invoke(name, bodyStr)
         val url = "$basePath/models/${model.id}:streamGenerateContent?alt=sse&key=$apiKey"
         val request = Request.Builder()
             .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .post(bodyStr.toRequestBody("application/json".toMediaType()))
             // [T-android-default-ua] same intent as the non-streaming
             // branch above — brand outbound requests with Minis/<version>.
             .applyUserAgentOverride(null)

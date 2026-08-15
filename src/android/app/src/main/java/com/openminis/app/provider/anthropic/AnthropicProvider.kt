@@ -123,7 +123,7 @@ class AnthropicProvider(
         thinkingLevel: ThinkingLevel,
         requestContext: LLMRequestContext,
     ): Flow<LLMStreamChunk> = rawStreamMessage(
-        messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel,
+        messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel, requestContext,
     ).failOnSilentEmptyCompletion(name)
 
     private fun rawStreamMessage(
@@ -134,6 +134,7 @@ class AnthropicProvider(
         imageParts: List<LLMMessage.ImagePart>,
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
+        requestContext: LLMRequestContext,
     ): Flow<LLMStreamChunk> = callbackFlow {
         val body = buildRequestBody(messages, systemPrompt, maxTokens, stream = true, temperature = temperature, imageParts = imageParts, tools = tools, thinkingLevel = thinkingLevel)
         // T302: serialize the body exactly once and pass the string to
@@ -141,6 +142,7 @@ class AnthropicProvider(
         // here, once inside buildRequest); each emitted string was tens of
         // MB on long agent loops and stacked under GC pressure.
         val bodyStr = body.toString()
+        requestContext.onFinalRequest?.invoke(name, bodyStr)
         val request = buildRequest(bodyStr, body)
 
         val startTime = System.currentTimeMillis()

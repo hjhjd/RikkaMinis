@@ -950,6 +950,17 @@ class ChatViewModel(
         get() = toolRegistry.definitions()
 
     /**
+     * 工具模板关闭时同时隐藏协议级工具定义。只删 system 文本却继续发送
+     * 顶层 tools schema，模型仍能精确复述工具名称、说明和参数，等同于未隐藏。
+     */
+    private suspend fun agentToolsForRequest(): List<AgentToolDefinition> {
+        val agentId = _activeAgentId.value
+        val agent = agentRepository.get(agentId)
+            ?: _activeAgent.value?.takeIf { it.id == agentId }
+        return com.openminis.app.agent.AgentPromptRenderer.toolsForRequest(agent, agentTools)
+    }
+
+    /**
      * Per-session loop detector. Reset alongside [agentHistory] whenever the
      * conversation is rewound (edit/regenerate) so a stale tool-call window
      * can't bleed warnings into a fresh prompt.
@@ -6950,17 +6961,20 @@ class ChatViewModel(
                     // request (including same-model, different-endpoint recovery).
                     _activeEntryId.value?.let { providerRepository.lastUsedEntryId = it }
                     val requestMessages = applyRequestImageBudget(tarvenRequest.messages)
-                    saveContextSnapshot(
-                        systemPrompt = tarvenRequest.systemPrompt,
-                        messages = requestMessages,
-                    )
                     currentProvider.streamMessage(
                         requestMessages,
                         tarvenRequest.systemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
-                        tools = agentTools,
+                        tools = agentToolsForRequest(),
                         thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
                         requestContext = com.openminis.app.provider.LLMRequestContext(
                             agentId = _activeAgentId.value,
+                            onFinalRequest = { providerName, finalBody ->
+                                runCatching {
+                                    contextSnapshotStore.saveFinalRequest(activeSessionId, providerName, finalBody)
+                                }.onFailure { error ->
+                                    AppLogger.warning(TAG, "Final request snapshot failed: ${error.message}")
+                                }
+                            },
                         ),
                     ).collect { chunk ->
                 when (chunk) {
@@ -7560,19 +7574,6 @@ class ChatViewModel(
                 contentParts = assistantParts,
                 reasoningContent = turnReasoningContent,
             ))
-
-            // The request-boundary snapshot above contains the user turn but
-            // cannot contain the response that has not arrived yet. Refresh it
-            // immediately at every completed model turn so opening the sheet
-            // after streaming ends includes the newest AI / TOOL USE floor.
-            val completedSnapshot = applyTarvenRules(
-                systemPrompt = systemPrompt,
-                messages = effectiveAgentHistory(),
-            )
-            saveContextSnapshot(
-                systemPrompt = completedSnapshot.systemPrompt,
-                messages = applyRequestImageBudget(completedSnapshot.messages),
-            )
 
             // T321: empty-turn diagnostic — fires when GPT-5.5 (or any other
             // provider) returns a turn with no visible text AND no tool calls.
@@ -9112,17 +9113,6 @@ class ChatViewModel(
      * present. Values are read internally by the repo but never surfaced
      * outside `countConfiguredEnvVars` (we only test `containsKey`).
      */
-    private suspend fun saveContextSnapshot(
-        systemPrompt: String?,
-        messages: List<LLMMessage>,
-    ) {
-        runCatching {
-            contextSnapshotStore.save(activeSessionId, systemPrompt, messages)
-        }.onFailure { error ->
-            AppLogger.warning(TAG, "Context snapshot save failed: ${error.message}")
-        }
-    }
-
     suspend fun contextSnapshotSummaries(): List<com.openminis.app.data.ContextSnapshotSummary> =
         contextSnapshotStore.list(activeSessionId)
 
@@ -9282,7 +9272,8 @@ class ChatViewModel(
 - 如果用户询问为何看不到旧记忆或要求保存记忆，说明当前记忆已关闭，并引导其使用 `/memory` 或前往 `[设置 → 记忆](minis://settings/memory)` 重新启用。
 - SOUL.md（人格与身份）不受此开关影响。"""
         }
-        val toolSection = if (!com.openminis.app.agent.AgentPromptRenderer.shouldInjectToolPrompt(promptAgent)) {
+        val toolsEnabled = com.openminis.app.agent.AgentPromptRenderer.shouldInjectToolPrompt(promptAgent)
+        val toolSection = if (!toolsEnabled) {
             ""
         } else {
             val template = if (promptAgent?.customToolPromptEnabled == 1) {
@@ -9298,10 +9289,12 @@ class ChatViewModel(
                 sandboxPlaceholders = sandboxSnapshot.placeholders,
             )
         }
-        val base = buildString {
-            append(agentSection)
-            append(toolSection)
-        }
+        // 人格与工具规则合并为同一个 system/instructions；协议级工具定义
+        // 仍通过 Provider 顶层 `tools` 字段发送，不能混入 user/tool 消息。
+        val base = com.openminis.app.agent.AgentPromptRenderer.mergeSystemSections(
+            agentSection = agentSection,
+            toolSection = toolSection,
+        )
 
         // Match iOS order exactly: skills → global memory → recent daily memory.
         // See ios/Agent/Chat/AIChatViewModel.swift:4375-4387. Each fragment is
@@ -9312,20 +9305,20 @@ class ChatViewModel(
         // turn instead of "after kill app". Cheap: loadAll is a SQLite
         // SELECT + listFiles, no network.
         skillRepository?.reloadFromDisk()
-        val skillFragment = skillRepository?.skillPromptFragment(
+        val skillFragment = if (toolsEnabled) skillRepository?.skillPromptFragment(
             agentId = _activeAgentId.value,
             sessionId = activeSessionId,
-        )
+        ) else null
         // [T-mcp-integration-android] Re-read servers.json (the CLI / file
         // browser may have changed it out-of-band) then build the Top-20
         // enabled-MCP disclosure, injected right after the skills fragment.
         mcpRepository?.reloadFromDisk()
-        val mcpFragment = mcpRepository?.mcpPromptFragment(activeSessionId)
+        val mcpFragment = if (toolsEnabled) mcpRepository?.mcpPromptFragment(activeSessionId) else null
         // Bundled platform integrations (semantic-memory / github-ops /
         // cloudflare-fullright-ops) with their current capability tier. Injected
         // right after the skills fragment so the model knows what it can do with
         // each platform before it tries anything.
-        val integrationFragment = buildIntegrationStatus()
+        val integrationFragment = if (toolsEnabled) buildIntegrationStatus() else null
         // [T-memory-toggle-gates-injection-and-tools-android] Skip loading
         // GLOBAL.md + recent daily logs entirely when the user has turned
         // memory off for this session. Cheaper (no disk read) and — more
@@ -9334,8 +9327,14 @@ class ChatViewModel(
         // intentionally NOT gated by this toggle: skills are part of the
         // tool surface and SOUL.md is part of identity, both orthogonal
         // to the memory feature.
-        val globalMemoryFragment = if (memoryOn) activeMemoryRepository()?.loadGlobalMemoryFragment() else null
-        val dailyMemoryFragment = if (memoryOn) activeMemoryRepository()?.loadRecentDailyMemoryFragment() else null
+        // 工具能力关闭时也不注入带有 memory_get / memory_write 使用说明的
+        // 记忆片段，避免从旁路继续暴露工具规则。
+        val globalMemoryFragment = if (toolsEnabled && memoryOn) {
+            activeMemoryRepository()?.loadGlobalMemoryFragment()
+        } else null
+        val dailyMemoryFragment = if (toolsEnabled && memoryOn) {
+            activeMemoryRepository()?.loadRecentDailyMemoryFragment()
+        } else null
 
         return buildString {
             append(base)

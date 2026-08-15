@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.flow
 
 data class LLMRequestContext(
     val agentId: String? = null,
+    /** Called after provider serialization and immediately before OkHttp sends. */
+    val onFinalRequest: (suspend (provider: String, body: String) -> Unit)? = null,
 )
 
 interface LLMProvider {

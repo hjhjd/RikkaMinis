@@ -1,8 +1,6 @@
 package com.openminis.app.data
 
 import android.content.Context
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.LLMMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -15,17 +13,82 @@ data class ContextSnapshotSummary(val fileName: String, val createdAt: Long)
 data class ContextSnapshotFloor(val role: String, val content: String)
 data class ContextSnapshot(val createdAt: Long, val floors: List<ContextSnapshotFloor>)
 
-/** Durable, compressed snapshots of the exact context passed to a provider. */
+/**
+ * 将线路请求映射为界面分区，但绝不把顶层工具定义伪装成对话消息。
+ * 展示顺序遵循协议层级：系统提示词、工具能力、对话消息、请求配置。
+ */
+internal object FinalRequestFloorParser {
+    fun parse(provider: String, request: JSONObject): JSONArray {
+        val floors = JSONArray()
+        val consumed = linkedSetOf<String>()
+        fun add(role: String, value: Any?) {
+            floors.put(JSONObject().put("role", role).put("content", JsonReadableText.render(value)))
+        }
+        fun addSystem(key: String) {
+            if (request.has(key)) {
+                consumed += key
+                add("SYSTEM", JSONObject().put(key, request.get(key)))
+            }
+        }
+        addSystem("system")
+        addSystem("instructions")
+        addSystem("systemInstruction")
+
+        // `tools` 是顶层协议能力，不是追加在用户消息后的 tool 消息。
+        if (request.has("tools")) {
+            consumed += "tools"
+            add("TOOL DEFINITIONS", JSONObject().put("tools", request.get("tools")))
+        }
+
+        val sequenceKey = listOf("messages", "input", "contents").firstOrNull { request.optJSONArray(it) != null }
+        sequenceKey?.let { key ->
+            consumed += key
+            val rows = request.getJSONArray(key)
+            for (i in 0 until rows.length()) {
+                val value = rows.get(i)
+                add(requestRole(value), JSONObject().put("source", "$key[$i]").put("value", value))
+            }
+        }
+
+        val config = JSONObject().put("provider", provider)
+        val keys = request.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            if (key !in consumed) config.put(key, request.get(key))
+        }
+        add("REQUEST", config)
+        return floors
+    }
+
+    private fun requestRole(value: Any?): String {
+        val obj = value as? JSONObject ?: return "REQUEST"
+        return when (obj.optString("role").lowercase()) {
+            "system", "developer" -> "SYSTEM"
+            "user" -> "USER"
+            "assistant", "model" -> "AI"
+            "tool" -> "TOOL RESULT"
+            else -> when (obj.optString("type").lowercase()) {
+                "function_call", "tool_use" -> "TOOL CALL"
+                "function_call_output", "tool_result" -> "TOOL RESULT"
+                else -> "REQUEST"
+            }
+        }
+    }
+}
+
 class ContextSnapshotStore(context: Context) {
     private val root = File(context.filesDir, "context_snapshots")
 
-    suspend fun save(sessionId: String, systemPrompt: String?, messages: List<LLMMessage>) = withContext(Dispatchers.IO) {
-        val dir = sessionDir(sessionId).apply { mkdirs() }
+    suspend fun saveFinalRequest(sessionId: String, provider: String, finalBody: String) = withContext(Dispatchers.IO) {
+        val request = JSONObject(finalBody)
         val now = System.currentTimeMillis()
-        val floors = JSONArray()
-        systemPrompt?.let { floors.put(floor("SYSTEM", it)) }
-        messages.forEach { message -> snapshotFloors(message).forEach(floors::put) }
-        val body = JSONObject().put("createdAt", now).put("floors", floors).toString()
+        val floors = FinalRequestFloorParser.parse(provider, request)
+        val body = JSONObject()
+            .put("createdAt", now)
+            .put("provider", provider)
+            .put("floors", floors)
+            .toString()
+        val dir = sessionDir(sessionId).apply { mkdirs() }
         val target = File(dir, SNAPSHOT_FILE)
         val temporary = File(dir, ".$SNAPSHOT_FILE.tmp")
         GZIPOutputStream(temporary.outputStream().buffered()).bufferedWriter(Charsets.UTF_8).use { it.write(body) }
@@ -33,8 +96,6 @@ class ContextSnapshotStore(context: Context) {
             temporary.copyTo(target, overwrite = true)
             temporary.delete()
         }
-        // Remove legacy multi-snapshot files after the fixed snapshot has been
-        // committed successfully. One session now owns exactly one snapshot.
         dir.listFiles { file -> file.isFile && file.name.endsWith(".json.gz") && file.name != SNAPSHOT_FILE }
             .orEmpty().forEach(File::delete)
     }
@@ -43,8 +104,6 @@ class ContextSnapshotStore(context: Context) {
         val dir = sessionDir(sessionId)
         val fixed = File(dir, SNAPSHOT_FILE)
         if (!fixed.isFile) {
-            // Upgrade snapshots created by the first implementation: preserve
-            // only the newest one and move it to the fixed per-session name.
             val legacy = dir.listFiles { file -> file.isFile && file.name.endsWith(".json.gz") }
                 .orEmpty().maxByOrNull { readCreatedAt(it) ?: it.lastModified() }
                 ?: return@withContext emptyList()
@@ -52,19 +111,16 @@ class ContextSnapshotStore(context: Context) {
             dir.listFiles { file -> file.isFile && file.name.endsWith(".json.gz") && file.name != SNAPSHOT_FILE }
                 .orEmpty().forEach(File::delete)
         }
-        val createdAt = readCreatedAt(fixed) ?: fixed.lastModified()
-        listOf(ContextSnapshotSummary(fixed.name, createdAt))
+        listOf(ContextSnapshotSummary(fixed.name, readCreatedAt(fixed) ?: fixed.lastModified()))
     }
 
-    suspend fun clearAll() = withContext(Dispatchers.IO) {
-        root.deleteRecursively()
-    }
+    suspend fun clearAll() = withContext(Dispatchers.IO) { root.deleteRecursively() }
 
     suspend fun load(sessionId: String, fileName: String): ContextSnapshot? = withContext(Dispatchers.IO) {
         val file = File(sessionDir(sessionId), File(fileName).name)
         if (!file.isFile) return@withContext null
         runCatching {
-            val json = GZIPInputStream(file.inputStream().buffered()).bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
+            val json = readJson(file)
             val array = json.getJSONArray("floors")
             ContextSnapshot(json.getLong("createdAt"), List(array.length()) { i ->
                 val item = array.getJSONObject(i)
@@ -73,68 +129,14 @@ class ContextSnapshotStore(context: Context) {
         }.getOrNull()
     }
 
+    private fun readJson(file: File): JSONObject =
+        GZIPInputStream(file.inputStream().buffered()).bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
+
     private fun readCreatedAt(file: File): Long? = runCatching {
-        GZIPInputStream(file.inputStream().buffered()).bufferedReader(Charsets.UTF_8).use {
-            JSONObject(it.readText()).optLong("createdAt").takeIf { value -> value > 0L }
-        }
+        readJson(file).optLong("createdAt").takeIf { it > 0L }
     }.getOrNull()
 
     private fun sessionDir(sessionId: String) = File(root, sessionId.replace(Regex("[^A-Za-z0-9._-]"), "_"))
-    private fun floor(role: String, content: String) = JSONObject().put("role", role).put("content", content)
 
-    private fun snapshotFloors(message: LLMMessage): List<JSONObject> {
-        val role = if (message.role == LLMMessage.Role.USER) "USER" else "AI"
-        val result = mutableListOf<JSONObject>()
-        val textParts = message.contentParts.filterIsInstance<AgentContentPart.Text>()
-        val ordinary = buildString {
-            // Structured messages carry the same user text in content and in a
-            // Text part. Providers serialize Text parts, so prefer them instead
-            // of displaying the compatibility content field a second time.
-            if (textParts.isEmpty()) append(message.content)
-            textParts.forEach {
-                if (isNotEmpty() && last() != '\n') append('\n')
-                append(it.text)
-            }
-            message.contentParts.forEach { part ->
-                when (part) {
-                    is AgentContentPart.FileData -> {
-                        val alreadyDescribed = textParts.any { text -> text.text.contains(part.linuxPath) }
-                        if (!alreadyDescribed) append("\n[FILE ${part.fileName}; ${part.mimeType}; ${part.size} bytes; ${part.linuxPath}]")
-                    }
-                    is AgentContentPart.ImageData -> {
-                        val alreadyDescribed = part.linuxPath != null &&
-                            textParts.any { text -> text.text.contains(part.linuxPath) }
-                        if (!alreadyDescribed) append("\n[IMAGE ${part.mimeType}; ${part.data.size} bytes${part.linuxPath?.let { "; $it" } ?: ""}]")
-                    }
-                    else -> Unit
-                }
-            }
-            // New messages mirror images in both contentParts and imageParts
-            // for provider compatibility. Show the legacy list only when no
-            // structured ImageData exists, otherwise the attachment appears twice.
-            if (message.contentParts.none { it is AgentContentPart.ImageData }) {
-                message.imageParts.forEach { append("\n[IMAGE ${it.mimeType}; ${it.data.size} bytes${it.linuxPath?.let { p -> "; $p" } ?: ""}]") }
-            }
-            message.audioParts.forEach { append("\n[AUDIO ${it.format}; base64 ${it.base64Data.length} chars]") }
-            message.reasoningContent?.let { append("\n[REASONING]\n").append(it) }
-        }.trimStart('\n')
-        if (ordinary.isNotEmpty() || message.contentParts.none { it is AgentContentPart.ToolUse || it is AgentContentPart.ToolResult }) {
-            result += floor(role, ordinary)
-        }
-        message.contentParts.forEach { part ->
-            when (part) {
-                is AgentContentPart.ToolUse -> result += floor("TOOL", "USE ${part.name} #${part.id}\n${part.input.toString(2)}")
-                is AgentContentPart.ToolResult -> result += floor(
-                    "TOOL",
-                    "RESULT ${part.name} #${part.id}${if (part.isError) " ERROR" else ""}\n${part.content}",
-                )
-                else -> Unit
-            }
-        }
-        return result
-    }
-
-    private companion object {
-        const val SNAPSHOT_FILE = "snapshot.json.gz"
-    }
+    private companion object { const val SNAPSHOT_FILE = "snapshot.json.gz" }
 }
