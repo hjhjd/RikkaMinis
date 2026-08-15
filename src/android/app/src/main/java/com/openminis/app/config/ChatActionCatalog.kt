@@ -9,6 +9,7 @@ import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
@@ -52,6 +53,7 @@ object ChatActionCatalog {
         ChatActionSpec(ChatMenuPrefs.SESSION_MEMORY, R.string.session_memory_title, Icons.Outlined.Psychology, true, false),
         ChatActionSpec(ChatMenuPrefs.SLASH_COMMANDS, R.string.chat_menu_slash_commands, Icons.Outlined.Keyboard, true, false),
         ChatActionSpec(ChatMenuPrefs.EXPORT, R.string.sessionlist_export, Icons.Outlined.Share, true, false),
+        ChatActionSpec(ChatMenuPrefs.CONTEXT_SNAPSHOTS, R.string.context_snapshots_title, Icons.Outlined.Layers, true, false),
         ChatActionSpec(ChatMenuPrefs.TOKEN_USAGE, R.string.settings_token_usage, Icons.Outlined.DataUsage, false, true),
         ChatActionSpec(ChatMenuPrefs.SETTINGS, R.string.settings, Icons.Outlined.Settings, false, true),
     )

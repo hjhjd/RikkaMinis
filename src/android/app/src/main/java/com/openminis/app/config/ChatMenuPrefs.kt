@@ -39,6 +39,7 @@ object ChatMenuPrefs {
     const val BROWSER = "menu_browser"
     const val CHAT_FILES = "menu_chat_files"
     const val EXPORT = "menu_export"
+    const val CONTEXT_SNAPSHOTS = "menu_context_snapshots"
     const val SLASH_COMMANDS = "menu_slash_commands"
     const val SESSION_SKILLS = "menu_session_skills"
     const val SESSION_MCPS = "menu_session_mcps"
@@ -60,6 +61,7 @@ object ChatMenuPrefs {
         SESSION_MEMORY,
         SLASH_COMMANDS,
         EXPORT,
+        CONTEXT_SNAPSHOTS,
     )
 
     /** The full action pool: menu entries first (default order), then the two

@@ -120,6 +120,8 @@ class ChatViewModel(
     val mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
 ) : ViewModel() {
 
+    private val contextSnapshotStore = com.openminis.app.data.ContextSnapshotStore(context)
+
     companion object {
         internal const val TAG = "ChatViewModel"
         private const val DISPATCH_UI_FLUSH_MS = 75L
@@ -6947,8 +6949,13 @@ class ChatViewModel(
                     // id is the precise provider/model entry that receives this
                     // request (including same-model, different-endpoint recovery).
                     _activeEntryId.value?.let { providerRepository.lastUsedEntryId = it }
+                    val requestMessages = applyRequestImageBudget(tarvenRequest.messages)
+                    saveContextSnapshot(
+                        systemPrompt = tarvenRequest.systemPrompt,
+                        messages = requestMessages,
+                    )
                     currentProvider.streamMessage(
-                        applyRequestImageBudget(tarvenRequest.messages),
+                        requestMessages,
                         tarvenRequest.systemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
                         tools = agentTools,
                         thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
@@ -7553,6 +7560,19 @@ class ChatViewModel(
                 contentParts = assistantParts,
                 reasoningContent = turnReasoningContent,
             ))
+
+            // The request-boundary snapshot above contains the user turn but
+            // cannot contain the response that has not arrived yet. Refresh it
+            // immediately at every completed model turn so opening the sheet
+            // after streaming ends includes the newest AI / TOOL USE floor.
+            val completedSnapshot = applyTarvenRules(
+                systemPrompt = systemPrompt,
+                messages = effectiveAgentHistory(),
+            )
+            saveContextSnapshot(
+                systemPrompt = completedSnapshot.systemPrompt,
+                messages = applyRequestImageBudget(completedSnapshot.messages),
+            )
 
             // T321: empty-turn diagnostic — fires when GPT-5.5 (or any other
             // provider) returns a turn with no visible text AND no tool calls.
@@ -9092,6 +9112,25 @@ class ChatViewModel(
      * present. Values are read internally by the repo but never surfaced
      * outside `countConfiguredEnvVars` (we only test `containsKey`).
      */
+    private suspend fun saveContextSnapshot(
+        systemPrompt: String?,
+        messages: List<LLMMessage>,
+    ) {
+        runCatching {
+            contextSnapshotStore.save(activeSessionId, systemPrompt, messages)
+        }.onFailure { error ->
+            AppLogger.warning(TAG, "Context snapshot save failed: ${error.message}")
+        }
+    }
+
+    suspend fun contextSnapshotSummaries(): List<com.openminis.app.data.ContextSnapshotSummary> =
+        contextSnapshotStore.list(activeSessionId)
+
+    suspend fun loadContextSnapshot(fileName: String): com.openminis.app.data.ContextSnapshot? =
+        contextSnapshotStore.load(activeSessionId, fileName)
+
+    suspend fun clearAllContextSnapshots() = contextSnapshotStore.clearAll()
+
     private fun envVarsSnapshot(): Map<String, String> =
         try {
             com.openminis.app.data.repository.EnvVarRepository(context).allAsDict()
@@ -9243,10 +9282,10 @@ class ChatViewModel(
 - 如果用户询问为何看不到旧记忆或要求保存记忆，说明当前记忆已关闭，并引导其使用 `/memory` 或前往 `[设置 → 记忆](minis://settings/memory)` 重新启用。
 - SOUL.md（人格与身份）不受此开关影响。"""
         }
-        val toolSection = if (promptAgent?.toolPromptEnabled != 1) {
+        val toolSection = if (!com.openminis.app.agent.AgentPromptRenderer.shouldInjectToolPrompt(promptAgent)) {
             ""
         } else {
-            val template = if (promptAgent.customToolPromptEnabled == 1) {
+            val template = if (promptAgent?.customToolPromptEnabled == 1) {
                 promptAgent.customToolPrompt.orEmpty()
             } else {
                 com.openminis.app.agent.SystemPromptPreferences.defaultToolTemplate(context)

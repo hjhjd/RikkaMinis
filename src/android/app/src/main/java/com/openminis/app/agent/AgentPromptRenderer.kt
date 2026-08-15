@@ -6,6 +6,10 @@ import com.openminis.app.data.db.AgentIds
 
 /** Renders the user-controlled Agent layer without exposing platform rules. */
 object AgentPromptRenderer {
+    /** Fail closed: an unresolved Agent must never receive the default tool template. */
+    fun shouldInjectToolPrompt(agent: AgentEntity?): Boolean =
+        agent?.toolPromptEnabled == 1
+
     fun render(context: Context, agent: AgentEntity?): String {
         if (agent == null || agent.id == AgentIds.DEFAULT) {
             // Migration compatibility: SOUL.md remains the live editor for the

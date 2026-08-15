@@ -121,6 +121,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.CloseFullscreen
 import androidx.compose.material.icons.filled.Info
@@ -129,6 +130,7 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.NotificationsNone
@@ -738,6 +740,7 @@ fun ChatScreen(
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     var showMcpsSheet by remember { mutableStateOf(false) }
     var showTokenUsageSheet by remember { mutableStateOf(false) }
+    var showContextSnapshotsSheet by remember { mutableStateOf(false) }
     // [bottom-toolbar-customizable] Export format picker shared by the "..." menu
     // and the history-drawer footer (replaces the old inline submenu).
     var showExportFormatSheet by remember { mutableStateOf(false) }
@@ -799,6 +802,7 @@ fun ChatScreen(
             }
             ChatMenuPrefs.EXPORT -> showExportFormatSheet = true
             ChatMenuPrefs.TOKEN_USAGE -> showTokenUsageSheet = true
+            ChatMenuPrefs.CONTEXT_SNAPSHOTS -> showContextSnapshotsSheet = true
             ChatMenuPrefs.SETTINGS -> onOpenSettings()
         }
     }
@@ -5049,6 +5053,16 @@ fun ChatScreen(
                                                 },
                                             )
                                         }
+                                        ChatMenuPrefs.CONTEXT_SNAPSHOTS -> {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.context_snapshots_title)) },
+                                                onClick = {
+                                                    showChatMenu = false
+                                                    dispatchChatAction(ChatMenuPrefs.CONTEXT_SNAPSHOTS)
+                                                },
+                                                leadingIcon = { Icon(Icons.Default.Layers, contentDescription = null) },
+                                            )
+                                        }
                                         ChatMenuPrefs.EXPORT -> {
                                             // Export conversation (JSON / Plain Text) — the
                                             // session list's long-press Export, surfaced from
@@ -5542,6 +5556,13 @@ fun ChatScreen(
         BrowserSheet(
             tabPool = viewModel.browserTabPool,
             onDismiss = { viewModel.dismissBrowserSheet() },
+        )
+    }
+
+    if (showContextSnapshotsSheet) {
+        ContextSnapshotsSheet(
+            viewModel = viewModel,
+            onDismiss = { showContextSnapshotsSheet = false },
         )
     }
 
@@ -6149,6 +6170,156 @@ private fun exportCurrentChat(
                 context.getString(R.string.export_progress_failed),
                 android.widget.Toast.LENGTH_LONG,
             ).show()
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ContextSnapshotsSheet(
+    viewModel: ChatViewModel,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var snapshot by remember { mutableStateOf<com.openminis.app.data.ContextSnapshot?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    val floorListState = rememberLazyListState()
+    var selectedFloor by remember { mutableStateOf(0) }
+
+    suspend fun reload() {
+        loading = true
+        val summary = viewModel.contextSnapshotSummaries().singleOrNull()
+        snapshot = summary?.let { viewModel.loadContextSnapshot(it.fileName) }
+        selectedFloor = 0
+        loading = false
+    }
+
+    LaunchedEffect(viewModel) { reload() }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth().heightIn(max = 720.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.context_snapshots_title),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    snapshot?.let {
+                        Text(
+                            java.text.DateFormat.getDateTimeInstance(
+                                java.text.DateFormat.SHORT,
+                                java.text.DateFormat.MEDIUM,
+                            ).format(java.util.Date(it.createdAt)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            viewModel.clearAllContextSnapshots()
+                            reload()
+                        }
+                    },
+                    enabled = !loading,
+                ) {
+                    Icon(
+                        Icons.Default.DeleteSweep,
+                        contentDescription = stringResource(R.string.context_snapshots_clear_all),
+                    )
+                }
+            }
+            Text(
+                stringResource(R.string.context_snapshots_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+            HorizontalDivider()
+            when {
+                loading -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator()
+                }
+                snapshot == null -> Text(
+                    stringResource(R.string.context_snapshots_empty),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(24.dp),
+                )
+                else -> {
+                    val floors = snapshot!!.floors
+                    LaunchedEffect(floorListState, floors.size) {
+                        snapshotFlow { floorListState.firstVisibleItemIndex }
+                            .distinctUntilChanged()
+                            .collect { selectedFloor = it.coerceIn(floors.indices) }
+                    }
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        // Kept outside the vertical LazyColumn so floor navigation
+                        // remains pinned while the context itself scrolls.
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            itemsIndexed(floors) { index, floor ->
+                                val selected = index == selectedFloor
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = if (selected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.surface,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.primary,
+                                    ),
+                                    modifier = Modifier.clickable {
+                                            selectedFloor = index
+                                            scope.launch { floorListState.animateScrollToItem(index) }
+                                        },
+                                ) {
+                                    Text(
+                                        "#$index ${floor.role.uppercase()}",
+                                        maxLines = 1,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimary
+                                            else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    )
+                                }
+                            }
+                        }
+                        HorizontalDivider()
+                        LazyColumn(
+                            state = floorListState,
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 12.dp, 16.dp, 36.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            itemsIndexed(floors) { index, floor ->
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                ) {
+                                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                                        Text(
+                                            "${floor.role.uppercase()} #$index",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        androidx.compose.foundation.text.selection.SelectionContainer {
+                                            Text(floor.content, style = MaterialTheme.typography.bodyMedium)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

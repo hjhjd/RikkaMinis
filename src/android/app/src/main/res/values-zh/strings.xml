@@ -1642,4 +1642,11 @@
     <string name="vcp_log_category_status">状态</string>
     <string name="vcp_log_category_raw">原始</string>
     <string name="vcp_log_category_info">信息</string>
+    <string name="context_snapshots_title">上下文快照</string>
+    <string name="context_snapshots_description">当前会话最新一次发送给模型的完整上下文；每次请求前覆盖更新。</string>
+    <string name="context_snapshots_empty">还没有上下文快照。</string>
+    <string name="context_snapshots_item">快照 %1$d · %2$s</string>
+    <string name="context_snapshots_previous">上一份</string>
+    <string name="context_snapshots_next">下一份</string>
+    <string name="context_snapshots_clear_all">清理所有快照</string>
 </resources>

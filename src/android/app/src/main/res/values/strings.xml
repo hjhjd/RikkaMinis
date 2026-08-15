@@ -1709,4 +1709,11 @@
     <string name="vcp_log_category_status">STATUS</string>
     <string name="vcp_log_category_raw">RAW</string>
     <string name="vcp_log_category_info">INFO</string>
+    <string name="context_snapshots_title">Context Snapshots</string>
+    <string name="context_snapshots_description">The latest complete context for this session. It is overwritten before each model request.</string>
+    <string name="context_snapshots_empty">No context snapshots yet.</string>
+    <string name="context_snapshots_item">Snapshot %1$d · %2$s</string>
+    <string name="context_snapshots_previous">Previous</string>
+    <string name="context_snapshots_next">Next</string>
+    <string name="context_snapshots_clear_all">Clear all snapshots</string>
 </resources>

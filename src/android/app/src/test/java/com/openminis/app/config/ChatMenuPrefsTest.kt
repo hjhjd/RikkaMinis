@@ -115,6 +115,13 @@ class ChatMenuPrefsTest {
     }
 
     @Test
+    fun `context snapshots defaults to visible and unpinned`() {
+        assertTrue(ChatMenuPrefs.defaultVisible(ChatMenuPrefs.CONTEXT_SNAPSHOTS))
+        assertFalse(ChatMenuPrefs.defaultPinned(ChatMenuPrefs.CONTEXT_SNAPSHOTS))
+        assertTrue(ChatMenuPrefs.CONTEXT_SNAPSHOTS in ChatMenuPrefs.ALL_ENTRIES)
+    }
+
+    @Test
     fun `COMPACT and THINKING default to visible`() {
         assertTrue(ChatMenuPrefs.defaultVisible(ChatMenuPrefs.COMPACT))
         assertTrue(ChatMenuPrefs.defaultVisible(ChatMenuPrefs.THINKING))
@@ -151,10 +158,10 @@ class ChatMenuPrefsTest {
     }
 
     @Test
-    fun `legacy ten-item order resolves to twelve by appending missing entries`() {
+    fun `legacy menu order resolves by appending missing entries`() {
         val legacy = ChatMenuPrefs.DEFAULT_ORDER.joinToString(",")
         val result = ChatMenuPrefs.normalizeOrder(legacy, ChatMenuPrefs.ALL_ENTRIES)
-        assertEquals(12, result.size)
+        assertEquals(ChatMenuPrefs.ALL_ENTRIES.size, result.size)
         assertTrue(ChatMenuPrefs.TOKEN_USAGE in result)
         assertTrue(ChatMenuPrefs.SETTINGS in result)
         // Original ten retain their order at the front
@@ -182,10 +189,10 @@ class ChatMenuPrefsTest {
     fun `normalizeOrder appends missing known keys in known order`() {
         val raw = "menu_export,menu_terminal"
         val result = ChatMenuPrefs.normalizeOrder(raw, ChatMenuPrefs.ALL_ENTRIES)
-        assertEquals(12, result.size)
+        assertEquals(ChatMenuPrefs.ALL_ENTRIES.size, result.size)
         assertEquals(ChatMenuPrefs.EXPORT, result[0])
         assertEquals(ChatMenuPrefs.TERMINAL, result[1])
-        // The twelve missing entries follow in their DEFAULT_ORDER relative positions
+        // Missing entries follow in their default relative order
     }
 
     @Test
@@ -337,7 +344,7 @@ class ChatMenuPrefsTest {
     fun `sanitizeForWrite appends missing known keys`() {
         val partial = listOf(ChatMenuPrefs.TERMINAL)
         val result = ChatMenuPrefs.sanitizeForWrite(partial, ChatMenuPrefs.ALL_ENTRIES)
-        assertEquals(12, result.size)
+        assertEquals(ChatMenuPrefs.ALL_ENTRIES.size, result.size)
         assertEquals(ChatMenuPrefs.TERMINAL, result[0])
     }
 }
