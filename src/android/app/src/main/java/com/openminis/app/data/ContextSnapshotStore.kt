@@ -14,8 +14,8 @@ data class ContextSnapshotFloor(val role: String, val content: String)
 data class ContextSnapshot(val createdAt: Long, val floors: List<ContextSnapshotFloor>)
 
 /**
- * 将线路请求映射为界面分区，但绝不把顶层工具定义伪装成对话消息。
- * 展示顺序遵循协议层级：系统提示词、工具能力、对话消息、请求配置。
+ * 将线路请求映射为界面分区。顶层工具定义属于协议元数据，
+ * 不进入上下文楼层；展示从 SYSTEM 开始，再依次显示对话与请求配置。
  */
 internal object FinalRequestFloorParser {
     fun parse(provider: String, request: JSONObject): JSONArray {
@@ -34,11 +34,8 @@ internal object FinalRequestFloorParser {
         addSystem("instructions")
         addSystem("systemInstruction")
 
-        // `tools` 是顶层协议能力，不是追加在用户消息后的 tool 消息。
-        if (request.has("tools")) {
-            consumed += "tools"
-            add("TOOL DEFINITIONS", JSONObject().put("tools", request.get("tools")))
-        }
+        // 顶层 `tools` 是协议元数据，不属于模型对话楼层，也不并入 REQUEST。
+        if (request.has("tools")) consumed += "tools"
 
         val sequenceKey = listOf("messages", "input", "contents").firstOrNull { request.optJSONArray(it) != null }
         sequenceKey?.let { key ->

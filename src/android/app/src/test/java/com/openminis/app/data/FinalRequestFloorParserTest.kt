@@ -7,7 +7,7 @@ import org.junit.Test
 
 class FinalRequestFloorParserTest {
     @Test
-    fun `顶层工具定义展示在对话之前且不伪装成消息`() {
+    fun `顶层工具定义不进入快照且默认零层为系统提示词`() {
         val request = JSONObject(
             """{
               "model":"test",
@@ -22,8 +22,11 @@ class FinalRequestFloorParserTest {
         val floors = FinalRequestFloorParser.parse("openai", request)
         val roles = (0 until floors.length()).map { floors.getJSONObject(it).getString("role") }
 
-        assertEquals(listOf("TOOL DEFINITIONS", "SYSTEM", "USER", "REQUEST"), roles)
-        assertTrue(floors.getJSONObject(1).getString("content").contains("人格\n\n工具规则"))
+        assertEquals(listOf("SYSTEM", "USER", "REQUEST"), roles)
+        assertTrue(floors.getJSONObject(0).getString("content").contains("人格\n\n工具规则"))
+        assertTrue((0 until floors.length()).none {
+            floors.getJSONObject(it).getString("content").contains("file_read")
+        })
     }
 
     @Test
