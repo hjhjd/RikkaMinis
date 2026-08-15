@@ -30,11 +30,30 @@ class FinalRequestFloorParserTest {
     }
 
     @Test
-    fun `真实工具结果仍作为对话历史展示`() {
+    fun `工具请求与工具结果不进入上下文快照`() {
+        val request = JSONObject(
+            """{
+              "input":[
+                {"role":"user","content":"执行任务"},
+                {"type":"function_call","call_id":"call-1","name":"file_read","arguments":"{}"},
+                {"type":"function_call_output","call_id":"call-1","output":"完成"},
+                {"role":"assistant","content":"任务完成"}
+              ]
+            }""",
+        )
+        val floors = FinalRequestFloorParser.parse("openai", request)
+        val roles = (0 until floors.length()).map { floors.getJSONObject(it).getString("role") }
+        assertEquals(listOf("USER", "AI", "REQUEST"), roles)
+    }
+
+    @Test
+    fun `Chat Completions 的 tool 结果消息不进入快照`() {
         val request = JSONObject(
             """{"messages":[{"role":"tool","tool_call_id":"call-1","content":"完成"}]}""",
         )
         val floors = FinalRequestFloorParser.parse("openai", request)
-        assertEquals("TOOL RESULT", floors.getJSONObject(0).getString("role"))
+        assertEquals(listOf("REQUEST"), (0 until floors.length()).map {
+            floors.getJSONObject(it).getString("role")
+        })
     }
 }

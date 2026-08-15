@@ -43,7 +43,10 @@ internal object FinalRequestFloorParser {
             val rows = request.getJSONArray(key)
             for (i in 0 until rows.length()) {
                 val value = rows.get(i)
-                add(requestRole(value), JSONObject().put("source", "$key[$i]").put("value", value))
+                val role = requestRole(value)
+                // 工具请求与工具结果属于执行协议，不进入上下文快照楼层。
+                if (role == "TOOL REQUEST" || role == "TOOL RESULT") continue
+                add(role, JSONObject().put("source", "$key[$i]").put("value", value))
             }
         }
 
@@ -65,7 +68,7 @@ internal object FinalRequestFloorParser {
             "assistant", "model" -> "AI"
             "tool" -> "TOOL RESULT"
             else -> when (obj.optString("type").lowercase()) {
-                "function_call", "tool_use" -> "TOOL CALL"
+                "function_call", "tool_use" -> "TOOL REQUEST"
                 "function_call_output", "tool_result" -> "TOOL RESULT"
                 else -> "REQUEST"
             }
